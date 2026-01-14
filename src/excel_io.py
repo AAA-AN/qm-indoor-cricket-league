@@ -16,10 +16,20 @@ class ExcelLoadResult:
     league_data: Optional[pd.DataFrame] = None
 
 
-def _read_named_table(wb, sheet_name: str, table_name: str) -> pd.DataFrame:
+def _read_named_table(
+    wb,
+    sheet_name: str,
+    table_name: str,
+    *,
+    drop_empty_columns: bool = True,
+) -> pd.DataFrame:
     """
     Read an Excel Table (ListObject) by name and return a DataFrame.
     Uses the table ref so it stays correct even if the table range moves.
+
+    drop_empty_columns:
+      - True  -> drop columns that are entirely empty (all None/NaN)
+      - False -> keep columns even if entirely empty (important for fixtures schema)
     """
     if sheet_name not in wb.sheetnames:
         raise ValueError(f"Sheet '{sheet_name}' not found in workbook.")
@@ -46,7 +56,16 @@ def _read_named_table(wb, sheet_name: str, table_name: str) -> pd.DataFrame:
     rows = data[1:]
 
     df = pd.DataFrame(rows, columns=headers)
-    df = df.dropna(axis=1, how="all")  # drop fully empty columns
+
+    # Always drop columns with blank header names (these are never useful)
+    blank_header_cols = [c for c in df.columns if str(c).strip() == ""]
+    if blank_header_cols:
+        df = df.drop(columns=blank_header_cols)
+
+    # Only drop fully empty columns if requested
+    if drop_empty_columns:
+        df = df.dropna(axis=1, how="all")
+
     return df
 
 
@@ -58,9 +77,13 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     bio = BytesIO(xlsm_bytes)
     wb = load_workbook(bio, data_only=True)
 
-    # Required table
+    # REQUIRED: fixtures table
+    # Keep empty columns so schema is stable even before any results are entered.
     fixture_results = _read_named_table(
-        wb, sheet_name="Fixture_Results", table_name="Fixture_Results_Table"
+        wb,
+        sheet_name="Fixture_Results",
+        table_name="Fixture_Results_Table",
+        drop_empty_columns=False,
     )
 
     # Optional tables
@@ -68,22 +91,20 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     teams = None
     league_data = None
 
-    # Players table (if present)
     try:
-        players = _read_named_table(wb, sheet_name="Players", table_name="Player_Data")
+        players = _read_named_table(wb, sheet_name="Players", table_name="Player_Data", drop_empty_columns=True)
     except Exception:
         players = None
 
-    # Teams table (you renamed Table11 -> Teams_Table)
     try:
-        teams = _read_named_table(wb, sheet_name="Teams", table_name="Teams_Table")
+        teams = _read_named_table(wb, sheet_name="Teams", table_name="Teams_Table", drop_empty_columns=True)
     except Exception:
         teams = None
 
-    # League stats table (you confirmed it is an Excel table)
-    # Prefer table read over sheet-range read.
     try:
-        league_data = _read_named_table(wb, sheet_name="League_Data", table_name="League_Data_Stats")
+        league_data = _read_named_table(
+            wb, sheet_name="League_Data", table_name="League_Data_Stats", drop_empty_columns=True
+        )
     except Exception:
         league_data = None
 
