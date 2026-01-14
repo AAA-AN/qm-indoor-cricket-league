@@ -15,10 +15,10 @@ def hide_sidebar():
     )
 
 
-def sidebar_header_above_pages():
+def apply_sidebar_layout_css():
     """
-    Visually pushes the built-in multipage list down so our custom header
-    appears above it.
+    Makes a fixed header area at the top of the sidebar, and pushes
+    Streamlit's built-in page list down beneath it.
     """
     if st.session_state.get("user") is None:
         return
@@ -26,9 +26,39 @@ def sidebar_header_above_pages():
     st.markdown(
         """
         <style>
-        /* Push the built-in pages list down */
-        section[data-testid="stSidebar"] ul {
-            margin-top: 140px !important;
+        /* Reserve space at the top of the sidebar for our fixed header */
+        section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {
+            padding-top: 165px !important;
+        }
+
+        /* Fixed header container */
+        #qm-sidebar-header {
+            position: absolute;
+            top: 12px;
+            left: 16px;
+            right: 16px;
+            z-index: 9999;
+        }
+
+        /* Tighten header typography slightly */
+        #qm-sidebar-header .qm-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+        }
+        #qm-sidebar-header .qm-user {
+            font-size: 14px;
+            font-weight: 700;
+            margin: 0 0 2px 0;
+        }
+        #qm-sidebar-header .qm-role {
+            font-size: 12px;
+            opacity: 0.8;
+            margin: 0;
+        }
+        #qm-sidebar-header hr {
+            margin: 12px 0 0 0;
+            opacity: 0.25;
         }
         </style>
         """,
@@ -56,7 +86,6 @@ def hide_home_page_when_logged_in():
 def hide_admin_page_for_non_admins():
     """Hide Admin page from sidebar for non-admin users."""
     user = st.session_state.get("user")
-
     if not user or user.get("role") == "admin":
         return
 
@@ -74,7 +103,6 @@ def hide_admin_page_for_non_admins():
 
 def require_login():
     init_db()
-
     if st.session_state.get("user") is None:
         hide_sidebar()
         st.warning("Please log in to access this page.")
@@ -91,24 +119,34 @@ def require_admin():
         st.stop()
 
 
-def render_sidebar_header():
-    """Renders header content that should appear above the pages list."""
+def render_sidebar_header_fixed():
+    """
+    Renders the header HTML into the sidebar; CSS positions it at the top.
+    Must be called after apply_sidebar_layout_css().
+    """
     user = st.session_state.get("user")
     if not user:
         return
 
-    st.sidebar.markdown(f"### {APP_TITLE}")
-    st.sidebar.write(f"**{user['first_name']} {user['last_name']}**")
-
-    # Only show role if admin
+    role_line = ""
     if user.get("role") == "admin":
-        st.sidebar.caption("Role: admin")
+        role_line = '<p class="qm-role">Role: admin</p>'
 
-    st.sidebar.markdown("---")
+    st.sidebar.markdown(
+        f"""
+        <div id="qm-sidebar-header">
+            <div class="qm-title">{APP_TITLE}</div>
+            <div class="qm-user">{user['first_name']} {user['last_name']}</div>
+            {role_line}
+            <hr/>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_logout_button():
-    """Logout button in sidebar."""
+    """Logout button in sidebar (separate from pages list)."""
     if st.session_state.get("user") is None:
         return
 
