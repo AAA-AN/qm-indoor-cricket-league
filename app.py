@@ -75,7 +75,7 @@ def main():
     init_db()
     ensure_session_state()
 
-    # Hide sidebar pre-login (your prior requirement)
+    # Hide sidebar pre-login (your requirement)
     if st.session_state.get("user") is None:
         hide_sidebar()
 
