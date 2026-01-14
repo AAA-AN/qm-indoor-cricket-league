@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import bcrypt
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
-from src.db import get_conn, count_users
+import bcrypt
+
+from src.db import get_conn, count_users, update_password_hash
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
 
 def hash_password(password: str) -> str:
     pw = password.encode("utf-8")
@@ -15,20 +18,22 @@ def hash_password(password: str) -> str:
     hashed = bcrypt.hashpw(pw, salt)
     return hashed.decode("utf-8")
 
+
 def verify_password(password: str, password_hash: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
     except Exception:
         return False
 
+
 def create_user(first_name: str, last_name: str, username: str, password: str) -> Dict[str, Any]:
     """
     Creates a user.
     First user becomes admin; subsequent users become player.
     """
-    first_name = first_name.strip()
-    last_name = last_name.strip()
-    username = username.strip()
+    first_name = (first_name or "").strip()
+    last_name = (last_name or "").strip()
+    username = (username or "").strip()
 
     if not first_name or not last_name or not username or not password:
         raise ValueError("All fields are required.")
@@ -48,15 +53,21 @@ def create_user(first_name: str, last_name: str, username: str, password: str) -
         conn.commit()
 
         row = conn.execute(
-            "SELECT user_id, first_name, last_name, username, role, is_active FROM users WHERE username = ?;",
+            """
+            SELECT user_id, first_name, last_name, username, role, is_active, created_at
+            FROM users
+            WHERE username = ?;
+            """,
             (username,),
         ).fetchone()
+
         return dict(row)
     finally:
         conn.close()
 
+
 def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
-    username = username.strip()
+    username = (username or "").strip()
     if not username or not password:
         return None
 
@@ -64,7 +75,7 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
     try:
         row = conn.execute(
             """
-            SELECT user_id, first_name, last_name, username, password_hash, role, is_active
+            SELECT user_id, first_name, last_name, username, password_hash, role, is_active, created_at
             FROM users
             WHERE username = ?;
             """,
@@ -84,3 +95,15 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
     finally:
         conn.close()
 
+
+def admin_reset_password(username: str, new_password: str) -> None:
+    """
+    Admin-only: reset a user's password.
+    The Admin page is responsible for ensuring the caller is an admin.
+    """
+    username = (username or "").strip()
+    if not username or not new_password:
+        raise ValueError("Username and new password are required.")
+
+    pw_hash = hash_password(new_password)
+    update_password_hash(username, pw_hash)
