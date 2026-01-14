@@ -32,7 +32,7 @@ def _read_named_table(wb, sheet_name: str, table_name: str) -> pd.DataFrame:
         )
 
     table = ws.tables[table_name]
-    ref = table.ref  # e.g. "B2:R32"
+    ref = table.ref  # e.g. "B2:T32"
     cells = ws[ref]
 
     data: List[List[object]] = []
@@ -58,32 +58,34 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     bio = BytesIO(xlsm_bytes)
     wb = load_workbook(bio, data_only=True)
 
+    # Required table
     fixture_results = _read_named_table(
         wb, sheet_name="Fixture_Results", table_name="Fixture_Results_Table"
     )
 
-    # Optional tables (only if they exist)
+    # Optional tables
     players = None
     teams = None
+    league_data = None
 
+    # Players table (if present)
     try:
         players = _read_named_table(wb, sheet_name="Players", table_name="Player_Data")
     except Exception:
         players = None
 
+    # Teams table (you renamed Table11 -> Teams_Table)
     try:
         teams = _read_named_table(wb, sheet_name="Teams", table_name="Teams_Table")
     except Exception:
         teams = None
 
-    league_data = None
-    if "League_Data" in wb.sheetnames:
-        ws = wb["League_Data"]
-        values = list(ws.values)
-        if values and len(values) >= 2:
-            headers = [str(h).strip() if h is not None else "" for h in values[0]]
-            rows = values[1:]
-            league_data = pd.DataFrame(rows, columns=headers).dropna(axis=1, how="all")
+    # League stats table (you confirmed it is an Excel table)
+    # Prefer table read over sheet-range read.
+    try:
+        league_data = _read_named_table(wb, sheet_name="League_Data", table_name="League_Data_Stats")
+    except Exception:
+        league_data = None
 
     return ExcelLoadResult(
         fixture_results=fixture_results,
