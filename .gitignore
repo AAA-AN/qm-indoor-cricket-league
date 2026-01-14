@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Local database
+data/app.db
+
+# Streamlit
+.streamlit/
