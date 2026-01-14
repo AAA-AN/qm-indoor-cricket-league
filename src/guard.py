@@ -72,17 +72,19 @@ def require_admin():
 
 
 def render_sidebar_header():
+    """Sidebar user info shown only when logged in."""
     user = st.session_state.get("user")
     if not user:
         return
 
-    st.sidebar.markdown(f"### {APP_TITLE}")
     st.sidebar.write(f"**{user['first_name']} {user['last_name']}**")
 
+    # Only show role if admin
     if user.get("role") == "admin":
         st.sidebar.caption("Role: admin")
 
     st.sidebar.markdown("---")
+
 
 
 def render_logout_button():
