@@ -12,7 +12,6 @@ from src.guard import (
 from src.dropbox_api import get_access_token, download_file
 from src.excel_io import load_league_workbook_from_bytes
 
-
 st.set_page_config(page_title=f"{APP_TITLE} - QM Social League", layout="wide")
 
 require_login()
@@ -33,6 +32,9 @@ def _get_secret(name: str) -> str:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str):
+    """
+    Cached for 60 seconds to feel live without hammering Dropbox.
+    """
     access_token = get_access_token(app_key, app_secret, refresh_token)
     xbytes = download_file(access_token, dropbox_path)
     return load_league_workbook_from_bytes(xbytes)
@@ -57,9 +59,7 @@ with st.spinner("Loading latest league workbook from Dropbox..."):
         st.stop()
 
 fixtures = data.fixture_results.copy()
-
-# Robustness: strip whitespace from all column names
-fixtures.columns = [str(c).strip() for c in fixtures.columns]
+fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
 
 # ----------------------------
 # Tabs
@@ -83,9 +83,11 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
     winner_col = "Won By"
     status_col = "Status" if "Status" in df.columns else None
 
-    missing = [c for c in [home_col, away_col, winner_col] if c not in df.columns]
+    required = [home_col, away_col, winner_col]
+    missing = [c for c in required if c not in df.columns]
     if missing:
-        raise ValueError(f"Fixtures table missing required columns: {missing}. Columns found: {list(df.columns)}")
+        # Do not crash the page; return an empty points table
+        return pd.DataFrame(columns=["Pos", "Team", "Played", "Points"])
 
     if status_col:
         played_mask = df[status_col].astype(str).str.strip().isin(["Played", "Abandoned"])
@@ -120,7 +122,7 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
         rows.append({"Team": away, "Played": 1, "Points": away_pts})
 
     if not rows:
-        return pd.DataFrame(columns=["Team", "Played", "Points"])
+        return pd.DataFrame(columns=["Pos", "Team", "Played", "Points"])
 
     pts = pd.DataFrame(rows).groupby("Team", as_index=False).sum(numeric_only=True)
     pts = pts.sort_values(by=["Points", "Team"], ascending=[False, True]).reset_index(drop=True)
@@ -130,6 +132,10 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
 
 with tab1:
     st.subheader("Fixtures & Results")
+
+    # Diagnostics to confirm what columns Dropbox workbook actually contains
+    st.caption(f"Dropbox path: {dropbox_path}")
+    st.caption(f"Loaded columns: {list(fixtures.columns)}")
 
     preferred_cols = [
         "MatchID",
@@ -141,23 +147,35 @@ with tab1:
         "Status",
     ]
     show_cols = [c for c in preferred_cols if c in fixtures.columns]
-    st.dataframe(fixtures[show_cols] if show_cols else fixtures, use_container_width=True, hide_index=True)
+    st.dataframe(
+        fixtures[show_cols] if show_cols else fixtures,
+        width="stretch",
+        hide_index=True,
+    )
 
     st.markdown("---")
     st.subheader("League Table (Win 3, Tie 1, Loss 0, Abandoned 0)")
 
+    if "Won By" not in fixtures.columns:
+        st.warning(
+            "League table cannot be calculated because the downloaded workbook's "
+            "`Fixture_Results_Table` does not include a `Won By` column. "
+            "This usually means the Excel table hasn't been resized to include that column, "
+            "or the app is reading a different Dropbox file/path than expected."
+        )
+
     table = compute_points_table(fixtures)
     if table.empty:
-        st.info("No completed matches found yet.")
+        st.info("No completed matches found yet (or `Won By` is missing).")
     else:
-        st.dataframe(table, use_container_width=True, hide_index=True)
+        st.dataframe(table, width="stretch", hide_index=True)
 
 
 with tab2:
     st.subheader("Teams")
-    st.info("Next: display each team roster and team totals from Players/League_Data.")
+    st.info("Next: display each team roster and team totals from Teams_Table + Player_Data + League_Data_Stats.")
 
 
 with tab3:
     st.subheader("Player Stats")
-    st.info("Next: show League_Data with search/filter and player profiles.")
+    st.info("Next: show League_Data_Stats with search/filter and player profiles.")
