@@ -42,7 +42,9 @@ def render_sidebar_header():
 def render_logout_button():
     if st.session_state.get("user") is None:
         return
+
     if st.sidebar.button("Logout", use_container_width=True):
         st.session_state["user"] = None
-        st.rerun()
+        st.switch_page("app.py")
+
 
