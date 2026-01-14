@@ -2,4 +2,3 @@ streamlit
 pandas
 openpyxl
 bcrypt
-python-3.11
