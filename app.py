@@ -73,20 +73,21 @@ def main():
     st.sidebar.write(f"Role: **{user['role']}**")
 
     menu_items = ["League", "Fantasy"]
-    if user["role"] == "admin":
-        menu_items.append("Admin")
-    menu_items.append("Logout")
+if user["role"] == "admin":
+    menu_items.append("Admin")
 
-    nav = st.sidebar.radio("Menu", menu_items)
+nav = st.sidebar.radio("Menu", menu_items)
+st.sidebar.markdown("---")
+if st.sidebar.button("Logout"):
+    logout()
 
-    if nav == "League":
-        page_league_placeholder()
-    elif nav == "Fantasy":
-        page_fantasy_placeholder()
-    elif nav == "Admin":
-        page_admin_placeholder()
-    else:
-        logout()
+
+if nav == "League":
+    page_league_placeholder()
+elif nav == "Fantasy":
+    page_fantasy_placeholder()
+elif nav == "Admin":
+    page_admin_placeholder()
 
 if __name__ == "__main__":
     main()
