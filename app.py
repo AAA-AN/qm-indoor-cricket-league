@@ -33,7 +33,7 @@ def home_welcome():
         user = authenticate_user(username, password)
         if user:
             st.session_state["user"] = user
-            st.switch_page("pages/1_League.py")
+            st.switch_page("pages/1_QM_Social_League.py")
         else:
             st.error("Invalid username or password, or the account is disabled.")
 
