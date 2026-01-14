@@ -104,7 +104,9 @@ def main():
     # -------------------------
     st.sidebar.title(APP_TITLE)
     st.sidebar.write(f"**{user['first_name']} {user['last_name']}**")
-    st.sidebar.caption(f"Role: {user['role']}")
+
+    if user["role"] == "admin":
+        st.sidebar.caption("Role: admin")
 
     menu_items = ["League", "Fantasy"]
     if user["role"] == "admin":
