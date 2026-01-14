@@ -17,14 +17,11 @@ def ensure_session_state():
         st.session_state["user"] = None
     if "prelogin_page" not in st.session_state:
         st.session_state["prelogin_page"] = "welcome"
-    if "nav" not in st.session_state:
-        st.session_state["nav"] = "League"
 
 
 def logout():
     st.session_state["user"] = None
     st.session_state["prelogin_page"] = "welcome"
-    st.session_state["nav"] = "League"
     st.rerun()
 
 
@@ -50,7 +47,7 @@ def prelogin_welcome():
             st.success("Logged in successfully.")
             st.rerun()
         else:
-            st.error("Invalid username or password, or the account is disabled.")
+            st.error("Invalid username or password.")
 
     st.markdown("---")
     if st.button("Create an account"):
@@ -86,57 +83,6 @@ def prelogin_signup():
         st.rerun()
 
 
-def sidebar_nav_list_style():
-    """
-    CSS to make a sidebar radio look like a simple page list:
-    - no radio circles
-    - selected item highlighted
-    - spacing similar to Streamlit multipage sidebar
-    """
-    st.markdown(
-        """
-        <style>
-        /* Sidebar title spacing */
-        section[data-testid="stSidebar"] h1, 
-        section[data-testid="stSidebar"] h2, 
-        section[data-testid="stSidebar"] h3 {
-            margin-bottom: 0.25rem;
-        }
-
-        /* Make radio group look like a page list */
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label {
-            width: 100%;
-            border-radius: 0.4rem;
-            padding: 0.35rem 0.5rem;
-            margin: 0.1rem 0;
-        }
-
-        /* Hide the radio circle */
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
-            display: none !important;
-        }
-
-        /* Ensure the text spans nicely */
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:last-child {
-            width: 100%;
-        }
-
-        /* Highlight the selected item (Streamlit uses aria-checked on the label) */
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label[aria-checked="true"] {
-            background: rgba(255, 255, 255, 0.12);
-            font-weight: 600;
-        }
-
-        /* Slight hover affordance */
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
-            background: rgba(255, 255, 255, 0.06);
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def main():
     init_db()
     ensure_session_state()
@@ -156,32 +102,22 @@ def main():
     # -------------------------
     # POST-LOGIN (SIDEBAR)
     # -------------------------
-    sidebar_nav_list_style()
-
-    st.sidebar.markdown(f"### {APP_TITLE}")
+    st.sidebar.title(APP_TITLE)
     st.sidebar.write(f"**{user['first_name']} {user['last_name']}**")
+
     if user["role"] == "admin":
         st.sidebar.caption("Role: admin")
 
-    # Pages list
     menu_items = ["League", "Fantasy"]
     if user["role"] == "admin":
         menu_items.append("Admin")
 
-    nav = st.sidebar.radio(
-        "Navigation",
-        menu_items,
-        index=menu_items.index(st.session_state.get("nav", "League")),
-        label_visibility="collapsed",
-    )
-    st.session_state["nav"] = nav
+    nav = st.sidebar.radio("Menu", menu_items)
 
-    # Separate logout button
     st.sidebar.markdown("---")
     if st.sidebar.button("Logout", use_container_width=True):
         logout()
 
-    # Routing
     if nav == "League":
         page_league_placeholder()
     elif nav == "Fantasy":
