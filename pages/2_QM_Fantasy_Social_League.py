@@ -16,5 +16,5 @@ hide_admin_page_for_non_admins()
 render_sidebar_header()
 render_logout_button()
 
-st.title("Fantasy")
+st.title("QM Fantasy Social League")
 st.info("Fantasy will be added after the league section is stable.")

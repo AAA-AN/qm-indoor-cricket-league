@@ -16,5 +16,5 @@ hide_admin_page_for_non_admins()
 render_sidebar_header()
 render_logout_button()
 
-st.title("League")
+st.title("QM Social League")
 st.info("League pages will be added next (Fixtures & Results, Teams, Player Stats).")
