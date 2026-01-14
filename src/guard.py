@@ -17,8 +17,8 @@ def hide_sidebar():
 
 def sidebar_header_above_pages():
     """
-    Visually moves the sidebar pages list down so our custom
-    header appears above it.
+    Visually pushes the built-in multipage list down so our custom header
+    appears above it.
     """
     if st.session_state.get("user") is None:
         return
@@ -28,7 +28,7 @@ def sidebar_header_above_pages():
         <style>
         /* Push the built-in pages list down */
         section[data-testid="stSidebar"] ul {
-            margin-top: 140px;
+            margin-top: 140px !important;
         }
         </style>
         """,
@@ -37,6 +37,7 @@ def sidebar_header_above_pages():
 
 
 def hide_home_page_when_logged_in():
+    """Hide Home (app.py) from sidebar when logged in."""
     if st.session_state.get("user") is None:
         return
 
@@ -53,7 +54,9 @@ def hide_home_page_when_logged_in():
 
 
 def hide_admin_page_for_non_admins():
+    """Hide Admin page from sidebar for non-admin users."""
     user = st.session_state.get("user")
+
     if not user or user.get("role") == "admin":
         return
 
@@ -89,22 +92,23 @@ def require_admin():
 
 
 def render_sidebar_header():
+    """Renders header content that should appear above the pages list."""
     user = st.session_state.get("user")
     if not user:
         return
 
-    # Header container
-    with st.sidebar.container():
-        st.markdown(f"### {APP_TITLE}")
-        st.write(f"**{user['first_name']} {user['last_name']}**")
+    st.sidebar.markdown(f"### {APP_TITLE}")
+    st.sidebar.write(f"**{user['first_name']} {user['last_name']}**")
 
-        if user.get("role") == "admin":
-            st.caption("Role: admin")
+    # Only show role if admin
+    if user.get("role") == "admin":
+        st.sidebar.caption("Role: admin")
 
-        st.markdown("---")
+    st.sidebar.markdown("---")
 
 
 def render_logout_button():
+    """Logout button in sidebar."""
     if st.session_state.get("user") is None:
         return
 
