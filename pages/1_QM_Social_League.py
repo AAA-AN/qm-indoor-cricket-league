@@ -32,9 +32,6 @@ def _get_secret(name: str) -> str:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str):
-    """
-    Cached for 60 seconds to feel live without hammering Dropbox.
-    """
     access_token = get_access_token(app_key, app_secret, refresh_token)
     xbytes = download_file(access_token, dropbox_path)
     return load_league_workbook_from_bytes(xbytes)
@@ -61,6 +58,7 @@ with st.spinner("Loading latest league workbook from Dropbox..."):
 fixtures = data.fixture_results.copy()
 fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
 
+
 # ----------------------------
 # Tabs
 # ----------------------------
@@ -86,7 +84,7 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
     required = [home_col, away_col, winner_col]
     missing = [c for c in required if c not in df.columns]
     if missing:
-        # Do not crash the page; return an empty points table
+        # Never raise; return empty table
         return pd.DataFrame(columns=["Pos", "Team", "Played", "Points"])
 
     if status_col:
@@ -133,20 +131,13 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
 with tab1:
     st.subheader("Fixtures & Results")
 
-    # Diagnostics to confirm what columns Dropbox workbook actually contains
-    st.caption(f"Dropbox path: {dropbox_path}")
-    st.caption(f"Loaded columns: {list(fixtures.columns)}")
+    # Diagnostics: this will confirm which file/path is being read and which columns are in the TABLE
+    st.caption(f"Dropbox path configured: {dropbox_path}")
+    st.caption(f"Fixture_Results_Table columns detected: {list(fixtures.columns)}")
 
-    preferred_cols = [
-        "MatchID",
-        "Date",
-        "Time",
-        "Home Team",
-        "Away Team",
-        "Won By",
-        "Status",
-    ]
+    preferred_cols = ["MatchID", "Date", "Time", "Home Team", "Away Team", "Won By", "Status"]
     show_cols = [c for c in preferred_cols if c in fixtures.columns]
+
     st.dataframe(
         fixtures[show_cols] if show_cols else fixtures,
         width="stretch",
@@ -158,15 +149,16 @@ with tab1:
 
     if "Won By" not in fixtures.columns:
         st.warning(
-            "League table cannot be calculated because the downloaded workbook's "
-            "`Fixture_Results_Table` does not include a `Won By` column. "
-            "This usually means the Excel table hasn't been resized to include that column, "
-            "or the app is reading a different Dropbox file/path than expected."
+            "The downloaded workbook's Excel table `Fixture_Results_Table` does not include the `Won By` column.\n\n"
+            "This means `Won By` is currently OUTSIDE the table range in the Dropbox workbook copy.\n\n"
+            "Fix in Excel: click inside `Fixture_Results_Table` → Table Design → Resize Table → include `Won By` "
+            "in the table header row → Save → wait for Dropbox sync."
         )
+        st.stop()
 
     table = compute_points_table(fixtures)
     if table.empty:
-        st.info("No completed matches found yet (or `Won By` is missing).")
+        st.info("No completed matches found yet.")
     else:
         st.dataframe(table, width="stretch", hide_index=True)
 
