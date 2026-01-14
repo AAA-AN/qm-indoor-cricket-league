@@ -47,4 +47,21 @@ def render_logout_button():
         st.session_state["user"] = None
         st.switch_page("app.py")
 
+def hide_home_page_when_logged_in():
+    if st.session_state.get("user") is None:
+        return
+
+    st.markdown(
+        """
+        <style>
+        /* Hide the first page in the sidebar page list (Home/app.py) */
+        section[data-testid="stSidebar"] ul li:first-child {
+            display: none;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 
