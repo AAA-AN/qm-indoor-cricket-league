@@ -83,3 +83,4 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
         return user
     finally:
         conn.close()
+

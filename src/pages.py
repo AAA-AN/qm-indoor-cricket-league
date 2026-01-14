@@ -48,3 +48,4 @@ def page_fantasy_placeholder():
 def page_admin_placeholder():
     st.title("Admin")
     st.info("Admin tools will be added next (manage users, reset passwords).")
+

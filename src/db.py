@@ -40,3 +40,4 @@ def count_users() -> int:
         return int(row["n"])
     finally:
         conn.close()
+
