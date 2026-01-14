@@ -79,7 +79,7 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
 
     home_col = "Home Team"
     away_col = "Away Team"
-    winner_col = "Match Winner / Result"
+    winner_col = "Won By"
     status_col = "Status" if "Status" in df.columns else None
 
     missing = [c for c in [home_col, away_col, winner_col] if c not in df.columns]
@@ -136,7 +136,7 @@ with tab1:
         "Time",
         "Home Team",
         "Away Team",
-        "Match Winner / Result",
+        "Won By",
         "Status",
     ]
     show_cols = [c for c in preferred_cols if c in fixtures.columns]
