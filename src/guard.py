@@ -16,20 +16,13 @@ def hide_sidebar():
 
 
 def hide_home_page_when_logged_in():
-    """
-    Hides the Home/app.py entry from the Streamlit multipage sidebar list
-    when the user is logged in.
-
-    Note: Streamlit does not provide an official API for conditionally
-    hiding pages, so CSS is the standard workaround.
-    """
+    """Hide Home (app.py) from sidebar when logged in."""
     if st.session_state.get("user") is None:
         return
 
     st.markdown(
         """
         <style>
-        /* Hide the first page in the sidebar page list (Home/app.py) */
         section[data-testid="stSidebar"] ul li:first-child {
             display: none !important;
         }
@@ -39,9 +32,28 @@ def hide_home_page_when_logged_in():
     )
 
 
+def hide_admin_page_for_non_admins():
+    """Hide Admin page from sidebar for non-admin users."""
+    user = st.session_state.get("user")
+
+    if not user or user.get("role") == "admin":
+        return
+
+    st.markdown(
+        """
+        <style>
+        section[data-testid="stSidebar"] ul li:last-child {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def require_login():
-    """Ensure DB exists, then require login."""
     init_db()
+
     if st.session_state.get("user") is None:
         hide_sidebar()
         st.warning("Please log in to access this page.")
@@ -51,8 +63,8 @@ def require_login():
 
 
 def require_admin():
-    """Requires login first, then admin role."""
     require_login()
+
     user = st.session_state.get("user") or {}
     if user.get("role") != "admin":
         st.error("Admin access required.")
@@ -60,7 +72,6 @@ def require_admin():
 
 
 def render_sidebar_header():
-    """Sidebar header shown only when logged in."""
     user = st.session_state.get("user")
     if not user:
         return
@@ -68,7 +79,6 @@ def render_sidebar_header():
     st.sidebar.markdown(f"### {APP_TITLE}")
     st.sidebar.write(f"**{user['first_name']} {user['last_name']}**")
 
-    # Only show role if admin (per your requirement)
     if user.get("role") == "admin":
         st.sidebar.caption("Role: admin")
 
@@ -76,7 +86,6 @@ def render_sidebar_header():
 
 
 def render_logout_button():
-    """Logout button in sidebar (separate from pages list)."""
     if st.session_state.get("user") is None:
         return
 
