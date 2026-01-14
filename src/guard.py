@@ -16,13 +16,17 @@ def hide_sidebar():
 
 
 def hide_home_page_when_logged_in():
-    """Hide Home (app.py) from sidebar when logged in."""
+    """
+    Hides the Home/app.py entry from the Streamlit multipage sidebar list
+    when the user is logged in.
+    """
     if st.session_state.get("user") is None:
         return
 
     st.markdown(
         """
         <style>
+        /* Hide the first page in the sidebar page list (Home/app.py) */
         section[data-testid="stSidebar"] ul li:first-child {
             display: none !important;
         }
@@ -33,7 +37,10 @@ def hide_home_page_when_logged_in():
 
 
 def hide_admin_page_for_non_admins():
-    """Hide Admin page from sidebar for non-admin users."""
+    """
+    Hides the Admin page from the sidebar for non-admin users.
+    Assumes Admin is the LAST page in the multipage list.
+    """
     user = st.session_state.get("user")
 
     if not user or user.get("role") == "admin":
@@ -42,6 +49,7 @@ def hide_admin_page_for_non_admins():
     st.markdown(
         """
         <style>
+        /* Hide last page (Admin) from sidebar for non-admins */
         section[data-testid="stSidebar"] ul li:last-child {
             display: none !important;
         }
@@ -51,9 +59,17 @@ def hide_admin_page_for_non_admins():
     )
 
 
-def require_login():
-    init_db()
+def sidebar_divider_compact():
+    """A tighter divider than st.sidebar.markdown('---') to reduce vertical whitespace."""
+    st.sidebar.markdown(
+        '<hr style="margin: 0.25rem 0; border: 0; border-top: 1px solid rgba(49, 51, 63, 0.2);" />',
+        unsafe_allow_html=True,
+    )
 
+
+def require_login():
+    """Ensure DB exists, then require login."""
+    init_db()
     if st.session_state.get("user") is None:
         hide_sidebar()
         st.warning("Please log in to access this page.")
@@ -63,8 +79,8 @@ def require_login():
 
 
 def require_admin():
+    """Requires login first, then admin role."""
     require_login()
-
     user = st.session_state.get("user") or {}
     if user.get("role") != "admin":
         st.error("Admin access required.")
@@ -83,14 +99,15 @@ def render_sidebar_header():
     if user.get("role") == "admin":
         st.sidebar.caption("Role: admin")
 
-    st.sidebar.markdown("---")
-
+    sidebar_divider_compact()
 
 
 def render_logout_button():
+    """Logout button in sidebar (separate from pages list)."""
     if st.session_state.get("user") is None:
         return
 
+    sidebar_divider_compact()
     if st.sidebar.button("Logout", use_container_width=True):
         st.session_state["user"] = None
         st.switch_page("app.py")
