@@ -58,7 +58,6 @@ with st.spinner("Loading latest league workbook from Dropbox..."):
 fixtures = data.fixture_results.copy()
 fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
 
-
 # ----------------------------
 # Tabs
 # ----------------------------
@@ -84,7 +83,6 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
     required = [home_col, away_col, winner_col]
     missing = [c for c in required if c not in df.columns]
     if missing:
-        # Never raise; return empty table
         return pd.DataFrame(columns=["Pos", "Team", "Played", "Points"])
 
     if status_col:
@@ -131,13 +129,16 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
 with tab1:
     st.subheader("Fixtures & Results")
 
-    # Diagnostics: this will confirm which file/path is being read and which columns are in the TABLE
-    st.caption(f"Dropbox path configured: {dropbox_path}")
-    st.caption(f"Fixture_Results_Table columns detected: {list(fixtures.columns)}")
-
-    preferred_cols = ["MatchID", "Date", "Time", "Home Team", "Away Team", "Won By", "Status"]
+    preferred_cols = [
+        "MatchID",
+        "Date",
+        "Time",
+        "Home Team",
+        "Away Team",
+        "Won By",
+        "Status",
+    ]
     show_cols = [c for c in preferred_cols if c in fixtures.columns]
-
     st.dataframe(
         fixtures[show_cols] if show_cols else fixtures,
         width="stretch",
@@ -149,12 +150,9 @@ with tab1:
 
     if "Won By" not in fixtures.columns:
         st.warning(
-            "The downloaded workbook's Excel table `Fixture_Results_Table` does not include the `Won By` column.\n\n"
-            "This means `Won By` is currently OUTSIDE the table range in the Dropbox workbook copy.\n\n"
-            "Fix in Excel: click inside `Fixture_Results_Table` → Table Design → Resize Table → include `Won By` "
-            "in the table header row → Save → wait for Dropbox sync."
+            "League table cannot be calculated because the workbook does not include a `Won By` column "
+            "inside the Excel table `Fixture_Results_Table`."
         )
-        st.stop()
 
     table = compute_points_table(fixtures)
     if table.empty:
