@@ -14,13 +14,16 @@ from src.pages import (
 
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
+
 def ensure_session_state():
     if "user" not in st.session_state:
         st.session_state["user"] = None
 
+
 def logout():
     st.session_state["user"] = None
     st.rerun()
+
 
 def main():
     init_db()
@@ -28,13 +31,16 @@ def main():
 
     user = st.session_state["user"]
 
+    # -------------------------
+    # PRE-LOGIN ROUTES
+    # -------------------------
     if user is None:
-        # Pre-login simple navigation
         st.sidebar.title(APP_TITLE)
         nav = st.sidebar.radio("Menu", ["Welcome", "Login", "Sign up"])
 
         if nav == "Welcome":
             page_welcome()
+
         elif nav == "Login":
             data = page_login()
             if data["submitted"]:
@@ -45,6 +51,7 @@ def main():
                     st.rerun()
                 else:
                     st.error("Invalid username/password, or the account is disabled.")
+
         else:  # Sign up
             data = page_signup()
             if data["submitted"]:
@@ -67,27 +74,33 @@ def main():
 
         return
 
-    # Post-login navigation
+    # -------------------------
+    # POST-LOGIN ROUTES
+    # -------------------------
     st.sidebar.title(APP_TITLE)
     st.sidebar.write(f"Logged in as: **{user['first_name']} {user['last_name']}**")
     st.sidebar.write(f"Role: **{user['role']}**")
 
+    # Navigation (NO logout item here)
     menu_items = ["League", "Fantasy"]
-if user["role"] == "admin":
-    menu_items.append("Admin")
+    if user["role"] == "admin":
+        menu_items.append("Admin")
 
-nav = st.sidebar.radio("Menu", menu_items)
-st.sidebar.markdown("---")
-if st.sidebar.button("Logout"):
-    logout()
+    nav = st.sidebar.radio("Menu", menu_items)
 
+    # Separate logout button
+    st.sidebar.markdown("---")
+    if st.sidebar.button("Logout", use_container_width=True):
+        logout()
 
-if nav == "League":
-    page_league_placeholder()
-elif nav == "Fantasy":
-    page_fantasy_placeholder()
-elif nav == "Admin":
-    page_admin_placeholder()
+    # Page routing
+    if nav == "League":
+        page_league_placeholder()
+    elif nav == "Fantasy":
+        page_fantasy_placeholder()
+    elif nav == "Admin":
+        page_admin_placeholder()
+
 
 if __name__ == "__main__":
     main()
