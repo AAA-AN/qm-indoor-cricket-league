@@ -33,9 +33,6 @@ def _get_secret(name: str) -> str:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str):
-    """
-    Cached for 60 seconds to feel live without hammering Dropbox.
-    """
     access_token = get_access_token(app_key, app_secret, refresh_token)
     xbytes = download_file(access_token, dropbox_path)
     return load_league_workbook_from_bytes(xbytes)
@@ -61,6 +58,9 @@ with st.spinner("Loading latest league workbook from Dropbox..."):
 
 fixtures = data.fixture_results.copy()
 
+# Robustness: strip whitespace from all column names
+fixtures.columns = [str(c).strip() for c in fixtures.columns]
+
 # ----------------------------
 # Tabs
 # ----------------------------
@@ -72,10 +72,11 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
     Points rules:
       Win = 3, Tie = 1, Loss = 0, No Result/Abandoned = 0
 
-    Winner field contains:
+    Won By contains:
       - Home Team name OR Away Team name OR "Tied" OR "No Result"
     """
     df = fixtures_df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
 
     home_col = "Home Team"
     away_col = "Away Team"
@@ -84,7 +85,7 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
 
     missing = [c for c in [home_col, away_col, winner_col] if c not in df.columns]
     if missing:
-        raise ValueError(f"Fixtures table missing required columns: {missing}")
+        raise ValueError(f"Fixtures table missing required columns: {missing}. Columns found: {list(df.columns)}")
 
     if status_col:
         played_mask = df[status_col].astype(str).str.strip().isin(["Played", "Abandoned"])
