@@ -1,7 +1,3 @@
-import io
-import json
-import zipfile
-import requests
 import streamlit as st
 import pandas as pd
 
@@ -27,9 +23,6 @@ render_logout_button()
 st.title("QM Social League")
 
 
-# -----------------------------
-# Helpers
-# -----------------------------
 def _get_secret(name: str) -> str:
     val = st.secrets.get(name, "")
     if not val:
@@ -89,143 +82,7 @@ def _init_or_sanitize_multiselect_state_allow_empty(key: str, options: list[str]
     st.session_state[key] = [c for c in current if c in options]
 
 
-def _is_admin_user() -> bool:
-    """
-    Best-effort check. Your auth layer likely sets one of these.
-    """
-    if bool(st.session_state.get("is_admin", False)):
-        return True
-    role = str(st.session_state.get("role", "")).lower().strip()
-    return role in {"admin", "administrator"}
-
-
-# -----------------------------
-# Dropbox API helpers (upload + list + download)
-# -----------------------------
-DROPBOX_API = "https://api.dropboxapi.com/2"
-DROPBOX_CONTENT = "https://content.dropboxapi.com/2"
-
-
-def _dbx_rpc(access_token: str, endpoint: str, payload: dict) -> dict:
-    resp = requests.post(
-        f"{DROPBOX_API}{endpoint}",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        },
-        data=json.dumps(payload),
-        timeout=60,
-    )
-    if resp.status_code >= 400:
-        raise RuntimeError(f"Dropbox API error ({endpoint}): {resp.status_code} {resp.text}")
-    return resp.json()
-
-
-def _dbx_upload(access_token: str, path: str, content: bytes, overwrite: bool = True) -> dict:
-    mode = "overwrite" if overwrite else "add"
-    api_arg = {
-        "path": path,
-        "mode": mode,
-        "autorename": False,
-        "mute": True,
-        "strict_conflict": False,
-    }
-    resp = requests.post(
-        f"{DROPBOX_CONTENT}/files/upload",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/octet-stream",
-            "Dropbox-API-Arg": json.dumps(api_arg),
-        },
-        data=content,
-        timeout=120,
-    )
-    if resp.status_code >= 400:
-        raise RuntimeError(f"Dropbox upload error: {resp.status_code} {resp.text}")
-    return resp.json()
-
-
-def _dbx_download(access_token: str, path: str) -> bytes:
-    resp = requests.post(
-        f"{DROPBOX_CONTENT}/files/download",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Dropbox-API-Arg": json.dumps({"path": path}),
-        },
-        timeout=120,
-    )
-    if resp.status_code >= 400:
-        raise RuntimeError(f"Dropbox download error: {resp.status_code} {resp.text}")
-    return resp.content
-
-
-def _dbx_ensure_folder(access_token: str, folder_path: str) -> None:
-    # Create folder; ignore if it already exists
-    try:
-        _dbx_rpc(access_token, "/files/create_folder_v2", {"path": folder_path, "autorename": False})
-    except Exception as e:
-        msg = str(e)
-        # Dropbox returns a structured error; simplest is to tolerate "already exists"
-        if "conflict" in msg.lower() or "already exists" in msg.lower():
-            return
-        # Some responses include "path/conflict/folder"
-        if "path/conflict/folder" in msg.lower():
-            return
-        raise
-
-
-@st.cache_data(ttl=45, show_spinner=False)
-def _scorecard_index(access_token: str, root: str = "/Scorecards") -> dict:
-    """
-    Returns:
-      { match_id: {"pdf": bool, "zip": bool, "paths": {"pdf": "...", "zip": "..."}} }
-    """
-    index: dict[str, dict] = {}
-
-    # List root; if root missing, return empty index
-    try:
-        out = _dbx_rpc(access_token, "/files/list_folder", {"path": root, "recursive": True, "include_non_downloadable_files": False})
-    except Exception:
-        return {}
-
-    def _consume(entries: list[dict]):
-        for ent in entries:
-            if ent.get(".tag") != "file":
-                continue
-            path_lower = ent.get("path_lower", "")
-            if not path_lower.startswith(root.lower() + "/"):
-                continue
-            # Expect: /scorecards/<matchid>/<filename>
-            parts = path_lower.split("/")
-            if len(parts) < 4:
-                continue
-            match_id = parts[2]  # after "", "scorecards"
-            filename = parts[-1]
-            if not match_id:
-                continue
-            if match_id not in index:
-                index[match_id] = {"pdf": False, "zip": False, "paths": {}}
-
-            if filename == "scorecard.pdf":
-                index[match_id]["pdf"] = True
-                index[match_id]["paths"]["pdf"] = ent.get("path_display") or ent.get("path_lower")
-            if filename == "screenshots.zip":
-                index[match_id]["zip"] = True
-                index[match_id]["paths"]["zip"] = ent.get("path_display") or ent.get("path_lower")
-
-    _consume(out.get("entries", []))
-
-    # Pagination
-    while out.get("has_more"):
-        out = _dbx_rpc(access_token, "/files/list_folder/continue", {"cursor": out.get("cursor")})
-        _consume(out.get("entries", []))
-
-    return index
-
-
-# -----------------------------
-# Read secrets
-# -----------------------------
+# ---- Read secrets ----
 try:
     app_key = _get_secret("DROPBOX_APP_KEY")
     app_secret = _get_secret("DROPBOX_APP_SECRET")
@@ -233,13 +90,6 @@ try:
     dropbox_path = _get_secret("DROPBOX_FILE_PATH")
 except Exception as e:
     st.error(str(e))
-    st.stop()
-
-# We will reuse an access token for scorecard operations
-try:
-    _dbx_access_token = get_access_token(app_key, app_secret, refresh_token)
-except Exception as e:
-    st.error(f"Failed to obtain Dropbox access token: {e}")
     st.stop()
 
 # ---- Load workbook from Dropbox ----
@@ -252,7 +102,7 @@ with st.spinner("Loading latest league workbook from Dropbox..."):
 
 # ---- Fixtures ----
 fixtures = data.fixture_results.copy()
-fixtures.columns = [str(c).strip() for c in fixtures.columns]
+fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
 
 # ---- League table (pre-calculated in Excel) ----
 league_table_df = getattr(data, "league_table", None)
@@ -264,7 +114,7 @@ else:
 
 
 # ----------------------------
-# Tabs (Player Stats LAST)
+# Tabs
 # ----------------------------
 selected_tab = st.radio(
     label="",
@@ -280,15 +130,18 @@ st.markdown(
     /* =========================================================
        Stateful tabs built from st.radio (native Streamlit look)
        ========================================================= */
+
+    /* --- Radiogroup container (acts like tab bar) --- */
     div[role="radiogroup"] {
         display: flex !important;
         flex-direction: row !important;
         gap: 1.25rem !important;
-        border-bottom: none !important;
+        border-bottom: none !important;      /* no separator line */
         padding-bottom: 0 !important;
         margin-bottom: 1.25rem;
     }
 
+    /* --- Each tab label --- */
     div[role="radiogroup"] > label {
         display: inline-flex !important;
         align-items: center !important;
@@ -298,10 +151,13 @@ st.markdown(
         background: transparent !important;
         border: none !important;
         gap: 0 !important;
+
+        /* Underline support (prevents layout quirks) */
         border-bottom: 2px solid transparent !important;
         text-decoration: none !important;
     }
 
+    /* --- Hide radio controls ONLY (keep labels visible) --- */
     div[role="radiogroup"] > label > div:first-child,
     div[role="radiogroup"] > label > span:first-child {
         display: none !important;
@@ -325,18 +181,21 @@ st.markdown(
         pointer-events: none !important;
     }
 
+    /* --- Tab text container (Streamlit varies between div/span) --- */
     div[role="radiogroup"] > label > div,
     div[role="radiogroup"] > label > span {
         padding: 0 !important;
         font-weight: 500 !important;
-        color: rgba(49, 51, 63, 0.75) !important;
+        color: rgba(49, 51, 63, 0.75) !important;   /* unselected (light) */
     }
 
+    /* Hover (light mode) */
     div[role="radiogroup"] > label:hover > div,
     div[role="radiogroup"] > label:hover > span {
         color: rgba(49, 51, 63, 1) !important;
     }
 
+    /* Selected tab (light mode): underline + red text */
     div[role="radiogroup"] > label:has(input:checked) {
         border-bottom-color: rgba(255, 0, 0, 0.85) !important;
     }
@@ -344,20 +203,27 @@ st.markdown(
     div[role="radiogroup"] > label:has(input:checked) > div,
     div[role="radiogroup"] > label:has(input:checked) > span {
         font-weight: 600 !important;
-        color: rgba(255, 0, 0, 0.85) !important;
+        color: rgba(255, 0, 0, 0.85) !important;    /* selected red */
     }
 
+    /* =========================================================
+       Dark mode: unselected white, selected red, underline red
+       ========================================================= */
     @media (prefers-color-scheme: dark) {
+
+        /* Unselected */
         div[role="radiogroup"] > label > div,
         div[role="radiogroup"] > label > span {
             color: rgba(255, 255, 255, 0.90) !important;
         }
 
+        /* Hover */
         div[role="radiogroup"] > label:hover > div,
         div[role="radiogroup"] > label:hover > span {
             color: rgba(255, 255, 255, 1) !important;
         }
 
+        /* Selected */
         div[role="radiogroup"] > label:has(input:checked) {
             border-bottom-color: rgba(255, 0, 0, 0.90) !important;
         }
@@ -372,7 +238,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 # ============================
 # TAB 1: FIXTURES & RESULTS
 # ============================
@@ -386,210 +251,14 @@ if selected_tab == "Fixtures & Results":
     if "Time" in display.columns:
         display["Time"] = _format_time_ampm(display["Time"])
 
-    match_id_col = _find_col(display, ["MatchID", "Match Id", "Match ID"])
-    scorecard_root = "/Scorecards"
-
-    # Build scorecard availability index from Dropbox
-    sc_index = _scorecard_index(_dbx_access_token, root=scorecard_root)
-
-    # Add a Scorecard indicator column to the fixtures table (non-interactive but visible)
-    if match_id_col and match_id_col in display.columns:
-        def _sc_label(mid) -> str:
-            mid_s = str(mid).strip().lower()
-            meta = sc_index.get(mid_s, {})
-            has_pdf = bool(meta.get("pdf"))
-            has_zip = bool(meta.get("zip"))
-            if has_pdf and has_zip:
-                return "PDF + Screenshots"
-            if has_pdf:
-                return "PDF"
-            if has_zip:
-                return "Screenshots"
-            return ""
-
-        display["Scorecard"] = display[match_id_col].map(_sc_label)
-
     ordered_cols = ["Date", "Time", "Home Team", "Away Team", "Status", "Won By", "Home Score", "Away Score"]
-    # If MatchID exists, keep it (useful for support/admin). Also show Scorecard last.
     show_cols = [c for c in ordered_cols if c in display.columns]
-    if match_id_col and match_id_col in display.columns and match_id_col not in show_cols:
-        show_cols.append(match_id_col)
-    if "Scorecard" in display.columns:
-        show_cols.append("Scorecard")
 
     st.dataframe(
         display[show_cols] if show_cols else display,
         width="stretch",
         hide_index=True,
     )
-
-    # -----------------------------
-    # Download section (all users)
-    # -----------------------------
-    st.markdown("#### Scorecards")
-    if not match_id_col or match_id_col not in fixtures.columns:
-        st.info("Scorecard downloads require a MatchID column in the fixtures table.")
-    else:
-        available_match_ids = sorted(sc_index.keys())
-        if not available_match_ids:
-            st.caption("No scorecards uploaded yet.")
-        else:
-            # Map match id to a friendlier label
-            # Prefer: "Date Home vs Away" if those columns exist
-            fx_lookup = fixtures.copy()
-            fx_lookup.columns = [str(c).strip() for c in fx_lookup.columns]
-            fx_lookup[match_id_col] = fx_lookup[match_id_col].astype(str).str.strip()
-
-            date_col = _find_col(fx_lookup, ["Date"])
-            home_col = _find_col(fx_lookup, ["Home Team"])
-            away_col = _find_col(fx_lookup, ["Away Team"])
-
-            label_map: dict[str, str] = {}
-            for _, r in fx_lookup.iterrows():
-                mid = str(r.get(match_id_col, "")).strip().lower()
-                if not mid:
-                    continue
-                parts = []
-                if date_col and date_col in fx_lookup.columns:
-                    try:
-                        parts.append(_format_date_dd_mmm(pd.Series([r.get(date_col)])).iloc[0])
-                    except Exception:
-                        parts.append(str(r.get(date_col, "")).strip())
-                if home_col:
-                    parts.append(str(r.get(home_col, "")).strip())
-                if away_col:
-                    parts.append("vs " + str(r.get(away_col, "")).strip())
-                label = " ".join([p for p in parts if p])
-                if label:
-                    label_map[mid] = label
-
-            options = available_match_ids
-            display_options = [f"{label_map.get(mid, mid)}  ({mid})" for mid in options]
-            chosen_display = st.selectbox("Select a match to download", ["—"] + display_options, key="sc_download_pick")
-
-            if chosen_display != "—":
-                # Extract match id from "(mid)"
-                chosen_mid = chosen_display.split("(")[-1].rstrip(")").strip().lower()
-                meta = sc_index.get(chosen_mid, {})
-                paths = meta.get("paths", {})
-
-                c1, c2 = st.columns(2)
-
-                if meta.get("pdf") and paths.get("pdf"):
-                    try:
-                        pdf_bytes = _dbx_download(_dbx_access_token, paths["pdf"])
-                        with c1:
-                            st.download_button(
-                                "Download scorecard (PDF)",
-                                data=pdf_bytes,
-                                file_name=f"{chosen_mid}_scorecard.pdf",
-                                mime="application/pdf",
-                            )
-                    except Exception as e:
-                        with c1:
-                            st.error(f"Could not load PDF: {e}")
-
-                if meta.get("zip") and paths.get("zip"):
-                    try:
-                        zip_bytes = _dbx_download(_dbx_access_token, paths["zip"])
-                        with c2:
-                            st.download_button(
-                                "Download screenshots (ZIP)",
-                                data=zip_bytes,
-                                file_name=f"{chosen_mid}_screenshots.zip",
-                                mime="application/zip",
-                            )
-                    except Exception as e:
-                        with c2:
-                            st.error(f"Could not load screenshots ZIP: {e}")
-
-    # -----------------------------
-    # Upload section (admins only)
-    # -----------------------------
-    if _is_admin_user():
-        st.markdown("---")
-        st.markdown("#### Admin: Upload scorecards")
-
-        if not match_id_col or match_id_col not in fixtures.columns:
-            st.warning("Upload requires MatchID in fixtures.")
-        else:
-            fx = fixtures.copy()
-            fx.columns = [str(c).strip() for c in fx.columns]
-            fx[match_id_col] = fx[match_id_col].astype(str).str.strip()
-
-            # Prefer nice labels for admins too
-            date_col = _find_col(fx, ["Date"])
-            home_col = _find_col(fx, ["Home Team"])
-            away_col = _find_col(fx, ["Away Team"])
-
-            def _admin_label(row) -> str:
-                mid = str(row.get(match_id_col, "")).strip()
-                if not mid:
-                    return ""
-                parts = []
-                if date_col:
-                    try:
-                        parts.append(_format_date_dd_mmm(pd.Series([row.get(date_col)])).iloc[0])
-                    except Exception:
-                        parts.append(str(row.get(date_col, "")).strip())
-                if home_col:
-                    parts.append(str(row.get(home_col, "")).strip())
-                if away_col:
-                    parts.append("vs " + str(row.get(away_col, "")).strip())
-                label = " ".join([p for p in parts if p])
-                return f"{label}  ({mid})" if label else f"{mid}"
-
-            admin_opts = []
-            for _, r in fx.iterrows():
-                lab = _admin_label(r)
-                if lab:
-                    admin_opts.append(lab)
-
-            chosen_upload_display = st.selectbox("Match to attach files to", ["—"] + admin_opts, key="sc_upload_match")
-            uploaded = st.file_uploader(
-                "Upload a PDF scorecard and/or screenshots (PNG/JPG). Multiple files allowed.",
-                type=["pdf", "png", "jpg", "jpeg"],
-                accept_multiple_files=True,
-                key="sc_upload_files",
-            )
-
-            overwrite = st.checkbox("Overwrite existing scorecard files for this match", value=True, key="sc_overwrite")
-
-            if st.button("Upload files", type="primary", disabled=(chosen_upload_display == "—" or not uploaded)):
-                try:
-                    chosen_mid = chosen_upload_display.split("(")[-1].rstrip(")").strip()
-                    if not chosen_mid:
-                        raise RuntimeError("Invalid MatchID selection.")
-
-                    mid_folder = f"{scorecard_root}/{chosen_mid}"
-                    _dbx_ensure_folder(_dbx_access_token, scorecard_root)
-                    _dbx_ensure_folder(_dbx_access_token, mid_folder)
-
-                    pdf_files = [f for f in uploaded if str(f.name).lower().endswith(".pdf")]
-                    img_files = [f for f in uploaded if str(f.name).lower().endswith((".png", ".jpg", ".jpeg"))]
-
-                    # Upload PDF (if provided) as a canonical name
-                    if pdf_files:
-                        pdf = pdf_files[0]
-                        pdf_bytes = pdf.getvalue()
-                        _dbx_upload(_dbx_access_token, f"{mid_folder}/scorecard.pdf", pdf_bytes, overwrite=overwrite)
-
-                    # Upload images as a ZIP (if provided)
-                    if img_files:
-                        buf = io.BytesIO()
-                        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                            for f in img_files:
-                                # Keep original file name inside zip (sanitise minimal)
-                                fname = str(f.name).replace("\\", "/").split("/")[-1]
-                                zf.writestr(fname, f.getvalue())
-                        zip_bytes = buf.getvalue()
-                        _dbx_upload(_dbx_access_token, f"{mid_folder}/screenshots.zip", zip_bytes, overwrite=overwrite)
-
-                    # Refresh index cache so new uploads appear immediately
-                    st.cache_data.clear()
-                    st.success("Uploaded successfully.")
-                except Exception as e:
-                    st.error(f"Upload failed: {e}")
 
 
 # ============================
@@ -844,7 +513,7 @@ if selected_tab == "Teams":
         agg_map = {c: "sum" for c in sum_cols if c in league.columns}
         team_totals = league.groupby("Team", as_index=False).agg(agg_map) if agg_map else league[["Team"]].drop_duplicates()
 
-        # Derived metrics (use same names as player stats where possible)
+        # Derived metrics (same column names as player stats where possible)
         if "Runs Scored" in team_totals.columns and "Balls Faced" in team_totals.columns:
             rs = pd.to_numeric(team_totals["Runs Scored"], errors="coerce")
             bf = pd.to_numeric(team_totals["Balls Faced"], errors="coerce")
@@ -878,7 +547,7 @@ if selected_tab == "Teams":
             team_totals["Bowling Average"] = rc / wk
             team_totals.loc[(wk.isna()) | (wk <= 0), "Bowling Average"] = pd.NA
 
-        # Join Active only (Captain intentionally excluded from All Teams)
+        # Join Active + Captain (optional)
         teams_named = teams.rename(columns={team_name_col: "Team"}).copy()
         teams_named["Team"] = teams_named["Team"].astype(str).str.strip()
 
@@ -889,6 +558,7 @@ if selected_tab == "Teams":
         tmeta = teams_named[["Team"] + meta_cols].drop_duplicates() if meta_cols else teams_named[["Team"]].drop_duplicates()
         team_totals = team_totals.merge(tmeta, on="Team", how="left")
 
+        # ---- selectors (Batting / Bowling / Fielding) ----
         TEAM_BATTING_STATS = [
             "Runs Scored",
             "Balls Faced",
@@ -1055,6 +725,7 @@ if selected_tab == "Teams":
         if c in filtered_team.columns:
             filtered_team[c] = pd.to_numeric(filtered_team[c], errors="coerce")
 
+    # Selectors (Batting / Bowling / Fielding)
     BATTING_STATS = [
         "Runs Scored",
         "Balls Faced",
@@ -1143,6 +814,7 @@ if selected_tab == "Teams":
         if c in player_view.columns:
             col_config[c] = st.column_config.NumberColumn(format="%.2f")
 
+    # Do not pin Fantasy Points (ensures it stays far right)
     if "Fantasy Points" in player_view.columns:
         col_config["Fantasy Points"] = st.column_config.NumberColumn()
 
@@ -1155,6 +827,7 @@ if selected_tab == "Teams":
         column_config=col_config,
     )
 
+    # Totals table (same columns as player_view)
     st.markdown("#### Team Totals")
 
     base = filtered_team.copy()
@@ -1219,8 +892,6 @@ if selected_tab == "Teams":
         disabled=True,
         column_config=col_config,
     )
-
-
 # ============================
 # TAB 4: PLAYER STATS
 # ============================
@@ -1235,7 +906,9 @@ if selected_tab == "Player Stats":
     league = league_df.copy()
     league.columns = [str(c).strip() for c in league.columns]
 
+    # -----------------------------
     # Map TeamID -> Team Names via Teams_Table
+    # -----------------------------
     teams_df = getattr(data, "teams_table", None)
     if teams_df is None:
         teams_df = getattr(data, "teams", None)
@@ -1304,7 +977,27 @@ if selected_tab == "Player Stats":
             league[col] = pd.to_numeric(league[col], errors="coerce")
 
     # -----------------------------
+    # Filters (Team by name; Players optional and scoped by current team)
+    # -----------------------------
+    team_names = sorted([t for t in team_name_to_id.keys() if str(t).strip() != ""]) if team_name_to_id else []
+    team_dropdown_options = ["All"] + team_names
+
+    current_team_name = st.session_state.get("ps_team_name", "All")
+    current_team_id = team_name_to_id.get(current_team_name) if current_team_name != "All" else None
+
+    player_options_df = league
+    if current_team_id is not None and team_id_col_league and team_id_col_league in league.columns:
+        player_options_df = league[league[team_id_col_league].astype(str).str.strip() == str(current_team_id).strip()]
+
+    if name_col and name_col in league.columns:
+        player_options = player_options_df[name_col].dropna().astype(str).map(str.strip)
+        player_options = sorted([p for p in player_options.unique().tolist() if p != ""])
+    else:
+        player_options = []
+
+    # -----------------------------
     # Filters (no Apply button)
+    # Team by name; Players optional and scoped by current team
     # -----------------------------
     team_names = sorted([t for t in team_name_to_id.keys() if str(t).strip() != ""]) if team_name_to_id else []
     team_dropdown_options = ["All"] + team_names
@@ -1320,6 +1013,7 @@ if selected_tab == "Player Stats":
 
     selected_team_id = team_name_to_id.get(selected_team_name) if selected_team_name != "All" else None
 
+    # Build player options based on currently selected team
     player_options_df = league
     if selected_team_id is not None and team_id_col_league and team_id_col_league in league.columns:
         player_options_df = league[
@@ -1337,33 +1031,31 @@ if selected_tab == "Player Stats":
     else:
         player_options = []
 
-    # Drop invalid player selections when the team changes
+    # Drop any previously selected players that are no longer valid for this team
     current_players = st.session_state.get("ps_players", [])
     current_players = [p for p in current_players if p in player_options]
     st.session_state["ps_players"] = current_players
 
     with c1:
         selected_players = st.multiselect(
-            "Players – Leave blank for all players",
-            player_options,
-            key="ps_players",
-        )
+    "Players – Leave blank for all players",
+    player_options,
+    key="ps_players",
+    )
 
-    # Apply filters immediately
     filtered = league.copy()
 
     if selected_team_id is not None and team_id_col_league and team_id_col_league in filtered.columns:
-        filtered = filtered[
-            filtered[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()
-        ]
+        filtered = filtered[filtered[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()]
 
     if name_col and name_col in filtered.columns and selected_players:
         filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
 
     # -----------------------------
     # Stat selectors (Batting / Bowling / Fielding)
-    # Name fixed; Fantasy Points always last
-    # Defaults: Runs Scored, Batting Average, Wickets, Economy
+    # Name fixed; Fantasy Points always last column
+    # Defaults on first load: Runs Scored, Batting Average, Wickets, Economy
+    # Users can clear all stat selections.
     # -----------------------------
     BATTING_STATS = [
         "Runs Scored",
@@ -1422,12 +1114,14 @@ if selected_tab == "Player Stats":
 
     selected_columns = selected_batting + selected_bowling + selected_fielding
 
+    # Fixed columns (Name first)
     fixed_cols: list[str] = []
     if "Name" in filtered.columns:
         fixed_cols.append("Name")
     elif name_col and name_col in filtered.columns:
         fixed_cols.append(name_col)
 
+    # Assemble display columns (Fantasy Points appended last)
     display_cols: list[str] = []
     for c in fixed_cols:
         if c and c in filtered.columns and c not in display_cols:
@@ -1450,8 +1144,7 @@ if selected_tab == "Player Stats":
 
     def _col_config_for(df: pd.DataFrame) -> dict:
         config: dict = {}
-
-        # Pin Name only
+        # Pin Name only (Fantasy Points not pinned so it stays at the far right)
         if "Name" in df.columns:
             config["Name"] = st.column_config.TextColumn(pinned=True)
         elif name_col and name_col in df.columns:
@@ -1461,7 +1154,7 @@ if selected_tab == "Player Stats":
             if c in df.columns:
                 config[c] = st.column_config.NumberColumn(format="%.2f")
 
-        # Fantasy Points not pinned so it stays last
+        # Do not pin Fantasy Points (ensures it stays the last visible column)
         if "Fantasy Points" in df.columns:
             config["Fantasy Points"] = st.column_config.NumberColumn()
 
