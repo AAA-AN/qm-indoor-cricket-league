@@ -108,6 +108,38 @@ selected_tab = st.radio(
     label_visibility="collapsed",
 )
 
+st.markdown(
+    """
+    <style>
+      /* Turn radio group into tab-like navigation */
+      div[role="radiogroup"] {
+        gap: 0.25rem;
+      }
+
+      div[role="radiogroup"] > label {
+        border: 1px solid rgba(49, 51, 63, 0.2);
+        border-radius: 0.4rem 0.4rem 0 0;
+        padding: 0.45rem 0.9rem;
+        margin-right: 0.25rem;
+        background: rgba(250, 250, 252, 1);
+        cursor: pointer;
+      }
+
+      div[role="radiogroup"] > label:hover {
+        background: rgba(240, 242, 246, 1);
+      }
+
+      /* Selected tab */
+      div[role="radiogroup"] input:checked + div {
+        background: white;
+        border-bottom: 2px solid white;
+        font-weight: 600;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ============================
 # TAB 1: PLAYER STATS
 # ============================
