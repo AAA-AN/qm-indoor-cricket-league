@@ -89,6 +89,11 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
 
     # Optional tables
     league_table = None
+    players = None
+    teams = None
+    league_data = None
+
+    # League table (pre-calculated in Excel)
     try:
         league_table = _read_named_table(
             wb,
@@ -98,14 +103,6 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
         )
     except Exception:
         league_table = None
-
-
-        # Optional tables
-    league_table = None
-    players = None
-    teams = None
-    league_data = None
-
 
     try:
         players = _read_named_table(wb, sheet_name="Players", table_name="Player_Data", drop_empty_columns=True)
@@ -119,15 +116,10 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
 
     try:
         league_data = _read_named_table(
-            wb, sheet_name="League_Data", table_name="League_Data_Stats", drop_empty_columns=True)
+            wb, sheet_name="League_Data", table_name="League_Data_Stats", drop_empty_columns=True
+        )
     except Exception:
         league_data = None
-    
-    try:
-        league_data = _read_named_table(
-            wb, sheet_name="League_Table", table_name="League_Table", drop_empty_columns=True)
-    except Exception:
-        league_table = None
 
     return ExcelLoadResult(
         fixture_results=fixture_results,

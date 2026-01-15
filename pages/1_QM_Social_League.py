@@ -37,39 +37,6 @@ def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbo
     return load_league_workbook_from_bytes(xbytes)
 
 
-# ---- Read secrets ----
-try:
-    app_key = _get_secret("DROPBOX_APP_KEY")
-    app_secret = _get_secret("DROPBOX_APP_SECRET")
-    refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
-    dropbox_path = _get_secret("DROPBOX_FILE_PATH")
-except Exception as e:
-    st.error(str(e))
-    st.stop()
-
-# ---- Load workbook from Dropbox ----
-with st.spinner("Loading latest league workbook from Dropbox..."):
-    try:
-        data = _load_from_dropbox(app_key, app_secret, refresh_token, dropbox_path)
-    except Exception as e:
-        st.error(f"Failed to load workbook from Dropbox: {e}")
-        st.stop()
-
-fixtures = data.fixture_results.copy()
-fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
-
-# ---- League table (pre-calculated in Excel) ----
-# Source: table "League_Table" on sheet "Fixture_Results"
-league_table_df = getattr(data, "league_table", None)
-
-if league_table_df is not None and not league_table_df.empty:
-    league_table = league_table_df.copy()
-    league_table.columns = [str(c).strip() for c in league_table.columns]
-else:
-    league_table = pd.DataFrame()
-
-
-
 def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
     dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
     return dt.dt.strftime("%d-%b").fillna(series.astype(str))
@@ -99,8 +66,39 @@ def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
     return None
 
 
+# ---- Read secrets ----
+try:
+    app_key = _get_secret("DROPBOX_APP_KEY")
+    app_secret = _get_secret("DROPBOX_APP_SECRET")
+    refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
+    dropbox_path = _get_secret("DROPBOX_FILE_PATH")
+except Exception as e:
+    st.error(str(e))
+    st.stop()
+
+# ---- Load workbook from Dropbox ----
+with st.spinner("Loading latest league workbook from Dropbox..."):
+    try:
+        data = _load_from_dropbox(app_key, app_secret, refresh_token, dropbox_path)
+    except Exception as e:
+        st.error(f"Failed to load workbook from Dropbox: {e}")
+        st.stop()
+
+# ---- Fixtures ----
+fixtures = data.fixture_results.copy()
+fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
+
+# ---- League table (pre-calculated in Excel) ----
+league_table_df = getattr(data, "league_table", None)
+if league_table_df is not None and not league_table_df.empty:
+    league_table = league_table_df.copy()
+    league_table.columns = [str(c).strip() for c in league_table.columns]
+else:
+    league_table = pd.DataFrame()
+
+
 # ----------------------------
-# Tabs (Player Stats first)
+# Tabs
 # ----------------------------
 tab_stats, tab_fixtures, tab_table, tab_teams = st.tabs(
     ["Player Stats", "Fixtures & Results", "League Table", "Teams"]
@@ -139,19 +137,15 @@ with tab_stats:
         teams = teams_df.copy()
         teams.columns = [str(c).strip() for c in teams.columns]
 
-        # Your Teams_Table headers:
-        # TeamID | Team Names | Active | Captain's Name | Captain's PlayerID | Player 1..8
         team_id_col_teams = _find_col(teams, ["TeamID"])
         team_name_col_teams = _find_col(teams, ["Team Names"])
 
         if team_id_col_teams and team_name_col_teams:
             ttmp = teams[[team_id_col_teams, team_name_col_teams]].copy()
 
-            # Treat TeamID as string (important)
             ttmp[team_id_col_teams] = ttmp[team_id_col_teams].astype(str).str.strip()
             ttmp[team_name_col_teams] = ttmp[team_name_col_teams].astype(str).str.strip()
 
-            # Drop blanks and duplicates
             ttmp = ttmp[
                 (ttmp[team_id_col_teams] != "") &
                 (ttmp[team_name_col_teams] != "")
@@ -160,7 +154,7 @@ with tab_stats:
             team_id_to_name = dict(zip(ttmp[team_id_col_teams], ttmp[team_name_col_teams]))
             team_name_to_id = dict(zip(ttmp[team_name_col_teams], ttmp[team_id_col_teams]))
 
-    # Add a friendly Team name column to league (TeamID never shown in the UI)
+    # Team name helper column for filtering (TeamID never shown in UI)
     if team_id_col_league and team_id_col_league in league.columns and team_id_to_name:
         league[team_id_col_league] = league[team_id_col_league].astype(str).str.strip()
         league["Team"] = league[team_id_col_league].map(team_id_to_name)
@@ -205,7 +199,6 @@ with tab_stats:
     team_names = sorted([t for t in team_name_to_id.keys() if str(t).strip() != ""]) if team_name_to_id else []
     team_dropdown_options = ["All"] + team_names
 
-    # Use last-selected team to scope the player list (so player selection is team-aware)
     current_team_name = st.session_state.get("ps_team_name", "All")
     current_team_id = team_name_to_id.get(current_team_name) if current_team_name != "All" else None
 
@@ -252,18 +245,16 @@ with tab_stats:
 
     filtered = league.copy()
 
-    # Filter by TeamID internally based on the Team name selection
     if selected_team_id is not None and team_id_col_league and team_id_col_league in filtered.columns:
         filtered = filtered[
             filtered[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()
         ]
 
-    # If players chosen, further restrict; if blank, show whole team (or everyone if Team=All)
     if name_col and name_col in filtered.columns and selected_players:
         filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
 
     # -----------------------------
-    # Three selectors + single table (no "Key Stats" table)
+    # Stat selectors + single table
     # Defaults match old Key Stats:
     # Name, Runs Scored, Batting Average, Wickets, Economy, Fantasy Points
     # -----------------------------
@@ -300,22 +291,18 @@ with tab_stats:
         "Stumpings",
     ]
 
-    # Keep only columns that exist
     batting_options = [c for c in BATTING_STATS if c in filtered.columns]
     bowling_options = [c for c in BOWLING_STATS if c in filtered.columns]
     fielding_options = [c for c in FIELDING_STATS if c in filtered.columns]
 
-    # Defaults = old Key Stats (where they live)
     default_batting = [c for c in ["Runs Scored", "Batting Average"] if c in batting_options]
     default_bowling = [c for c in ["Wickets", "Economy"] if c in bowling_options]
-    default_fielding: list[str] = []  # old key stats had no fielding columns by default
+    default_fielding: list[str] = []
 
-        # Reset invalid prior selections if the available options change (e.g. team filter changes)
     def _init_or_sanitize_multiselect_state(key: str, options: list[str], defaults: list[str]) -> None:
         if key not in st.session_state:
             st.session_state[key] = defaults
             return
-
         current = st.session_state.get(key, [])
         current = [c for c in current if c in options]
         st.session_state[key] = current if current else defaults
@@ -348,10 +335,8 @@ with tab_stats:
             key="ps_fielding_cols",
         )
 
-
     selected_columns = selected_batting + selected_bowling + selected_fielding
 
-    # Always keep Name first and Fantasy Points included by default (to match old Key Stats)
     display_cols = ["Name"]
     for c in selected_columns:
         if c not in display_cols:
@@ -360,20 +345,16 @@ with tab_stats:
     if "Fantasy Points" in filtered.columns and "Fantasy Points" not in display_cols:
         display_cols.append("Fantasy Points")
 
-    # Build view
     view = filtered[display_cols] if all(c in filtered.columns for c in display_cols) else filtered
 
-    # Default sort by Fantasy Points (users can still click to sort)
     if "Fantasy Points" in view.columns:
         try:
             view = view.sort_values(by="Fantasy Points", ascending=False)
         except Exception:
             pass
 
-    # Column config: pin Name, 2dp formatting for specified metrics
     def _col_config_for(df: pd.DataFrame) -> dict:
         config: dict = {}
-
         if "Name" in df.columns:
             config["Name"] = st.column_config.TextColumn(pinned=True)
 
@@ -386,7 +367,6 @@ with tab_stats:
         ]:
             if c in df.columns:
                 config[c] = st.column_config.NumberColumn(format="%.2f")
-
         return config
 
     st.data_editor(
@@ -401,7 +381,6 @@ with tab_stats:
 # ============================
 # TAB 2: FIXTURES & RESULTS
 # ============================
-
 with tab_fixtures:
     st.subheader("Fixtures & Results")
 
@@ -421,6 +400,7 @@ with tab_fixtures:
         hide_index=True,
     )
 
+
 # ============================
 # TAB 3: LEAGUE TABLE
 # ============================
@@ -429,15 +409,14 @@ with tab_table:
 
     if league_table is None or league_table.empty:
         st.info(
-            "League table not available yet. "
-            "Confirm the Excel table is named 'League_Table' on sheet 'Fixture_Results'."
+            "League table not available yet. Confirm the Excel table is named 'League_Table' "
+            "on sheet 'Fixture_Results' and that it contains at least one data row."
         )
     else:
-        # Coerce numeric columns so sorting works as expected
+        # Make sorting behave sensibly
         for c in league_table.columns:
             league_table[c] = pd.to_numeric(league_table[c], errors="ignore")
 
-        # Keep a position column left-most if present
         pos_col = _find_col(league_table, ["Pos", "Position", "#"])
         if pos_col and pos_col in league_table.columns:
             league_table = league_table[[pos_col] + [c for c in league_table.columns if c != pos_col]]
@@ -452,7 +431,6 @@ with tab_table:
 # ============================
 # TAB 4: TEAMS
 # ============================
-
 with tab_teams:
     st.subheader("Teams")
     st.info("Teams page will be built next (rosters + team totals).")
