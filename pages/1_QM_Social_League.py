@@ -948,10 +948,12 @@ if selected_tab == "Teams":
         st.caption("Select a team above to view team details.")
         st.stop()
 
-    # ---------------------------------------------------------
+# ---------------------------------------------------------
 # SINGLE TEAM VIEW (stat selectors + totals row in same table)
 # NO player filter, NO sort UI, NO sorting
 # ---------------------------------------------------------
+team_name_col = _find_col(teams, ["Team Names", "Team Name"])
+
 team_row = teams.loc[teams[team_name_col] == team_choice]
 if team_row.empty:
     st.info("Selected team not found in Teams_Table.")
