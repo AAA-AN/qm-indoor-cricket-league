@@ -198,13 +198,13 @@ st.markdown(
          /* Unselected (dark mode) – higher contrast, still subordinate */
         div[role="radiogroup"] > label > div,
         div[role="radiogroup"] > label > span {
-            color: rgba(255, 255, 255, 0.88) !important;
+            color: rgba(255, 255, 255, 2) !important;
         }
 
         /* Hover */
         div[role="radiogroup"] > label:hover > div,
         div[role="radiogroup"] > label:hover > span {
-            color: rgba(255, 255, 255, 1) !important;
+            color: rgba(255, 255, 255, 3) !important;
         }
 
         /* Selected */
