@@ -426,29 +426,95 @@ with tab_table:
         ]
         lt = lt.drop(columns=[c for c in cols_to_hide if c in lt.columns], errors="ignore")
 
-        # Add Position as the first column (fixed to the current displayed order)
+        # Add Position as the first column (fixed to current displayed order)
         lt.insert(0, "Position", range(1, len(lt) + 1))
 
-        # Format NRR to 2dp (as text to preserve formatting)
+        # Format NRR to 2dp (render as text to lock formatting)
         if "NRR" in lt.columns:
             nrr = pd.to_numeric(lt["NRR"], errors="coerce")
             lt["NRR"] = nrr.map(lambda x: f"{x:.2f}" if pd.notna(x) else "")
 
-        # Render as a static HTML table to prevent user sorting
-        # (st.dataframe / st.data_editor allow interactive sorting via header clicks)
-        html = lt.to_html(index=False, escape=False)
+        # Build HTML table (non-interactive; prevents user sorting)
+        html_table = lt.to_html(index=False, escape=True)
 
         st.markdown(
             """
             <style>
-              table { width: 100%; border-collapse: collapse; }
-              th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #e6e6e6; text-align: left; }
-              th { position: sticky; top: 0; background: #ffffff; }
+              /* Container styled to resemble Streamlit's dataframe */
+              .lt-wrap {
+                width: 100%;
+                border: 1px solid rgba(49, 51, 63, 0.2);
+                border-radius: 0.5rem;
+                overflow: hidden;
+                background: white;
+              }
+
+              /* Horizontal scroll like st.dataframe when needed */
+              .lt-scroll {
+                width: 100%;
+                overflow-x: auto;
+              }
+
+              /* Table base */
+              .lt-wrap table {
+                width: 100%;
+                border-collapse: separate;
+                border-spacing: 0;
+                font-size: 0.95rem;
+              }
+
+              /* Header */
+              .lt-wrap thead th {
+                position: sticky;
+                top: 0;
+                z-index: 2;
+                background: rgba(250, 250, 252, 1);
+                color: rgba(49, 51, 63, 0.9);
+                text-align: left;
+                font-weight: 600;
+                padding: 0.65rem 0.75rem;
+                border-bottom: 1px solid rgba(49, 51, 63, 0.15);
+                white-space: nowrap;
+              }
+
+              /* Cells */
+              .lt-wrap tbody td {
+                padding: 0.6rem 0.75rem;
+                border-bottom: 1px solid rgba(49, 51, 63, 0.08);
+                color: rgba(49, 51, 63, 0.95);
+                white-space: nowrap;
+              }
+
+              /* Zebra striping */
+              .lt-wrap tbody tr:nth-child(even) td {
+                background: rgba(250, 250, 252, 1);
+              }
+
+              /* Hover similar to Streamlit row hover */
+              .lt-wrap tbody tr:hover td {
+                background: rgba(240, 242, 246, 1);
+              }
+
+              /* Remove pandas default border if present */
+              .lt-wrap table, .lt-wrap th, .lt-wrap td {
+                border-left: none !important;
+                border-right: none !important;
+              }
             </style>
             """,
             unsafe_allow_html=True,
         )
-        st.markdown(html, unsafe_allow_html=True)
+
+        st.markdown(
+            f"""
+            <div class="lt-wrap">
+              <div class="lt-scroll">
+                {html_table}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # ============================
 # TAB 4: TEAMS
