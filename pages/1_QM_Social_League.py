@@ -100,14 +100,18 @@ else:
 # ----------------------------
 # Tabs
 # ----------------------------
-tab_stats, tab_fixtures, tab_table, tab_teams = st.tabs(
-    ["Player Stats", "Fixtures & Results", "League Table", "Teams"]
+selected_tab = st.radio(
+    label="",
+    options=["Player Stats", "Fixtures & Results", "League Table", "Teams"],
+    horizontal=True,
+    key="main_tab",
+    label_visibility="collapsed",
 )
 
 # ============================
 # TAB 1: PLAYER STATS
 # ============================
-with tab_stats:
+if selected_tab == "Player Stats":
     st.subheader("Player Stats")
 
     league_df = data.league_data
@@ -381,7 +385,7 @@ with tab_stats:
 # ============================
 # TAB 2: FIXTURES & RESULTS
 # ============================
-with tab_fixtures:
+if selected_tab == "Fixtures & Results":
     st.subheader("Fixtures & Results")
 
     display = fixtures.copy()
@@ -404,7 +408,7 @@ with tab_fixtures:
 # ============================
 # TAB 3: LEAGUE TABLE
 # ============================
-with tab_table:
+if selected_tab == "League Table":
     st.subheader("League Table")
 
     if league_table is None or league_table.empty:
@@ -557,7 +561,7 @@ with tab_table:
 # ============================
 # TAB 4: TEAMS
 # ============================
-with tab_teams:
+if selected_tab == "Teams":
     st.subheader("Teams")
 
     teams_df = getattr(data, "teams", None)
