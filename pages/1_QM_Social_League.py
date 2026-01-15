@@ -111,66 +111,60 @@ selected_tab = st.radio(
 st.markdown(
     """
     <style>
-    /* ===== Streamlit radio -> native tabs styling ===== */
+    /* =========================================================
+       Stateful tabs built from st.radio (native Streamlit look)
+       ========================================================= */
 
-    /* Layout like native tabs */
-        /* Radiogroup styled as native tabs (no separator line) */
+    /* --- Radiogroup container (acts like tab bar) --- */
     div[role="radiogroup"] {
         display: flex !important;
         flex-direction: row !important;
         gap: 1.25rem !important;
-        border-bottom: none !important;   /* remove separator line */
+        border-bottom: none !important;      /* no separator line */
         padding-bottom: 0 !important;
         margin-bottom: 1.25rem;
     }
 
-    /* Each tab label */
+    /* --- Each tab label --- */
     div[role="radiogroup"] > label {
+        display: flex !important;
+        align-items: center !important;
         margin: 0 !important;
-        padding: 0.35rem 0 !important;
+        padding: 0.45rem 0 !important;
         cursor: pointer !important;
-        border: none !important;
         background: transparent !important;
+        border: none !important;
+        gap: 0 !important;
     }
 
-    /* Text inside tab */
+    /* --- Tab text --- */
     div[role="radiogroup"] > label > div {
         padding: 0 !important;
         font-weight: 500;
         color: rgba(49, 51, 63, 0.75);
     }
 
-    /* Hover like native tabs */
+    /* --- Hover (light mode) --- */
     div[role="radiogroup"] > label:hover > div {
         color: rgba(49, 51, 63, 1);
     }
 
-    /* Selected tab underline */
-    /* Selected tab underline – pixel-matched to Streamlit native tabs */
+    /* --- Selected tab underline + text (light mode) --- */
     div[role="radiogroup"] > label:has(input:checked) {
-        border-bottom: 2px solid rgb(49, 51, 63); /* exact native colour */
-        padding-bottom: 0.45rem;                 /* native vertical spacing */
+        border-bottom: 2px solid rgb(49, 51, 63);
+        padding-bottom: 0.45rem;
     }
 
-    /* Selected tab text */
     div[role="radiogroup"] > label:has(input:checked) > div {
         font-weight: 600;
         color: rgba(49, 51, 63, 1);
     }
 
-    /* ===== Hide radio controls ONLY (robust: hide the control container, keep text) ===== */
+    /* =========================================================
+       Hide radio controls ONLY (keep labels visible)
+       ========================================================= */
 
-    /* BaseWeb/Streamlit typically renders: label -> [control container] + [text container]
-       Hide the FIRST child container (control), keep the remaining content (text). */
-    div[role="radiogroup"] > label {
-        display: flex !important;
-        align-items: center !important;
-        padding-left: 0 !important;
-        margin-left: 0 !important;
-        column-gap: 0 !important;
-        gap: 0 !important;
-    }
-
+    /* Hide BaseWeb radio control container */
     div[role="radiogroup"] > label > div:first-child,
     div[role="radiogroup"] > label > span:first-child {
         display: none !important;
@@ -180,14 +174,14 @@ st.markdown(
         padding: 0 !important;
     }
 
-    /* Hide any remaining SVG circles inside labels (but do not touch text) */
+    /* Hide any SVG circles */
     div[role="radiogroup"] > label svg {
         display: none !important;
         width: 0 !important;
         height: 0 !important;
     }
 
-    /* Keep the input for state, but make it invisible/non-interactive */
+    /* Keep radio input for state, but invisible */
     div[role="radiogroup"] input[type="radio"] {
         position: absolute !important;
         opacity: 0 !important;
@@ -196,6 +190,27 @@ st.markdown(
         pointer-events: none !important;
     }
 
+    /* =========================================================
+       Dark mode support
+       ========================================================= */
+    @media (prefers-color-scheme: dark) {
+
+        div[role="radiogroup"] > label > div {
+            color: rgba(255, 255, 255, 0.70);
+        }
+
+        div[role="radiogroup"] > label:hover > div {
+            color: rgba(255, 255, 255, 0.92);
+        }
+
+        div[role="radiogroup"] > label:has(input:checked) > div {
+            color: rgba(255, 255, 255, 0.95);
+        }
+
+        div[role="radiogroup"] > label:has(input:checked) {
+            border-bottom: 2px solid rgba(255, 255, 255, 0.85);
+        }
+    }
     </style>
     """,
     unsafe_allow_html=True,
