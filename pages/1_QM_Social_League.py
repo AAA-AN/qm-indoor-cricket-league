@@ -385,11 +385,11 @@ if selected_tab == "Player Stats":
 
     with c1:
         selected_players = st.multiselect(
-            "Players (optional)",
-            player_options,
-            key="ps_players",
-        )
-        
+    "Players – Leave blank for all players",
+    player_options,
+    key="ps_players",
+    )
+
     filtered = league.copy()
 
     if selected_team_id is not None and team_id_col_league and team_id_col_league in filtered.columns:
