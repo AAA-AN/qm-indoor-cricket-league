@@ -306,15 +306,16 @@ with tab_stats:
         filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
 
     # -----------------------------
-    # Main + Expanded table columns (Team shown; TeamID not shown)
+    # Main + Expanded table columns
     # -----------------------------
     main_cols = [
-    "Name",
-    "Runs Scored",
-    "Batting Average",
-    "Wickets",
-    "Economy",
-    "Fantasy Points",]
+        "Name",
+        "Runs Scored",
+        "Batting Average",
+        "Wickets",
+        "Economy",
+        "Fantasy Points",
+    ]
 
     desired_cols = [
         "Name",
@@ -363,7 +364,49 @@ with tab_stats:
         except Exception:
             pass
 
-    # Column config: pin Name + Team, 2dp formatting for specified metrics
+    # -----------------------------
+    # NEW: Replace "Show all stats" expander with 3 dropdown selectors
+    # -----------------------------
+    BATTING_STATS = [
+        "Runs Scored",
+        "Balls Faced",
+        "6s",
+        "Retirements",
+        "Batting Strike Rate",
+        "Batting Average",
+        "Highest Score",
+        "Innings Played",
+        "Not Out's",
+    ]
+
+    BOWLING_STATS = [
+        "Sum of Overs",
+        "Overs",
+        "Balls Bowled",
+        "Maidens",
+        "Runs Conceded",
+        "Wickets",
+        "Wides",
+        "No Balls",
+        "Economy",
+        "Bowling Strike Rate",
+        "Bowling Average",
+        "Best Figures",
+    ]
+
+    FIELDING_STATS = [
+        "Catches",
+        "Run Outs",
+        "Stumpings",
+    ]
+
+    # Keep only columns that exist in the dataframe
+    batting_options = [c for c in BATTING_STATS if c in full_view.columns]
+    bowling_options = [c for c in BOWLING_STATS if c in full_view.columns]
+    fielding_options = [c for c in FIELDING_STATS if c in full_view.columns]
+
+    st.markdown("#### Key Stats")
+    # Column config: pin Name, 2dp formatting for specified metrics
     def _col_config_for(df: pd.DataFrame) -> dict:
         config: dict = {}
 
@@ -382,7 +425,6 @@ with tab_stats:
 
         return config
 
-    st.markdown("#### Key Stats")
     st.data_editor(
         main_view,
         width="stretch",
@@ -391,14 +433,60 @@ with tab_stats:
         column_config=_col_config_for(main_view),
     )
 
-    with st.expander("Show all stats"):
-        st.data_editor(
-            full_view,
-            width="stretch",
-            hide_index=True,
-            disabled=True,
-            column_config=_col_config_for(full_view),
+    st.markdown("#### Detailed Stats")
+
+    d1, d2, d3 = st.columns(3)
+
+    with d1:
+        selected_batting = st.multiselect(
+            "Batting Stats",
+            options=batting_options,
+            default=batting_options,
+            key="ps_batting_cols",
         )
+
+    with d2:
+        selected_bowling = st.multiselect(
+            "Bowling Stats",
+            options=bowling_options,
+            default=bowling_options,
+            key="ps_bowling_cols",
+        )
+
+    with d3:
+        selected_fielding = st.multiselect(
+            "Fielding Stats",
+            options=fielding_options,
+            default=fielding_options,
+            key="ps_fielding_cols",
+        )
+
+    selected_columns = selected_batting + selected_bowling + selected_fielding
+
+    # Always keep Name first (and Fantasy Points last if present)
+    detail_cols = ["Name"]
+    for c in selected_columns:
+        if c not in detail_cols:
+            detail_cols.append(c)
+    if "Fantasy Points" in full_view.columns and "Fantasy Points" not in detail_cols:
+        detail_cols.append("Fantasy Points")
+
+    detail_view = full_view[detail_cols] if all(c in full_view.columns for c in detail_cols) else full_view
+
+    # Default sort by Fantasy Points for detailed view as well
+    if "Fantasy Points" in detail_view.columns:
+        try:
+            detail_view = detail_view.sort_values(by="Fantasy Points", ascending=False)
+        except Exception:
+            pass
+
+    st.data_editor(
+        detail_view,
+        width="stretch",
+        hide_index=True,
+        disabled=True,
+        column_config=_col_config_for(detail_view),
+    )
 
 
 # ============================
