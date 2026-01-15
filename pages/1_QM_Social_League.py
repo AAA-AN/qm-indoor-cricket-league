@@ -113,13 +113,14 @@ st.markdown(
     <style>
       /* Make the radio look like Streamlit native tabs (and hide the radio circles) */
 
-      /* Hide the actual radio inputs (circles) */
-      div[role="radiogroup"] input[type="radio"]{
-        position: absolute !important;
-        opacity: 0 !important;
+        /* Completely hide radio controls (input + SVG circle) */
+      div[role="radiogroup"] input[type="radio"],
+      div[role="radiogroup"] svg,
+      div[role="radiogroup"] span[data-baseweb="radio"] {
+        display: none !important;
+        visibility: hidden !important;
         width: 0 !important;
         height: 0 !important;
-        pointer-events: none !important;
       }
 
       /* Layout similar to tabs: horizontal, small gap, no boxy borders */
