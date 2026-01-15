@@ -441,7 +441,7 @@ with tab_table:
             """
             <style>
               /* Container styled to resemble Streamlit's dataframe */
-              .lt-wrap {
+                .lt-wrap {
                 width: 100%;
                 border: 1px solid rgba(49, 51, 63, 0.15);
                 border-radius: 0.5rem;
@@ -450,14 +450,14 @@ with tab_table:
               }
 
               /* Horizontal scroll like st.dataframe when needed */
-              .lt-scroll {
+                .lt-scroll {
                 width: 100%;
                 overflow-x: auto;
                 overflow-y: hidden;
               }
 
               /* Table base */
-              .lt-wrap table {
+                .lt-wrap table {
                 width: 100%;
                 border-collapse: separate;
                 border-spacing: 0;
@@ -467,7 +467,7 @@ with tab_table:
               }
 
               /* Header */
-              .lt-wrap thead th {
+                .lt-wrap thead th {
                 position: sticky;
                 top: 0;
                 z-index: 2;
@@ -480,8 +480,8 @@ with tab_table:
                 white-space: nowrap;
               }
 
-                            /* Cells */
-              .lt-wrap tbody td {
+                /* Cells */
+                .lt-wrap tbody td {
                 padding: 0.6rem 0.75rem;
                 border-bottom: 1px solid rgba(49, 51, 63, 0.08);
                 color: rgba(49, 51, 63, 0.95);
@@ -489,18 +489,18 @@ with tab_table:
               }
 
               /* Centre-align numeric columns (all except Team) */
-              .lt-wrap tbody td:not(:nth-child(2)),
-              .lt-wrap thead th:not(:nth-child(2)) {
+                .lt-wrap tbody td:not(:nth-child(2)),
+                .lt-wrap thead th:not(:nth-child(2)) {
                 text-align: center;
               }
 
               /* Medal colouring for top 3 positions */
-              .lt-wrap tbody tr:nth-child(1) td {
+                .lt-wrap tbody tr:nth-child(1) td {
                 background: rgba(255, 215, 0, 0.08); /* gold */
               }
 
-              .lt-wrap tbody tr:nth-child(2) td {
-                background: rgba(192, 192, 192, 0.10); /* silver */
+                .lt-wrap tbody tr:nth-child(2) td {
+                background: rgba(192, 192, 192, 0.22); /* clearer silver */
               }
 
               .lt-wrap tbody tr:nth-child(3) td {
@@ -508,30 +508,31 @@ with tab_table:
               }
 
               /* Remove bottom border from final row */
-              .lt-wrap tbody tr:last-child td {
+                .lt-wrap tbody tr:last-child td {
                 border-bottom: none !important;
               }
 
                 /* Medal colouring for top 3 positions only */
-              .lt-wrap tbody tr:nth-child(1) td {
+                .lt-wrap tbody tr:nth-child(1) td {
                 background: rgba(255, 215, 0, 0.08); /* gold */
               }
 
-              .lt-wrap tbody tr:nth-child(2) td {
-                background: rgba(192, 192, 192, 0.10); /* silver */
+                .lt-wrap tbody tr:nth-child(2) td {
+                background: rgba(192, 192, 192, 0.22); /* clearer silver */
               }
 
-              .lt-wrap tbody tr:nth-child(3) td {
+
+                .lt-wrap tbody tr:nth-child(3) td {
                 background: rgba(205, 127, 50, 0.10); /* bronze */
               }
 
               /* Hover similar to Streamlit row hover (no persistent colour for rows 4+) */
-              .lt-wrap tbody tr:hover td {
+                .lt-wrap tbody tr:hover td {
                 background: rgba(240, 242, 246, 1);
               }
               
               /* Remove pandas default borders */
-              .lt-wrap table, .lt-wrap th, .lt-wrap td {
+                .lt-wrap table, .lt-wrap th, .lt-wrap td {
                 border-left: none !important;
                 border-right: none !important;
               }
