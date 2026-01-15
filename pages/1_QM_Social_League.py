@@ -65,17 +65,13 @@ def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
 
 
 def _format_time_ampm(series: pd.Series) -> pd.Series:
-    # Handles Excel times, "7:00 pm" strings, etc.
     t = pd.to_datetime(series.astype(str), errors="coerce")
-    # If parse failed, try adding a dummy date (helps some time-only formats)
     t2 = pd.to_datetime("2000-01-01 " + series.astype(str), errors="coerce")
     out = t.fillna(t2)
-    # Format like "7 PM" (no minutes). If minutes exist and are not :00, show "7:30 PM".
+
     formatted = out.dt.strftime("%-I %p")
-    # Windows/compat fallback if %-I is unsupported (rare on Linux cloud)
     formatted = formatted.where(formatted.notna(), out.dt.strftime("%I %p").str.lstrip("0"))
 
-    # If any times have minutes not equal to 00, show minutes for those rows
     mins = out.dt.minute
     with_mins = out.dt.strftime("%-I:%M %p")
     with_mins = with_mins.where(with_mins.notna(), out.dt.strftime("%I:%M %p").str.lstrip("0"))
@@ -139,6 +135,14 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
     return pts
 
 
+def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    cols = list(df.columns)
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
+
+
 # ----------------------------
 # Tabs
 # ----------------------------
@@ -166,12 +170,6 @@ with tab1:
     st.markdown("---")
     st.subheader("League Table")
 
-    if "Won By" not in fixtures.columns:
-        st.warning(
-            "League table cannot be calculated because the workbook does not include a `Won By` column "
-            "inside the Excel table `Fixture_Results_Table`."
-        )
-
     table = compute_points_table(fixtures)
     if table.empty:
         st.info("No completed matches found yet.")
@@ -181,9 +179,86 @@ with tab1:
 
 with tab2:
     st.subheader("Teams")
-    st.info("Next: display each team roster and team totals from Teams_Table + Player_Data + League_Data_Stats.")
+    st.info("Teams page will be built next (rosters + team totals).")
 
 
 with tab3:
     st.subheader("Player Stats")
-    st.info("Next: show League_Data_Stats with search/filter and player profiles.")
+
+    league_df = data.league_data
+    if league_df is None or league_df.empty:
+        st.info("No player stats found yet (League_Data_Stats table not loaded).")
+        st.stop()
+
+    league = league_df.copy()
+    league.columns = [str(c).strip() for c in league.columns]
+
+    # Filters
+    name_col = _find_col(league, ["Name"])
+    team_col = _find_col(league, ["Team", "TeamName", "Team Name"])
+
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        q = st.text_input("Search players", placeholder="Type a player name...").strip().lower()
+    with c2:
+        if team_col:
+            teams = sorted([t for t in league[team_col].dropna().astype(str).unique().tolist() if t.strip() != ""])
+            team_choice = st.selectbox("Team", ["All"] + teams)
+        else:
+            team_choice = "All"
+
+    filtered = league.copy()
+
+    if team_col and team_choice != "All":
+        filtered = filtered[filtered[team_col].astype(str) == team_choice]
+
+    if q and name_col and name_col in filtered.columns:
+        filtered = filtered[filtered[name_col].astype(str).str.lower().str.contains(q, na=False)]
+    elif q:
+        # Fallback: search all columns if Name isn't available for some reason
+        mask = False
+        for c in filtered.columns:
+            mask = mask | filtered[c].astype(str).str.lower().str.contains(q, na=False)
+        filtered = filtered[mask]
+
+    # Only show requested columns, in the exact order provided
+    desired_cols = [
+        "Name",
+        "Runs Scored",
+        "Balls Faced",
+        "6s",
+        "Retirements",
+        "Batting Strike Rate",
+        "Batting Average",
+        "Best Score",
+        "Innings Played",
+        "Not Out's",
+        "Sum of Overs",
+        "Overs",
+        "Balls Bowled",
+        "Maidens",
+        "Runs Conceded",
+        "Wickets",
+        "Wides",
+        "No Balls",
+        "Economy",
+        "Bowling Strike Rate",
+        "Bowling Average",
+        "Best Figures",
+        "Catches",
+        "Run Outs",
+        "Stumpings",
+        "Fantasy Points",
+    ]
+
+    show_cols = [c for c in desired_cols if c in filtered.columns]
+    filtered_view = filtered[show_cols] if show_cols else filtered
+
+    # Optional: sort by Fantasy Points if present
+    if "Fantasy Points" in filtered_view.columns:
+        try:
+            filtered_view = filtered_view.sort_values(by="Fantasy Points", ascending=False)
+        except Exception:
+            pass
+
+    st.dataframe(filtered_view, width="stretch", hide_index=True)
