@@ -190,32 +190,89 @@ st.markdown(
         color: rgba(255, 0, 0, 0.85) !important;    /* selected red */
     }
 
-    /* =========================================================
-       Dark mode: unselected white, selected red, underline red
-       ========================================================= */
-    @media (prefers-color-scheme: dark) {
+   /* =========================================================
+   Dark mode (robust): works with BOTH
+   - Streamlit theme override: html[data-theme="dark"]
+   - System setting: prefers-color-scheme: dark
+   ========================================================= */
 
-        /* Unselected */
-        div[role="radiogroup"] > label > div,
-        div[role="radiogroup"] > label > span {
-            color: rgba(255, 255, 255, 0.90) !important;
-        }
+/* -------- Streamlit theme is explicitly dark -------- */
+html[data-theme="dark"] div[role="radiogroup"] > label {
+    opacity: 1 !important;                  /* prevent dimming */
+}
 
-        /* Hover */
-        div[role="radiogroup"] > label:hover > div,
-        div[role="radiogroup"] > label:hover > span {
-            color: rgba(255, 255, 255, 1) !important;
-        }
+html[data-theme="dark"] div[role="radiogroup"] > label * {
+    opacity: 1 !important;                  /* prevent dimming on children */
+    filter: none !important;
+}
 
-        /* Selected */
-        div[role="radiogroup"] > label:has(input:checked) {
-            border-bottom-color: rgba(255, 0, 0, 0.90) !important;
-        }
+/* Unselected */
+html[data-theme="dark"] div[role="radiogroup"] > label > div,
+html[data-theme="dark"] div[role="radiogroup"] > label > span {
+    color: rgba(255, 255, 255, 0.95) !important;
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.95) !important;
+    font-weight: 700 !important;
+}
 
-        div[role="radiogroup"] > label:has(input:checked) > div,
-        div[role="radiogroup"] > label:has(input:checked) > span {
-            color: rgba(255, 0, 0, 0.90) !important;
-        }
+/* Hover */
+html[data-theme="dark"] div[role="radiogroup"] > label:hover > div,
+html[data-theme="dark"] div[role="radiogroup"] > label:hover > span {
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF !important;
+}
+
+/* Selected underline */
+html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) {
+    border-bottom-color: rgba(255, 0, 0, 0.90) !important;
+}
+
+/* Selected text */
+html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) > div,
+html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) > span {
+    color: rgba(255, 0, 0, 0.90) !important;
+    -webkit-text-fill-color: rgba(255, 0, 0, 0.90) !important;
+    font-weight: 800 !important;
+}
+
+
+/* -------- System preference is dark (fallback / also works) -------- */
+@media (prefers-color-scheme: dark) {
+
+    div[role="radiogroup"] > label {
+        opacity: 1 !important;
+    }
+
+    div[role="radiogroup"] > label * {
+        opacity: 1 !important;
+        filter: none !important;
+    }
+
+    /* Unselected */
+    div[role="radiogroup"] > label > div,
+    div[role="radiogroup"] > label > span {
+        color: rgba(255, 255, 255, 0.95) !important;
+        -webkit-text-fill-color: rgba(255, 255, 255, 0.95) !important;
+        font-weight: 700 !important;
+    }
+
+    /* Hover */
+    div[role="radiogroup"] > label:hover > div,
+    div[role="radiogroup"] > label:hover > span {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+    }
+
+    /* Selected */
+    div[role="radiogroup"] > label:has(input:checked) {
+        border-bottom-color: rgba(255, 0, 0, 0.90) !important;
+    }
+
+    div[role="radiogroup"] > label:has(input:checked) > div,
+    div[role="radiogroup"] > label:has(input:checked) > span {
+        color: rgba(255, 0, 0, 0.90) !important;
+        -webkit-text-fill-color: rgba(255, 0, 0, 0.90) !important;
+        font-weight: 800 !important;
+    
     }
     </style>
     """,
