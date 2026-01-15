@@ -943,24 +943,12 @@ if selected_tab == "Teams":
             if c in view.columns:
                 col_config[c] = st.column_config.NumberColumn(format="%.2f")
 
-        # --- Style: bold + divider for Team Totals row (last row) ---
-        def _bold_totals_row(row):
-            is_totals = str(row.get(name_key, "")).strip().lower() == "team totals"
-            if is_totals:
-                return ["font-weight: 700; border-top: 2px solid rgba(49, 51, 63, 0.25);"] * len(row)
-            return [""] * len(row)
-
-        styler = view.style.apply(_bold_totals_row, axis=1)
-
-        # 2dp formatting for rate stats (same as before)
-        for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
-            if c in view.columns:
-                styler = styler.format({c: "{:.2f}"})
-
-        st.dataframe(
-            styler,
+        st.data_editor(
+            view,
             width="stretch",
             hide_index=True,
+            disabled=True,
+            column_config=col_config,
         )
 
         st.markdown("---")
@@ -1220,23 +1208,6 @@ if selected_tab == "Teams":
             col_config[c] = st.column_config.NumberColumn(format="%.2f")
 
     st.markdown("#### Player Stats (Team)")
-    st.markdown(
-    """
-    <style>
-    /* Emphasise Team Totals row (last row) in st.data_editor (React grid) */
-    div[data-testid="stDataEditor"] div[role="rowgroup"] > div[role="row"]:last-child > div[role="gridcell"] {
-        font-weight: 700 !important;
-        border-top: 2px solid rgba(49, 51, 63, 0.25) !important;
-    }
-
-    /* Some Streamlit builds wrap cell text in additional spans/divs */
-    div[data-testid="stDataEditor"] div[role="rowgroup"] > div[role="row"]:last-child > div[role="gridcell"] * {
-        font-weight: 700 !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
     st.data_editor(
         view,
         width="stretch",
