@@ -77,24 +77,20 @@ def hide_admin_page_for_non_admins():
         )
 
 
-def render_sidebar_header():
+ddef render_sidebar_header():
     """
-    Shows a single divider (between nav items and user block),
-    then the user's name and (admin role only).
+    User block under the built-in sidebar nav.
+    Do NOT add a divider here because Streamlit already shows one under the nav list.
     """
     user = st.session_state.get("user")
     if not user:
         return
-
-    # Keep ONE divider between pages list and user block
-    sidebar_divider_compact()
 
     name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
     st.sidebar.markdown(f"### {name}")
 
     if user.get("role") == "admin":
         st.sidebar.caption("Admin")
-
 
 def render_logout_button():
     """Logout button directly under user block (no extra divider)."""
