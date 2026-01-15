@@ -165,14 +165,15 @@ st.markdown(
         pointer-events: none !important;
     }
 
-    /* --- Tab text (light mode, flat, no shadow) --- */
-    div[role="radiogroup"] > label > div,
-    div[role="radiogroup"] > label > span {
+    /* --- Tab text (LIGHT MODE ONLY: force black, flat) --- */
+    html:not([data-theme="dark"]) div[role="radiogroup"] > label > div,
+    html:not([data-theme="dark"]) div[role="radiogroup"] > label > span {
         padding: 0 !important;
         font-weight: 500 !important;
-        color: rgb(0, 0, 0) !important;   /* solid black */
+        color: rgb(49, 51, 63) !important;   /* solid black */
         text-shadow: none !important;
         filter: none !important;
+        opacity: 1 !important;
     }
 
     /* Hover (light mode) */
