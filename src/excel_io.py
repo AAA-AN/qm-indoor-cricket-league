@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 @dataclass(frozen=True)
 class ExcelLoadResult:
     fixture_results: pd.DataFrame
+    league_table: Optional[pd.DataFrame] = None
     players: Optional[pd.DataFrame] = None
     teams: Optional[pd.DataFrame] = None
     league_data: Optional[pd.DataFrame] = None
@@ -87,9 +88,24 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     )
 
     # Optional tables
+    league_table = None
+    try:
+        league_table = _read_named_table(
+            wb,
+            sheet_name="Fixture_Results",
+            table_name="League_Table",
+            drop_empty_columns=True,
+        )
+    except Exception:
+        league_table = None
+
+
+        # Optional tables
+    league_table = None
     players = None
     teams = None
     league_data = None
+
 
     try:
         players = _read_named_table(wb, sheet_name="Players", table_name="Player_Data", drop_empty_columns=True)
@@ -103,13 +119,19 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
 
     try:
         league_data = _read_named_table(
-            wb, sheet_name="League_Data", table_name="League_Data_Stats", drop_empty_columns=True
-        )
+            wb, sheet_name="League_Data", table_name="League_Data_Stats", drop_empty_columns=True)
     except Exception:
         league_data = None
+    
+    try:
+        league_data = _read_named_table(
+            wb, sheet_name="League_Table", table_name="League_Table", drop_empty_columns=True)
+    except Exception:
+        league_table = None
 
     return ExcelLoadResult(
         fixture_results=fixture_results,
+        league_table=league_table,
         players=players,
         teams=teams,
         league_data=league_data,
