@@ -437,13 +437,13 @@ with tab_table:
         # Build HTML table (non-interactive; prevents user sorting)
         html_table = lt.to_html(index=False, escape=True)
 
-        st.markdown(
+                st.markdown(
             """
             <style>
               /* Container styled to resemble Streamlit's dataframe */
               .lt-wrap {
                 width: 100%;
-                border: 1px solid rgba(49, 51, 63, 0.2);
+                border: 1px solid rgba(49, 51, 63, 0.15);
                 border-radius: 0.5rem;
                 overflow: hidden;
                 background: white;
@@ -453,6 +453,7 @@ with tab_table:
               .lt-scroll {
                 width: 100%;
                 overflow-x: auto;
+                overflow-y: hidden;
               }
 
               /* Table base */
@@ -461,6 +462,8 @@ with tab_table:
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 0.95rem;
+                border-top: none !important;
+                border-bottom: none !important;
               }
 
               /* Header */
@@ -485,6 +488,11 @@ with tab_table:
                 white-space: nowrap;
               }
 
+              /* Remove bottom border from final row (prevents harsh black line) */
+              .lt-wrap tbody tr:last-child td {
+                border-bottom: none !important;
+              }
+
               /* Zebra striping */
               .lt-wrap tbody tr:nth-child(even) td {
                 background: rgba(250, 250, 252, 1);
@@ -495,7 +503,7 @@ with tab_table:
                 background: rgba(240, 242, 246, 1);
               }
 
-              /* Remove pandas default border if present */
+              /* Remove pandas default borders */
               .lt-wrap table, .lt-wrap th, .lt-wrap td {
                 border-left: none !important;
                 border-right: none !important;
