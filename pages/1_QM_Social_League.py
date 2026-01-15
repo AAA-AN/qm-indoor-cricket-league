@@ -309,18 +309,15 @@ with tab_stats:
     # Main + Expanded table columns (Team shown; TeamID not shown)
     # -----------------------------
     main_cols = [
-        "Name",
-        "Team",
-        "Runs Scored",
-        "Batting Average",
-        "Wickets",
-        "Economy",
-        "Fantasy Points",
-    ]
+    "Name",
+    "Runs Scored",
+    "Batting Average",
+    "Wickets",
+    "Economy",
+    "Fantasy Points",]
 
     desired_cols = [
         "Name",
-        "Team",
         "Runs Scored",
         "Balls Faced",
         "6s",
@@ -372,8 +369,6 @@ with tab_stats:
 
         if "Name" in df.columns:
             config["Name"] = st.column_config.TextColumn(pinned=True)
-        if "Team" in df.columns:
-            config["Team"] = st.column_config.TextColumn(pinned=True)
 
         for c in [
             "Batting Strike Rate",
