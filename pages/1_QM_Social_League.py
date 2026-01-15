@@ -170,7 +170,7 @@ st.markdown(
     div[role="radiogroup"] > label > span {
         padding: 0 !important;
         font-weight: 500 !important;
-        color: rgb(49, 51, 63) !important;   /* solid black */
+        color: rgb(0, 0, 0) !important;   /* solid black */
         text-shadow: none !important;
         filter: none !important;
     }
@@ -178,7 +178,7 @@ st.markdown(
     /* Hover (light mode) */
     div[role="radiogroup"] > label:hover > div,
     div[role="radiogroup"] > label:hover > span {
-        color: rgba(49, 51, 63, 1) !important;
+        color: rgba(0, 0, 0, 1) !important;
     }
 
     /* Selected tab (light mode): underline + red text */
