@@ -413,20 +413,42 @@ with tab_table:
             "on sheet 'Fixture_Results' and that it contains at least one data row."
         )
     else:
-        # Make sorting behave sensibly
-        for c in league_table.columns:
-            league_table[c] = pd.to_numeric(league_table[c], errors="ignore")
+        lt = league_table.copy()
 
-        pos_col = _find_col(league_table, ["Pos", "Position", "#"])
-        if pos_col and pos_col in league_table.columns:
-            league_table = league_table[[pos_col] + [c for c in league_table.columns if c != pos_col]]
+        # Hide requested columns (if present)
+        cols_to_hide = [
+            "Runs Scored",
+            "Runs Conceeded",
+            "Wickets Taken",
+            "Wickets Lost",
+            "Overs Faced",
+            "Overs Bowled",
+        ]
+        lt = lt.drop(columns=[c for c in cols_to_hide if c in lt.columns], errors="ignore")
 
-        st.dataframe(
-            league_table,
-            width="stretch",
-            hide_index=True,
+        # Add Position as the first column (fixed to the current displayed order)
+        lt.insert(0, "Position", range(1, len(lt) + 1))
+
+        # Format NRR to 2dp (as text to preserve formatting)
+        if "NRR" in lt.columns:
+            nrr = pd.to_numeric(lt["NRR"], errors="coerce")
+            lt["NRR"] = nrr.map(lambda x: f"{x:.2f}" if pd.notna(x) else "")
+
+        # Render as a static HTML table to prevent user sorting
+        # (st.dataframe / st.data_editor allow interactive sorting via header clicks)
+        html = lt.to_html(index=False, escape=False)
+
+        st.markdown(
+            """
+            <style>
+              table { width: 100%; border-collapse: collapse; }
+              th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #e6e6e6; text-align: left; }
+              th { position: sticky; top: 0; background: #ffffff; }
+            </style>
+            """,
+            unsafe_allow_html=True,
         )
-
+        st.markdown(html, unsafe_allow_html=True)
 
 # ============================
 # TAB 4: TEAMS
