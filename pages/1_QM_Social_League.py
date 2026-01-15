@@ -58,6 +58,24 @@ with st.spinner("Loading latest league workbook from Dropbox..."):
 fixtures = data.fixture_results.copy()
 fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
 
+# ---- League table (pre-calculated in Excel) ----
+# Expected source: table "League_Table" on sheet "Fixture_Results"
+# We try several attribute names for robustness, depending on how src.excel_io exposes tables.
+league_table_df = getattr(data, "league_table", None)
+if league_table_df is None:
+    league_table_df = getattr(data, "league_table_df", None)
+if league_table_df is None:
+    league_table_df = getattr(data, "League_Table", None)
+if league_table_df is None:
+    league_table_df = getattr(data, "league_table_data", None)
+
+if league_table_df is not None and not league_table_df.empty:
+    league_table = league_table_df.copy()
+    league_table.columns = [str(c).strip() for c in league_table.columns]
+else:
+    league_table = pd.DataFrame()
+
+
 
 def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
     dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
@@ -415,7 +433,26 @@ with tab_fixtures:
 # ============================
 with tab_table:
     st.subheader("League Table")
-    st.info("League table in development.")
+
+    if league_table is None or league_table.empty:
+        st.info("League_Table not found / empty. Ensure the Excel table is named 'League_Table' on sheet 'Fixture_Results' and that src.excel_io exposes it.")
+    else:
+        # Light cleanup: coerce obvious numeric columns so sorting behaves correctly
+        for c in league_table.columns:
+            # try numeric conversion where it looks numeric; harmless if it isn't
+            league_table[c] = pd.to_numeric(league_table[c], errors="ignore")
+
+        # If a position column exists, keep it left-most
+        pos_col = _find_col(league_table, ["Pos", "Position", "#"])
+        if pos_col and pos_col in league_table.columns:
+            cols = [pos_col] + [c for c in league_table.columns if c != pos_col]
+            league_table = league_table[cols]
+
+        st.dataframe(
+            league_table,
+            width="stretch",
+            hide_index=True,
+        )
 
 # ============================
 # TAB 4: TEAMS
