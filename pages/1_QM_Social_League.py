@@ -465,6 +465,8 @@ with tab_table:
                 font-size: 0.95rem;
                 border-top: none !important;
                 border-bottom: none !important;
+                margin: 0 !important;           /* remove extra white space below table */
+                padding: 0 !important;
               }
 
               /* Header */
