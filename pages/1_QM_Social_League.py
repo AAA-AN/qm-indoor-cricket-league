@@ -1130,74 +1130,6 @@ if selected_tab == "Teams":
         except Exception:
             pass
 
-    # -----------------------------
-    # Append TEAM TOTALS as last row in the same table
-    # Totals are for the full team (not affected by any UI filtering)
-    # -----------------------------
-    totals_row: dict = {}
-
-    name_key = "Name" if "Name" in view.columns else (name_col if name_col in view.columns else None)
-    if name_key:
-        totals_row[name_key] = "Team Totals"
-
-    base = filtered_team.copy()
-
-    def _sum(col: str) -> float | None:
-        if col not in base.columns:
-            return None
-        s = pd.to_numeric(base[col], errors="coerce").fillna(0).sum()
-        return float(s)
-
-    # Straight sums (only write totals into columns actually being displayed)
-    for col in [
-        "Runs Scored", "Balls Faced", "6s", "Retirements",
-        "Innings Played", "Not Out's",
-        "Total Overs", "Overs", "Balls Bowled", "Maidens", "Runs Conceded", "Wickets", "Wides", "No Balls",
-        "Catches", "Run Outs", "Stumpings", "Fantasy Points",
-    ]:
-        val = _sum(col)
-        if val is not None and col in view.columns:
-            totals_row[col] = val
-
-    # Derived team batting SR (runs/balls * 100)
-    if "Batting Strike Rate" in view.columns:
-        rs = _sum("Runs Scored") or 0.0
-        bf = _sum("Balls Faced") or 0.0
-        totals_row["Batting Strike Rate"] = (rs / bf) * 100 if bf > 0 else pd.NA
-
-    # Derived team batting average (runs / outs), if inputs exist
-    if "Batting Average" in view.columns:
-        rs = _sum("Runs Scored") or 0.0
-        inn = _sum("Innings Played")
-        no = _sum("Not Out's")
-        if inn is not None and no is not None:
-            outs = inn - no
-            outs = outs if outs > 0 else 1.0
-            totals_row["Batting Average"] = rs / outs
-        else:
-            totals_row["Batting Average"] = pd.NA
-
-    # Derived team economy (runs conceded / overs)
-    if "Economy" in view.columns:
-        rc = _sum("Runs Conceded") or 0.0
-        ov = _sum("Overs") or 0.0
-        totals_row["Economy"] = (rc / ov) if ov > 0 else pd.NA
-
-    # Derived bowling strike rate (balls / wickets)
-    if "Bowling Strike Rate" in view.columns:
-        bb = _sum("Balls Bowled") or 0.0
-        wk = _sum("Wickets") or 0.0
-        totals_row["Bowling Strike Rate"] = (bb / wk) if wk > 0 else pd.NA
-
-    # Derived bowling average (runs conceded / wickets)
-    if "Bowling Average" in view.columns:
-        rc = _sum("Runs Conceded") or 0.0
-        wk = _sum("Wickets") or 0.0
-        totals_row["Bowling Average"] = (rc / wk) if wk > 0 else pd.NA
-
-    totals_df = pd.DataFrame([{c: totals_row.get(c, pd.NA) for c in view.columns}])
-    view = pd.concat([view, totals_df], ignore_index=True)
-
     # Formatting for rate stats (2dp)
     col_config: dict = {}
     if name_key and name_key in view.columns:
@@ -1215,3 +1147,83 @@ if selected_tab == "Teams":
         disabled=True,
         column_config=col_config,
     )
+    # -----------------------------
+# Team Totals table (uses SAME selected columns)
+# -----------------------------
+st.markdown("#### Team Totals")
+
+base = filtered_team.copy()
+
+def _sum(col: str) -> float | None:
+    if col not in base.columns:
+        return None
+    s = pd.to_numeric(base[col], errors="coerce").fillna(0).sum()
+    return float(s)
+
+totals_row: dict = {}
+
+# Put a label in the Name column (if present in the displayed view)
+name_key = "Name" if "Name" in view.columns else (name_col if name_col in view.columns else None)
+if name_key:
+    totals_row[name_key] = "Team Totals"
+
+# Straight sums (only populate columns the user is currently displaying)
+for col in [
+    "Runs Scored", "Balls Faced", "6s", "Retirements",
+    "Innings Played", "Not Out's",
+    "Total Overs", "Overs", "Balls Bowled", "Maidens", "Runs Conceded", "Wickets", "Wides", "No Balls",
+    "Catches", "Run Outs", "Stumpings", "Fantasy Points",
+]:
+    val = _sum(col)
+    if val is not None and col in view.columns:
+        totals_row[col] = val
+
+# Derived team batting SR (runs/balls * 100)
+if "Batting Strike Rate" in view.columns:
+    rs = _sum("Runs Scored") or 0.0
+    bf = _sum("Balls Faced") or 0.0
+    totals_row["Batting Strike Rate"] = (rs / bf) * 100 if bf > 0 else pd.NA
+
+# Derived team batting average (runs / outs)
+if "Batting Average" in view.columns:
+    rs = _sum("Runs Scored") or 0.0
+    inn = _sum("Innings Played")
+    no = _sum("Not Out's")
+    if inn is not None and no is not None:
+        outs = inn - no
+        outs = outs if outs > 0 else 1.0
+        totals_row["Batting Average"] = rs / outs
+    else:
+        totals_row["Batting Average"] = pd.NA
+
+# Derived team economy (runs conceded / overs)
+if "Economy" in view.columns:
+    rc = _sum("Runs Conceded") or 0.0
+    ov = _sum("Overs") or 0.0
+    totals_row["Economy"] = (rc / ov) if ov > 0 else pd.NA
+
+# Derived bowling strike rate (balls / wickets)
+if "Bowling Strike Rate" in view.columns:
+    bb = _sum("Balls Bowled") or 0.0
+    wk = _sum("Wickets") or 0.0
+    totals_row["Bowling Strike Rate"] = (bb / wk) if wk > 0 else pd.NA
+
+# Derived bowling average (runs conceded / wickets)
+if "Bowling Average" in view.columns:
+    rc = _sum("Runs Conceded") or 0.0
+    wk = _sum("Wickets") or 0.0
+    totals_row["Bowling Average"] = (rc / wk) if wk > 0 else pd.NA
+
+# Build totals df with EXACT same columns and order as the player table
+totals_df = pd.DataFrame([{c: totals_row.get(c, pd.NA) for c in view.columns}])
+
+# Reuse the same column config (so 2dp formatting is consistent)
+totals_col_config = col_config
+
+st.data_editor(
+    totals_df,
+    width="stretch",
+    hide_index=True,
+    disabled=True,
+    column_config=totals_col_config,
+)
