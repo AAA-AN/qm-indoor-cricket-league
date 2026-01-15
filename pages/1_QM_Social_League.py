@@ -165,12 +165,14 @@ st.markdown(
         pointer-events: none !important;
     }
 
-    /* --- Tab text container (Streamlit varies between div/span) --- */
+    /* --- Tab text (light mode, flat, no shadow) --- */
     div[role="radiogroup"] > label > div,
     div[role="radiogroup"] > label > span {
         padding: 0 !important;
         font-weight: 500 !important;
-        color: rgba(49, 51, 63, 0.75) !important;   /* unselected (light) */
+        color: rgb(49, 51, 63) !important;   /* solid black */
+        text-shadow: none !important;
+        filter: none !important;
     }
 
     /* Hover (light mode) */
