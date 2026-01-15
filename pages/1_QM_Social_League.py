@@ -191,30 +191,46 @@ st.markdown(
     }
 
     /* =========================================================
-       Dark mode: unselected white, selected red, underline red
-       ========================================================= */
+   Dark mode: make unselected tabs clearly visible
+   ========================================================= */
+    html[data-theme="dark"] div[role="radiogroup"] {
+    border-bottom: none !important;
+    }
 
+    /* Force unselected to be bright white (override Streamlit dimming) */
+    html[data-theme="dark"] div[role="radiogroup"] > label {
+    opacity: 1 !important;
+    }
+
+    html[data-theme="dark"] div[role="radiogroup"] > label * {
+    opacity: 1 !important;
+    filter: none !important;
+    }
+
+    /* Unselected tab text (white) */
     html[data-theme="dark"] div[role="radiogroup"] > label > div,
     html[data-theme="dark"] div[role="radiogroup"] > label > span {
-        color: #FFFFFF !important;                  /* unselected = white */
-        font-weight: 650 !important;
-        opacity: 1 !important;
-        text-shadow: none !important;
-    }
+    color: #FFFFFF !important;
+    font-weight: 700 !important;      /* slightly heavier for readability */
+    text-shadow: none !important;
+    }   
 
+    /* Hover (stay white) */
     html[data-theme="dark"] div[role="radiogroup"] > label:hover > div,
     html[data-theme="dark"] div[role="radiogroup"] > label:hover > span {
-        color: #FFFFFF !important;                  /* keep white on hover */
+    color: #FFFFFF !important;
     }
 
+    /* Selected tab underline */
     html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) {
-        border-bottom-color: rgba(255, 0, 0, 0.90) !important;
+    border-bottom-color: rgba(255, 0, 0, 0.95) !important;
     }
 
+    /* Selected tab text (red) */
     html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) > div,
     html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) > span {
-        color: rgba(255, 0, 0, 0.90) !important;
-        font-weight: 700 !important;
+    color: rgba(255, 0, 0, 0.95) !important;
+    font-weight: 800 !important;
     }
 
     </style>
