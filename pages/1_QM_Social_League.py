@@ -146,8 +146,9 @@ def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
 # ----------------------------
 # Tabs (Player Stats first)
 # ----------------------------
-tab_stats, tab_fixtures, tab_teams = st.tabs(["Player Stats", "Fixtures & Results", "Teams"])
-
+tab_stats, tab_fixtures, tab_table, tab_teams = st.tabs(
+    ["Player Stats", "Fixtures & Results", "League Table", "Teams"]
+)
 
 # ============================
 # TAB 1: PLAYER STATS
@@ -464,19 +465,26 @@ with tab_fixtures:
         hide_index=True,
     )
 
-    st.markdown("---")
+# ============================
+# TAB 3: LEAGUE TABLE
+# ============================
+with tab_table:
     st.subheader("League Table")
 
     table = compute_points_table(fixtures)
     if table.empty:
         st.info("No completed matches found yet.")
     else:
-        st.dataframe(table, width="stretch", hide_index=True)
-
+        st.dataframe(
+            table,
+            width="stretch",
+            hide_index=True,
+        )
 
 # ============================
-# TAB 3: TEAMS
+# TAB 4: TEAMS
 # ============================
+
 with tab_teams:
     st.subheader("Teams")
     st.info("Teams page will be built next (rosters + team totals).")
