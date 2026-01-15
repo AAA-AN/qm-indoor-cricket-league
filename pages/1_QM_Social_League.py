@@ -130,14 +130,13 @@ with tab1:
     st.subheader("Fixtures & Results")
 
     preferred_cols = [
+        "MatchID",
         "Date",
         "Time",
         "Home Team",
         "Away Team",
-        "Status",
         "Won By",
-        "Home Score",
-        "Away Score"
+        "Status",
     ]
     show_cols = [c for c in preferred_cols if c in fixtures.columns]
     st.dataframe(
@@ -147,7 +146,7 @@ with tab1:
     )
 
     st.markdown("---")
-    st.subheader("League Table")
+    st.subheader("League Table (Win 3, Tie 1, Loss 0, Abandoned 0)")
 
     if "Won By" not in fixtures.columns:
         st.warning(
