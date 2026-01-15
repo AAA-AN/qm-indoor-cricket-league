@@ -58,20 +58,33 @@ with st.spinner("Loading latest league workbook from Dropbox..."):
 fixtures = data.fixture_results.copy()
 fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
 
-# ----------------------------
-# Tabs
-# ----------------------------
-tab1, tab2, tab3 = st.tabs(["Fixtures & Results", "Teams", "Player Stats"])
+
+def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
+    dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
+    return dt.dt.strftime("%d-%b").fillna(series.astype(str))
+
+
+def _format_time_ampm(series: pd.Series) -> pd.Series:
+    # Handles Excel times, "7:00 pm" strings, etc.
+    t = pd.to_datetime(series.astype(str), errors="coerce")
+    # If parse failed, try adding a dummy date (helps some time-only formats)
+    t2 = pd.to_datetime("2000-01-01 " + series.astype(str), errors="coerce")
+    out = t.fillna(t2)
+    # Format like "7 PM" (no minutes). If minutes exist and are not :00, show "7:30 PM".
+    formatted = out.dt.strftime("%-I %p")
+    # Windows/compat fallback if %-I is unsupported (rare on Linux cloud)
+    formatted = formatted.where(formatted.notna(), out.dt.strftime("%I %p").str.lstrip("0"))
+
+    # If any times have minutes not equal to 00, show minutes for those rows
+    mins = out.dt.minute
+    with_mins = out.dt.strftime("%-I:%M %p")
+    with_mins = with_mins.where(with_mins.notna(), out.dt.strftime("%I:%M %p").str.lstrip("0"))
+
+    formatted = formatted.where((mins == 0) | (mins.isna()), with_mins)
+    return formatted.fillna(series.astype(str))
 
 
 def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Points rules:
-      Win = 3, Tie = 1, Loss = 0, No Result/Abandoned = 0
-
-    Won By contains:
-      - Home Team name OR Away Team name OR "Tied" OR "No Result"
-    """
     df = fixtures_df.copy()
     df.columns = [str(c).strip() for c in df.columns]
 
@@ -126,27 +139,32 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
     return pts
 
 
+# ----------------------------
+# Tabs
+# ----------------------------
+tab1, tab2, tab3 = st.tabs(["Fixtures & Results", "Teams", "Player Stats"])
+
 with tab1:
     st.subheader("Fixtures & Results")
 
-    preferred_cols = [
-        "MatchID",
-        "Date",
-        "Time",
-        "Home Team",
-        "Away Team",
-        "Won By",
-        "Status",
-    ]
-    show_cols = [c for c in preferred_cols if c in fixtures.columns]
+    display = fixtures.copy()
+
+    if "Date" in display.columns:
+        display["Date"] = _format_date_dd_mmm(display["Date"])
+    if "Time" in display.columns:
+        display["Time"] = _format_time_ampm(display["Time"])
+
+    ordered_cols = ["Date", "Time", "Home Team", "Away Team", "Status", "Won By", "Home Score", "Away Score"]
+    show_cols = [c for c in ordered_cols if c in display.columns]
+
     st.dataframe(
-        fixtures[show_cols] if show_cols else fixtures,
+        display[show_cols] if show_cols else display,
         width="stretch",
         hide_index=True,
     )
 
     st.markdown("---")
-    st.subheader("League Table (Win 3, Tie 1, Loss 0, Abandoned 0)")
+    st.subheader("League Table")
 
     if "Won By" not in fixtures.columns:
         st.warning(
