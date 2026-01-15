@@ -163,6 +163,86 @@ with tab_stats:
     league = league_df.copy()
     league.columns = [str(c).strip() for c in league.columns]
 
+    # ---------------------------------------------------------
+    # Enrich League stats with team info from Player_Data
+    # ---------------------------------------------------------
+    player_df = getattr(data, "player_data", None)
+    if player_df is None:
+        player_df = getattr(data, "player_data_table", None)
+
+    if player_df is not None and not player_df.empty:
+        players = player_df.copy()
+        players.columns = [str(c).strip() for c in players.columns]
+
+        # Join keys: prefer PlayerID, otherwise Name
+        league_player_id_col = _find_col(league, ["PlayerID", "Player Id", "Player ID"])
+        players_player_id_col = _find_col(players, ["PlayerID", "Player Id", "Player ID"])
+
+        league_name_col = _find_col(league, ["Name"])
+        players_name_col = _find_col(players, ["Name", "Player", "Player Name"])
+
+        # Team-related fields in Player_Data
+        p_team_id_col = _find_col(players, ["TeamID", "Team Id", "Team ID"])
+        p_team_col = _find_col(players, ["Team", "TeamName", "Team Name"])
+        p_team_slot_col = _find_col(players, ["TeamSlot", "Team Solt", "Team Slot"])
+        p_team_slot_key_col = _find_col(players, ["TeamSlotKey", "Team SoltKey", "Team Slot Key", "TeamSlot Key"])
+
+        keep_cols = []
+        for c in [
+            players_player_id_col,
+            players_name_col,
+            p_team_id_col,
+            p_team_col,
+            p_team_slot_col,
+            p_team_slot_key_col,
+        ]:
+            if c and c not in keep_cols:
+                keep_cols.append(c)
+
+        mapping = players[keep_cols].copy()
+
+        # Normalise name for robust matching
+        if players_name_col and players_name_col in mapping.columns:
+            mapping[players_name_col] = mapping[players_name_col].astype(str).str.strip()
+
+        # Ensure TeamSlotKey numeric for correct team sorting
+        if p_team_slot_key_col and p_team_slot_key_col in mapping.columns:
+            mapping[p_team_slot_key_col] = pd.to_numeric(mapping[p_team_slot_key_col], errors="coerce")
+
+        # De-duplicate mapping to avoid many-to-many merges
+        sort_cols = []
+        if p_team_slot_key_col and p_team_slot_key_col in mapping.columns:
+            sort_cols.append(p_team_slot_key_col)
+        if players_name_col and players_name_col in mapping.columns:
+            sort_cols.append(players_name_col)
+
+        if sort_cols:
+            mapping = mapping.sort_values(sort_cols, ascending=True)
+
+        if players_player_id_col and players_player_id_col in mapping.columns:
+            mapping = mapping.drop_duplicates(subset=[players_player_id_col], keep="first")
+        elif players_name_col and players_name_col in mapping.columns:
+            mapping = mapping.drop_duplicates(subset=[players_name_col], keep="first")
+
+        # Merge into league
+        if league_player_id_col and players_player_id_col and league_player_id_col in league.columns and players_player_id_col in mapping.columns:
+            league = league.merge(
+                mapping,
+                how="left",
+                left_on=league_player_id_col,
+                right_on=players_player_id_col,
+                suffixes=("", "_player"),
+            )
+        elif league_name_col and players_name_col and league_name_col in league.columns and players_name_col in mapping.columns:
+            league[league_name_col] = league[league_name_col].astype(str).str.strip()
+            league = league.merge(
+                mapping,
+                how="left",
+                left_on=league_name_col,
+                right_on=players_name_col,
+                suffixes=("", "_player"),
+            )
+
     # Coerce numeric columns so Streamlit sorts numerically (not as strings)
     numeric_cols = [
         "Runs Scored",
@@ -189,6 +269,11 @@ with tab_stats:
         "Run Outs",
         "Stumpings",
         "Fantasy Points",
+        # If present after merge
+        "TeamSlotKey",
+        "Team SoltKey",
+        "Team Slot Key",
+        "TeamSlot Key",
     ]
     for col in numeric_cols:
         if col in league.columns:
@@ -199,25 +284,32 @@ with tab_stats:
     # -----------------------------
     name_col = _find_col(league, ["Name"])
     team_col = _find_col(league, ["Team", "TeamName", "Team Name"])
+    team_slot_key_col = _find_col(league, ["TeamSlotKey", "Team SoltKey", "Team Slot Key", "TeamSlot Key"])
 
     with st.form("player_stats_filters", clear_on_submit=False):
         c1, c2 = st.columns([2, 1])
 
         with c2:
             if team_col and team_col in league.columns:
-                teams = (
-                    league[team_col].dropna().astype(str).map(str.strip)
-                )
-                teams = sorted([t for t in teams.unique().tolist() if t != ""])
+                if team_slot_key_col and team_slot_key_col in league.columns:
+                    tdf = league[[team_col, team_slot_key_col]].dropna(subset=[team_col]).copy()
+                    tdf[team_col] = tdf[team_col].astype(str).str.strip()
+                    tdf[team_slot_key_col] = pd.to_numeric(tdf[team_slot_key_col], errors="coerce")
+                    tdf = tdf.drop_duplicates()
+                    tdf = tdf.sort_values(by=[team_slot_key_col, team_col], ascending=[True, True])
+                    teams = [t for t in tdf[team_col].tolist() if t != ""]
+                else:
+                    teams = sorted(
+                        [t for t in league[team_col].dropna().astype(str).map(str.strip).unique().tolist() if t != ""]
+                    )
+
                 st.selectbox("Team", ["All"] + teams, key="ps_team")
             else:
                 st.selectbox("Team", ["All"], key="ps_team", disabled=True)
 
         with c1:
             if name_col and name_col in league.columns:
-                names = (
-                    league[name_col].dropna().astype(str).map(str.strip)
-                )
+                names = league[name_col].dropna().astype(str).map(str.strip)
                 names = sorted([n for n in names.unique().tolist() if n != ""])
                 st.multiselect(
                     "Players",
@@ -239,15 +331,14 @@ with tab_stats:
         filtered = filtered[filtered[team_col].astype(str).str.strip() == team_choice]
 
     if name_col and name_col in filtered.columns and player_choices:
-        filtered = filtered[
-            filtered[name_col].astype(str).str.strip().isin(player_choices)
-        ]
+        filtered = filtered[filtered[name_col].astype(str).str.strip().isin(player_choices)]
 
     # -----------------------------
     # Main + Expanded table columns
     # -----------------------------
     main_cols = [
         "Name",
+        "Team",
         "Runs Scored",
         "Batting Average",
         "Wickets",
@@ -257,6 +348,7 @@ with tab_stats:
 
     desired_cols = [
         "Name",
+        "Team",
         "Runs Scored",
         "Balls Faced",
         "6s",
@@ -290,27 +382,43 @@ with tab_stats:
     main_view = filtered[show_main_cols] if show_main_cols else filtered
     full_view = filtered[show_full_cols] if show_full_cols else filtered
 
-    # Sort by Fantasy Points if present (apply to both views)
-    if "Fantasy Points" in main_view.columns:
-        try:
-            main_view = main_view.sort_values(by="Fantasy Points", ascending=False)
-        except Exception:
-            pass
+    # Sort by TeamSlotKey then Fantasy Points (if available), else just Fantasy Points
+    sort_cols = []
+    if team_slot_key_col and team_slot_key_col in filtered.columns:
+        sort_cols.append(team_slot_key_col)
+    if "Fantasy Points" in filtered.columns:
+        sort_cols.append("Fantasy Points")
 
-    if "Fantasy Points" in full_view.columns:
+    if sort_cols:
         try:
-            full_view = full_view.sort_values(by="Fantasy Points", ascending=False)
+            # TeamSlotKey ascending, Fantasy Points descending
+            ascending = [True] + ([False] if len(sort_cols) > 1 else [])
+            main_view = main_view.sort_values(by=sort_cols, ascending=ascending)
+            full_view = full_view.sort_values(by=sort_cols, ascending=ascending)
         except Exception:
             pass
+    else:
+        if "Fantasy Points" in main_view.columns:
+            try:
+                main_view = main_view.sort_values(by="Fantasy Points", ascending=False)
+            except Exception:
+                pass
+        if "Fantasy Points" in full_view.columns:
+            try:
+                full_view = full_view.sort_values(by="Fantasy Points", ascending=False)
+            except Exception:
+                pass
 
     # -----------------------------
-    # Column config: pin Name + 2dp formatting
+    # Column config: pin Name/Team + 2dp formatting
     # -----------------------------
     def _col_config_for(df: pd.DataFrame) -> dict:
         config: dict = {}
 
         if "Name" in df.columns:
             config["Name"] = st.column_config.TextColumn(pinned=True)
+        if "Team" in df.columns:
+            config["Team"] = st.column_config.TextColumn(pinned=True)
 
         for c in [
             "Batting Strike Rate",
