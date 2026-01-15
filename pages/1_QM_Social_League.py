@@ -552,20 +552,21 @@ if selected_tab == "Fixtures & Results":
 
 
 # ============================
-# TAB 3: LEAGUE TABLE
+# TAB: LEAGUE TABLE
 # ============================
 if selected_tab == "League Table":
     st.subheader("League Table")
 
     if league_table is None or league_table.empty:
         st.info(
-            "League table not available yet. Confirm the Excel table is named 'League_Table' "
-            "on sheet 'Fixture_Results' and that it contains at least one data row."
+            "League table not available yet. Confirm the Excel table is named "
+            "'League_Table' on sheet 'Fixture_Results'."
         )
     else:
         lt = league_table.copy()
+        lt.columns = [str(c).strip() for c in lt.columns]
 
-        # Hide requested columns (if present)
+        # Hide unwanted columns
         cols_to_hide = [
             "Runs Scored",
             "Runs Conceeded",
@@ -576,121 +577,116 @@ if selected_tab == "League Table":
         ]
         lt = lt.drop(columns=[c for c in cols_to_hide if c in lt.columns], errors="ignore")
 
-        # Add Position as the first column (fixed to current displayed order)
+        # Add Position column (fixed order)
         lt.insert(0, "Position", range(1, len(lt) + 1))
 
-        # Format NRR to 2dp (render as text to lock formatting)
+        # Format NRR to 2dp
         if "NRR" in lt.columns:
             nrr = pd.to_numeric(lt["NRR"], errors="coerce")
             lt["NRR"] = nrr.map(lambda x: f"{x:.2f}" if pd.notna(x) else "")
 
-        # Build HTML table (non-interactive; prevents user sorting)
+        # Build static HTML table (prevents sorting)
         html_table = lt.to_html(index=False, escape=True)
 
         st.markdown(
             """
             <style>
-              /* Container styled to resemble Streamlit's dataframe */
-              .lt-wrap {
+            /* =========================
+               League Table – Base Style
+               ========================= */
+            .lt-wrap {
                 width: 100%;
-                border: 1px solid rgba(49, 51, 63, 0.15);
                 border-radius: 0.5rem;
                 overflow: hidden;
                 background: white;
-                padding-bottom: 0;
-              }
+                border: 1px solid rgba(49, 51, 63, 0.15);
+            }
 
-              /* Horizontal scroll like st.dataframe when needed */
-              .lt-scroll {
+            .lt-scroll {
                 width: 100%;
                 overflow-x: auto;
-                overflow-y: hidden;
-              }
+            }
 
-              /* Table base */
-              .lt-wrap table {
+            .lt-wrap table {
                 width: 100%;
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 0.95rem;
-                border-top: none !important;
-                border-bottom: none !important;
                 margin: 0 !important;
-                padding: 0 !important;
-              }
+            }
 
-              /* Header */
-              .lt-wrap thead th {
-                position: sticky;
-                top: 0;
-                z-index: 2;
+            .lt-wrap thead th {
                 background: rgba(250, 250, 252, 1);
                 color: rgba(49, 51, 63, 0.9);
-                text-align: left;
                 font-weight: 600;
                 padding: 0.65rem 0.75rem;
                 border-bottom: 1px solid rgba(49, 51, 63, 0.15);
                 white-space: nowrap;
-              }
+                text-align: center;
+            }
 
-              /* Cells */
-              .lt-wrap tbody td {
+            .lt-wrap thead th:nth-child(2) {
+                text-align: left;
+            }
+
+            .lt-wrap tbody td {
                 padding: 0.6rem 0.75rem;
                 border-bottom: 1px solid rgba(49, 51, 63, 0.08);
                 color: rgba(49, 51, 63, 0.95);
                 white-space: nowrap;
-              }
-
-              /* Centre-align numeric columns (all except Team) */
-              .lt-wrap tbody td:not(:nth-child(2)),
-              .lt-wrap thead th:not(:nth-child(2)) {
                 text-align: center;
-              }
+            }
 
-              /* Medal colouring for top 3 positions only */
-              .lt-wrap tbody tr:nth-child(1) td { background: rgba(255, 215, 0, 0.08); }
-              .lt-wrap tbody tr:nth-child(2) td { background: rgba(192, 192, 192, 0.22); }
-              .lt-wrap tbody tr:nth-child(3) td { background: rgba(205, 127, 50, 0.10); }
+            .lt-wrap tbody td:nth-child(2) {
+                text-align: left;
+            }
 
-              /* Hover */
-              .lt-wrap tbody tr:hover td {
+            .lt-wrap tbody tr:last-child td {
+                border-bottom: 1px solid transparent;
+            }
+
+            /* Medal rows */
+            .lt-wrap tbody tr:nth-child(1) td { background: rgba(255, 215, 0, 0.08); }
+            .lt-wrap tbody tr:nth-child(2) td { background: rgba(192, 192, 192, 0.22); }
+            .lt-wrap tbody tr:nth-child(3) td { background: rgba(205, 127, 50, 0.10); }
+
+            .lt-wrap tbody tr:hover td {
                 background: rgba(240, 242, 246, 1);
-              }
+            }
 
-              /* Remove pandas default borders */
-              .lt-wrap table, .lt-wrap th, .lt-wrap td {
+            .lt-wrap table,
+            .lt-wrap th,
+            .lt-wrap td {
                 border-left: none !important;
                 border-right: none !important;
-              }
+            }
 
-              /* =========================
-                 Dark mode improvements
-                 ========================= */
-              html[data-theme="dark"] .lt-wrap {
+            /* =========================
+               Dark Mode
+               ========================= */
+            html[data-theme="dark"] .lt-wrap {
                 background: rgba(17, 18, 23, 1);
                 border: 1px solid rgba(255, 255, 255, 0.10);
-              }
+            }
 
-              html[data-theme="dark"] .lt-wrap thead th {
+            html[data-theme="dark"] .lt-wrap thead th {
                 background: rgba(26, 27, 34, 1);
                 color: rgba(255, 255, 255, 0.92);
                 border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-              }
+            }
 
-              html[data-theme="dark"] .lt-wrap tbody td {
-                color: rgba(255, 255, 255, 0.88);
+            html[data-theme="dark"] .lt-wrap tbody td {
+                color: rgba(255, 255, 255, 0.90);
                 border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-              }
+            }
 
-              /* Dark hover */
-              html[data-theme="dark"] .lt-wrap tbody tr:hover td {
+            html[data-theme="dark"] .lt-wrap tbody tr:hover td {
                 background: rgba(38, 40, 50, 1);
-              }
+            }
 
-              /* Dark medal rows (subtle, readable) */
-              html[data-theme="dark"] .lt-wrap tbody tr:nth-child(1) td { background: rgba(255, 215, 0, 0.14); }
-              html[data-theme="dark"] .lt-wrap tbody tr:nth-child(2) td { background: rgba(255, 255, 255, 0.10); }
-              html[data-theme="dark"] .lt-wrap tbody tr:nth-child(3) td { background: rgba(205, 127, 50, 0.14); }
+            html[data-theme="dark"] .lt-wrap tbody tr:nth-child(1) td { background: rgba(255, 215, 0, 0.14); }
+            html[data-theme="dark"] .lt-wrap tbody tr:nth-child(2) td { background: rgba(255, 255, 255, 0.12); }
+            html[data-theme="dark"] .lt-wrap tbody tr:nth-child(3) td { background: rgba(205, 127, 50, 0.14); }
             </style>
             """,
             unsafe_allow_html=True,
@@ -699,9 +695,9 @@ if selected_tab == "League Table":
         st.markdown(
             f"""
             <div class="lt-wrap">
-              <div class="lt-scroll">
-                {html_table}
-              </div>
+                <div class="lt-scroll">
+                    {html_table}
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
