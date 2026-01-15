@@ -156,10 +156,21 @@ st.markdown(
         color: rgba(49, 51, 63, 1);
     }
 
-        /* ===== Hide radio controls ONLY ===== */
+    /* ===== Hide radio controls ONLY (robust: hide the control container, keep text) ===== */
 
-    /* Hide the control element used by BaseWeb/Streamlit (commonly the first span) */
-    div[role="radiogroup"] > label > span:first-of-type {
+    /* BaseWeb/Streamlit typically renders: label -> [control container] + [text container]
+       Hide the FIRST child container (control), keep the remaining content (text). */
+    div[role="radiogroup"] > label {
+        display: flex !important;
+        align-items: center !important;
+        padding-left: 0 !important;
+        margin-left: 0 !important;
+        column-gap: 0 !important;
+        gap: 0 !important;
+    }
+
+    div[role="radiogroup"] > label > div:first-child,
+    div[role="radiogroup"] > label > span:first-child {
         display: none !important;
         width: 0 !important;
         height: 0 !important;
@@ -167,14 +178,14 @@ st.markdown(
         padding: 0 !important;
     }
 
-    /* Hide any SVG that might be used for the circle (but ONLY within the radiogroup labels) */
+    /* Hide any remaining SVG circles inside labels (but do not touch text) */
     div[role="radiogroup"] > label svg {
         display: none !important;
         width: 0 !important;
         height: 0 !important;
     }
 
-    /* Hide the input itself but keep it in the DOM for state */
+    /* Keep the input for state, but make it invisible/non-interactive */
     div[role="radiogroup"] input[type="radio"] {
         position: absolute !important;
         opacity: 0 !important;
@@ -183,13 +194,6 @@ st.markdown(
         pointer-events: none !important;
     }
 
-    /* Remove any reserved spacing for the missing control */
-    div[role="radiogroup"] > label {
-        padding-left: 0 !important;
-        margin-left: 0 !important;
-        column-gap: 0 !important;
-        gap: 0 !important;
-    }
     </style>
     """,
     unsafe_allow_html=True,
