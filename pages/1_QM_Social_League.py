@@ -111,34 +111,68 @@ selected_tab = st.radio(
 st.markdown(
     """
     <style>
-      /* Turn radio group into tab-like navigation */
-      div[role="radiogroup"] {
-        gap: 0.25rem;
+      /* Make the radio look like Streamlit native tabs (and hide the radio circles) */
+
+      /* Hide the actual radio inputs (circles) */
+      div[role="radiogroup"] input[type="radio"]{
+        position: absolute !important;
+        opacity: 0 !important;
+        width: 0 !important;
+        height: 0 !important;
+        pointer-events: none !important;
       }
 
-      div[role="radiogroup"] > label {
-        border: 1px solid rgba(49, 51, 63, 0.2);
-        border-radius: 0.4rem 0.4rem 0 0;
-        padding: 0.45rem 0.9rem;
-        margin-right: 0.25rem;
-        background: rgba(250, 250, 252, 1);
-        cursor: pointer;
+      /* Layout similar to tabs: horizontal, small gap, no boxy borders */
+      div[role="radiogroup"]{
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 1rem !important;
+        border-bottom: 1px solid rgba(49, 51, 63, 0.15);
+        padding-bottom: 0.25rem;
+        margin-bottom: 0.75rem;
       }
 
-      div[role="radiogroup"] > label:hover {
-        background: rgba(240, 242, 246, 1);
+      /* Each option label: clean, tab-like */
+      div[role="radiogroup"] > label{
+        margin: 0 !important;
+        padding: 0.35rem 0.15rem !important;
+        border: none !important;
+        background: transparent !important;
+        cursor: pointer !important;
       }
 
-      /* Selected tab */
-      div[role="radiogroup"] input:checked + div {
-        background: white;
-        border-bottom: 2px solid white;
-        font-weight: 600;
+      /* The text container inside label (Streamlit uses input + div) */
+      div[role="radiogroup"] > label > div{
+        padding: 0 !important;
+      }
+
+      /* Hover state like native tabs */
+      div[role="radiogroup"] > label:hover > div{
+        color: rgba(49, 51, 63, 1) !important;
+      }
+
+      /* Selected tab: underline indicator */
+      div[role="radiogroup"] > label:has(input:checked){
+        border-bottom: 2px solid rgba(49, 51, 63, 0.85) !important;
+        margin-bottom: -2px !important;
+      }
+
+      /* Selected tab text slightly stronger */
+      div[role="radiogroup"] > label:has(input:checked) > div{
+        font-weight: 600 !important;
+        color: rgba(49, 51, 63, 1) !important;
+      }
+
+      /* Non-selected tab text */
+      div[role="radiogroup"] > label:not(:has(input:checked)) > div{
+        font-weight: 500 !important;
+        color: rgba(49, 51, 63, 0.75) !important;
       }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
 
 # ============================
 # TAB 1: PLAYER STATS
