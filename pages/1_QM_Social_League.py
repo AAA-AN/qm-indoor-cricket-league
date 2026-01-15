@@ -195,10 +195,12 @@ st.markdown(
        ========================================================= */
     @media (prefers-color-scheme: dark) {
 
-         /* Unselected (dark mode) – higher contrast, still subordinate */
-        div[role="radiogroup"] > label > div,
-        div[role="radiogroup"] > label > span {
-            color: rgba(255, 255, 255, 2) !important;
+        /* Unselected (dark mode) – match overall page readability */
+        div[role="radiogroup"] > label:not(:has(input:checked)) > div,
+        div[role="radiogroup"] > label:not(:has(input:checked)) > span {
+            color: rgba(255, 255, 255, 0.95) !important;
+            font-weight: 600 !important;
+            text-shadow: 0 0 1px rgba(0, 0, 0, 0.55);
         }
 
         /* Hover */
