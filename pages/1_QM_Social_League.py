@@ -80,61 +80,6 @@ def _format_time_ampm(series: pd.Series) -> pd.Series:
     return formatted.fillna(series.astype(str))
 
 
-def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
-    df = fixtures_df.copy()
-    df.columns = [str(c).strip() for c in df.columns]
-
-    home_col = "Home Team"
-    away_col = "Away Team"
-    winner_col = "Won By"
-    status_col = "Status" if "Status" in df.columns else None
-
-    required = [home_col, away_col, winner_col]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        return pd.DataFrame(columns=["Pos", "Team", "Played", "Points"])
-
-    if status_col:
-        played_mask = df[status_col].astype(str).str.strip().isin(["Played", "Abandoned"])
-    else:
-        played_mask = df[winner_col].notna() & (df[winner_col].astype(str).str.strip() != "")
-
-    played = df.loc[played_mask].copy()
-
-    rows = []
-    for _, r in played.iterrows():
-        home = str(r[home_col]).strip()
-        away = str(r[away_col]).strip()
-        winner = "" if pd.isna(r[winner_col]) else str(r[winner_col]).strip()
-
-        home_pts = 0
-        away_pts = 0
-
-        if winner == "No Result":
-            home_pts = 0
-            away_pts = 0
-        elif winner == "Tied":
-            home_pts = 1
-            away_pts = 1
-        elif winner == home:
-            home_pts = 3
-            away_pts = 0
-        elif winner == away:
-            home_pts = 0
-            away_pts = 3
-
-        rows.append({"Team": home, "Played": 1, "Points": home_pts})
-        rows.append({"Team": away, "Played": 1, "Points": away_pts})
-
-    if not rows:
-        return pd.DataFrame(columns=["Pos", "Team", "Played", "Points"])
-
-    pts = pd.DataFrame(rows).groupby("Team", as_index=False).sum(numeric_only=True)
-    pts = pts.sort_values(by=["Points", "Team"], ascending=[False, True]).reset_index(drop=True)
-    pts.insert(0, "Pos", range(1, len(pts) + 1))
-    return pts
-
-
 def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
     cols = list(df.columns)
     for c in candidates:
@@ -470,16 +415,7 @@ with tab_fixtures:
 # ============================
 with tab_table:
     st.subheader("League Table")
-
-    table = compute_points_table(fixtures)
-    if table.empty:
-        st.info("No completed matches found yet.")
-    else:
-        st.dataframe(
-            table,
-            width="stretch",
-            hide_index=True,
-        )
+    st.info("League table in development.")
 
 # ============================
 # TAB 4: TEAMS
