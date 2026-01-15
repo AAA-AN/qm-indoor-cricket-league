@@ -195,12 +195,18 @@ st.markdown(
        ========================================================= */
     @media (prefers-color-scheme: dark) {
 
-        /* Unselected (dark mode) – match overall page readability */
+        /* Unselected (dark mode) – force high contrast and override any parent opacity */
+        div[role="radiogroup"] > label:not(:has(input:checked)) {
+            opacity: 1 !important;
+            filter: none !important;
+        }
+
         div[role="radiogroup"] > label:not(:has(input:checked)) > div,
         div[role="radiogroup"] > label:not(:has(input:checked)) > span {
-            color: rgba(255, 255, 255, 0.95) !important;
-            font-weight: 600 !important;
-            text-shadow: 0 0 1px rgba(0, 0, 0, 0.55);
+            opacity: 1 !important;
+            color: #FFFFFF !important;
+            font-weight: 700 !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
         }
 
         /* Hover */
