@@ -111,55 +111,39 @@ selected_tab = st.radio(
 st.markdown(
     """
     <style>
-    /* ===== Streamlit radio -> native tabs styling ===== */
+    /* =========================================================
+       Stateful tabs built from st.radio (native Streamlit look)
+       ========================================================= */
 
-    /* Layout like native tabs */
+    /* --- Radiogroup container (acts like tab bar) --- */
     div[role="radiogroup"] {
         display: flex !important;
         flex-direction: row !important;
         gap: 1.25rem !important;
-        border-bottom: 1px solid rgba(49, 51, 63, 0.15);
-        padding-bottom: 0.35rem;
+        border-bottom: none !important;      /* no separator line */
+        padding-bottom: 0 !important;
         margin-bottom: 1.25rem;
     }
 
-    /* Each tab label */
+    /* --- Each tab label --- */
     div[role="radiogroup"] > label {
+        display: inline-flex !important;
+        align-items: center !important;
         margin: 0 !important;
-        padding: 0.35rem 0 !important;
+        padding: 0.45rem 0 !important;
         cursor: pointer !important;
-        border: none !important;
         background: transparent !important;
+        border: none !important;
+        gap: 0 !important;
+
+        /* Underline support (prevents layout quirks) */
+        border-bottom: 2px solid transparent !important;
+        text-decoration: none !important;
     }
 
-    /* Text inside tab */
-    div[role="radiogroup"] > label > div {
-        padding: 0 !important;
-        font-weight: 500;
-        color: rgba(49, 51, 63, 0.75);
-    }
-
-    /* Hover like native tabs */
-    div[role="radiogroup"] > label:hover > div {
-        color: rgba(49, 51, 63, 1);
-    }
-
-    /* Selected tab underline */
-    div[role="radiogroup"] > label:has(input:checked) {
-        border-bottom: 2px solid rgba(49, 51, 63, 0.85);
-        margin-bottom: -2px;
-    }
-
-    /* Selected tab text */
-    div[role="radiogroup"] > label:has(input:checked) > div {
-        font-weight: 600;
-        color: rgba(49, 51, 63, 1);
-    }
-
-        /* ===== Hide radio controls ONLY ===== */
-
-    /* Hide the control element used by BaseWeb/Streamlit (commonly the first span) */
-    div[role="radiogroup"] > label > span:first-of-type {
+    /* --- Hide radio controls ONLY (keep labels visible) --- */
+    div[role="radiogroup"] > label > div:first-child,
+    div[role="radiogroup"] > label > span:first-child {
         display: none !important;
         width: 0 !important;
         height: 0 !important;
@@ -167,14 +151,12 @@ st.markdown(
         padding: 0 !important;
     }
 
-    /* Hide any SVG that might be used for the circle (but ONLY within the radiogroup labels) */
     div[role="radiogroup"] > label svg {
         display: none !important;
         width: 0 !important;
         height: 0 !important;
     }
 
-    /* Hide the input itself but keep it in the DOM for state */
     div[role="radiogroup"] input[type="radio"] {
         position: absolute !important;
         opacity: 0 !important;
@@ -183,12 +165,57 @@ st.markdown(
         pointer-events: none !important;
     }
 
-    /* Remove any reserved spacing for the missing control */
-    div[role="radiogroup"] > label {
-        padding-left: 0 !important;
-        margin-left: 0 !important;
-        column-gap: 0 !important;
-        gap: 0 !important;
+    /* --- Tab text container (Streamlit varies between div/span) --- */
+    div[role="radiogroup"] > label > div,
+    div[role="radiogroup"] > label > span {
+        padding: 0 !important;
+        font-weight: 500 !important;
+        color: rgba(49, 51, 63, 0.75) !important;   /* unselected (light) */
+    }
+
+    /* Hover (light mode) */
+    div[role="radiogroup"] > label:hover > div,
+    div[role="radiogroup"] > label:hover > span {
+        color: rgba(49, 51, 63, 1) !important;
+    }
+
+    /* Selected tab (light mode): underline + red text */
+    div[role="radiogroup"] > label:has(input:checked) {
+        border-bottom-color: rgba(255, 0, 0, 0.85) !important;
+    }
+
+    div[role="radiogroup"] > label:has(input:checked) > div,
+    div[role="radiogroup"] > label:has(input:checked) > span {
+        font-weight: 600 !important;
+        color: rgba(255, 0, 0, 0.85) !important;    /* selected red */
+    }
+
+    /* =========================================================
+       Dark mode: unselected white, selected red, underline red
+       ========================================================= */
+    @media (prefers-color-scheme: dark) {
+
+        /* Unselected */
+        div[role="radiogroup"] > label > div,
+        div[role="radiogroup"] > label > span {
+            color: rgba(255, 255, 255, 0.90) !important;
+        }
+
+        /* Hover */
+        div[role="radiogroup"] > label:hover > div,
+        div[role="radiogroup"] > label:hover > span {
+            color: rgba(255, 255, 255, 1) !important;
+        }
+
+        /* Selected */
+        div[role="radiogroup"] > label:has(input:checked) {
+            border-bottom-color: rgba(255, 0, 0, 0.90) !important;
+        }
+
+        div[role="radiogroup"] > label:has(input:checked) > div,
+        div[role="radiogroup"] > label:has(input:checked) > span {
+            color: rgba(255, 0, 0, 0.90) !important;
+        }
     }
     </style>
     """,
