@@ -195,19 +195,33 @@ st.markdown(
        ========================================================= */
     @media (prefers-color-scheme: dark) {
 
-        /* Unselected (dark mode) – force high contrast and override any parent opacity */
-        div[role="radiogroup"] > label:not(:has(input:checked)) {
-            opacity: 1 !important;
+        /* Dark mode readability fix (desktop + mobile) without :has() dependency */
+        div[role="radiogroup"],
+        div[role="radiogroup"] * {
+            opacity: 1 !important;      /* defeat any inherited dimming */
             filter: none !important;
         }
 
-        div[role="radiogroup"] > label:not(:has(input:checked)) > div,
-        div[role="radiogroup"] > label:not(:has(input:checked)) > span {
-            opacity: 1 !important;
+        /* Make ALL tab labels readable in dark mode */
+        div[role="radiogroup"] > label,
+        div[role="radiogroup"] > label > div,
+        div[role="radiogroup"] > label > span {
             color: #FFFFFF !important;
-            font-weight: 700 !important;
+            font-weight: 650 !important;
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
         }
+
+        /* Keep selected tab red (works even if :has is inconsistent elsewhere) */
+        div[role="radiogroup"] > label:has(input:checked) > div,
+        div[role="radiogroup"] > label:has(input:checked) > span {
+            color: rgba(255, 0, 0, 0.90) !important;
+            font-weight: 700 !important;
+        }
+
+        div[role="radiogroup"] > label:has(input:checked) {
+            border-bottom-color: rgba(255, 0, 0, 0.90) !important;
+        }
+
 
         /* Hover */
         div[role="radiogroup"] > label:hover > div,
