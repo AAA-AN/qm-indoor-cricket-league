@@ -447,6 +447,7 @@ with tab_table:
                 border-radius: 0.5rem;
                 overflow: hidden;
                 background: white;
+                padding-bottom: 0;   /* remove extra space under last row */
               }
 
               /* Horizontal scroll like st.dataframe when needed */
@@ -511,7 +512,7 @@ with tab_table:
                 .lt-wrap tbody tr:last-child td {
                 border-bottom: 1px solid transparent;
               }
-              
+
                 /* Medal colouring for top 3 positions only */
                 .lt-wrap tbody tr:nth-child(1) td {
                 background: rgba(255, 215, 0, 0.08); /* gold */
