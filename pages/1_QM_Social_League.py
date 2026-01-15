@@ -591,36 +591,36 @@ if selected_tab == "League Table":
             """
             <style>
               /* Container styled to resemble Streamlit's dataframe */
-                .lt-wrap {
+              .lt-wrap {
                 width: 100%;
                 border: 1px solid rgba(49, 51, 63, 0.15);
                 border-radius: 0.5rem;
                 overflow: hidden;
                 background: white;
-                padding-bottom: 0;   /* remove extra space under last row */
+                padding-bottom: 0;
               }
 
               /* Horizontal scroll like st.dataframe when needed */
-                .lt-scroll {
+              .lt-scroll {
                 width: 100%;
                 overflow-x: auto;
                 overflow-y: hidden;
               }
 
               /* Table base */
-                .lt-wrap table {
+              .lt-wrap table {
                 width: 100%;
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 0.95rem;
                 border-top: none !important;
                 border-bottom: none !important;
-                margin: 0 !important;           /* remove extra white space below table */
+                margin: 0 !important;
                 padding: 0 !important;
               }
 
               /* Header */
-                .lt-wrap thead th {
+              .lt-wrap thead th {
                 position: sticky;
                 top: 0;
                 z-index: 2;
@@ -633,8 +633,8 @@ if selected_tab == "League Table":
                 white-space: nowrap;
               }
 
-                /* Cells */
-                .lt-wrap tbody td {
+              /* Cells */
+              .lt-wrap tbody td {
                 padding: 0.6rem 0.75rem;
                 border-bottom: 1px solid rgba(49, 51, 63, 0.08);
                 color: rgba(49, 51, 63, 0.95);
@@ -642,52 +642,55 @@ if selected_tab == "League Table":
               }
 
               /* Centre-align numeric columns (all except Team) */
-                .lt-wrap tbody td:not(:nth-child(2)),
-                .lt-wrap thead th:not(:nth-child(2)) {
+              .lt-wrap tbody td:not(:nth-child(2)),
+              .lt-wrap thead th:not(:nth-child(2)) {
                 text-align: center;
               }
 
-              /* Medal colouring for top 3 positions */
-                .lt-wrap tbody tr:nth-child(1) td {
-                background: rgba(255, 215, 0, 0.08); /* gold */
-              }
+              /* Medal colouring for top 3 positions only */
+              .lt-wrap tbody tr:nth-child(1) td { background: rgba(255, 215, 0, 0.08); }
+              .lt-wrap tbody tr:nth-child(2) td { background: rgba(192, 192, 192, 0.22); }
+              .lt-wrap tbody tr:nth-child(3) td { background: rgba(205, 127, 50, 0.10); }
 
-                .lt-wrap tbody tr:nth-child(2) td {
-                background: rgba(192, 192, 192, 0.22); /* clearer silver */
-              }
-
-              .lt-wrap tbody tr:nth-child(3) td {
-                background: rgba(205, 127, 50, 0.10); /* bronze */
-              }
-
-              /* Remove bottom border from final row */
-                .lt-wrap tbody tr:last-child td {
-                border-bottom: 1px solid transparent;
-              }
-
-                /* Medal colouring for top 3 positions only */
-                .lt-wrap tbody tr:nth-child(1) td {
-                background: rgba(255, 215, 0, 0.08); /* gold */
-              }
-
-                .lt-wrap tbody tr:nth-child(2) td {
-                background: rgba(192, 192, 192, 0.22); /* clearer silver */
-              }
-
-                .lt-wrap tbody tr:nth-child(3) td {
-                background: rgba(205, 127, 50, 0.10); /* bronze */
-              }
-
-              /* Hover similar to Streamlit row hover (no persistent colour for rows 4+) */
-                .lt-wrap tbody tr:hover td {
+              /* Hover */
+              .lt-wrap tbody tr:hover td {
                 background: rgba(240, 242, 246, 1);
               }
-              
+
               /* Remove pandas default borders */
-                .lt-wrap table, .lt-wrap th, .lt-wrap td {
+              .lt-wrap table, .lt-wrap th, .lt-wrap td {
                 border-left: none !important;
                 border-right: none !important;
               }
+
+              /* =========================
+                 Dark mode improvements
+                 ========================= */
+              html[data-theme="dark"] .lt-wrap {
+                background: rgba(17, 18, 23, 1);
+                border: 1px solid rgba(255, 255, 255, 0.10);
+              }
+
+              html[data-theme="dark"] .lt-wrap thead th {
+                background: rgba(26, 27, 34, 1);
+                color: rgba(255, 255, 255, 0.92);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+              }
+
+              html[data-theme="dark"] .lt-wrap tbody td {
+                color: rgba(255, 255, 255, 0.88);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+              }
+
+              /* Dark hover */
+              html[data-theme="dark"] .lt-wrap tbody tr:hover td {
+                background: rgba(38, 40, 50, 1);
+              }
+
+              /* Dark medal rows (subtle, readable) */
+              html[data-theme="dark"] .lt-wrap tbody tr:nth-child(1) td { background: rgba(255, 215, 0, 0.14); }
+              html[data-theme="dark"] .lt-wrap tbody tr:nth-child(2) td { background: rgba(255, 255, 255, 0.10); }
+              html[data-theme="dark"] .lt-wrap tbody tr:nth-child(3) td { background: rgba(205, 127, 50, 0.14); }
             </style>
             """,
             unsafe_allow_html=True,
