@@ -127,7 +127,7 @@ st.markdown(
 
     /* --- Each tab label --- */
     div[role="radiogroup"] > label {
-        display: flex !important;
+        display: inline-flex !important;
         align-items: center !important;
         margin: 0 !important;
         padding: 0.45rem 0 !important;
@@ -135,36 +135,13 @@ st.markdown(
         background: transparent !important;
         border: none !important;
         gap: 0 !important;
+
+        /* Underline support (prevents layout quirks) */
+        border-bottom: 2px solid transparent !important;
+        text-decoration: none !important;
     }
 
-    /* --- Tab text --- */
-    div[role="radiogroup"] > label > div {
-        padding: 0 !important;
-        font-weight: 500;
-        color: rgba(49, 51, 63, 0.75);
-    }
-
-    /* --- Hover (light mode) --- */
-    div[role="radiogroup"] > label:hover > div {
-        color: rgba(49, 51, 63, 1);
-    }
-
-    /* --- Selected tab underline + text (light mode) --- */
-    div[role="radiogroup"] > label:has(input:checked) {
-        border-bottom: 2px solid rgb(49, 51, 63);
-        padding-bottom: 0.45rem;
-    }
-
-    div[role="radiogroup"] > label:has(input:checked) > div {
-        font-weight: 600;
-        color: rgba(49, 51, 63, 1);
-    }
-
-    /* =========================================================
-       Hide radio controls ONLY (keep labels visible)
-       ========================================================= */
-
-    /* Hide BaseWeb radio control container */
+    /* --- Hide radio controls ONLY (keep labels visible) --- */
     div[role="radiogroup"] > label > div:first-child,
     div[role="radiogroup"] > label > span:first-child {
         display: none !important;
@@ -174,14 +151,12 @@ st.markdown(
         padding: 0 !important;
     }
 
-    /* Hide any SVG circles */
     div[role="radiogroup"] > label svg {
         display: none !important;
         width: 0 !important;
         height: 0 !important;
     }
 
-    /* Keep radio input for state, but invisible */
     div[role="radiogroup"] input[type="radio"] {
         position: absolute !important;
         opacity: 0 !important;
@@ -190,25 +165,56 @@ st.markdown(
         pointer-events: none !important;
     }
 
+    /* --- Tab text container (Streamlit varies between div/span) --- */
+    div[role="radiogroup"] > label > div,
+    div[role="radiogroup"] > label > span {
+        padding: 0 !important;
+        font-weight: 500 !important;
+        color: rgba(49, 51, 63, 0.75) !important;   /* unselected (light) */
+    }
+
+    /* Hover (light mode) */
+    div[role="radiogroup"] > label:hover > div,
+    div[role="radiogroup"] > label:hover > span {
+        color: rgba(49, 51, 63, 1) !important;
+    }
+
+    /* Selected tab (light mode): underline + red text */
+    div[role="radiogroup"] > label:has(input:checked) {
+        border-bottom-color: rgba(255, 0, 0, 0.85) !important;
+    }
+
+    div[role="radiogroup"] > label:has(input:checked) > div,
+    div[role="radiogroup"] > label:has(input:checked) > span {
+        font-weight: 600 !important;
+        color: rgba(255, 0, 0, 0.85) !important;    /* selected red */
+    }
+
     /* =========================================================
-       Dark mode support
+       Dark mode: unselected white, selected red, underline red
        ========================================================= */
     @media (prefers-color-scheme: dark) {
 
-        div[role="radiogroup"] > label > div {
-            color: rgba(255, 255, 255, 0.70);
+        /* Unselected */
+        div[role="radiogroup"] > label > div,
+        div[role="radiogroup"] > label > span {
+            color: rgba(255, 255, 255, 0.90) !important;
         }
 
-        div[role="radiogroup"] > label:hover > div {
-            color: rgba(255, 255, 255, 0.92);
+        /* Hover */
+        div[role="radiogroup"] > label:hover > div,
+        div[role="radiogroup"] > label:hover > span {
+            color: rgba(255, 255, 255, 1) !important;
         }
 
-        div[role="radiogroup"] > label:has(input:checked) > div {
-            color: rgba(255, 255, 255, 0.95);
-        }
-
+        /* Selected */
         div[role="radiogroup"] > label:has(input:checked) {
-            border-bottom: 2px solid rgba(255, 255, 255, 0.85);
+            border-bottom-color: rgba(255, 0, 0, 0.90) !important;
+        }
+
+        div[role="radiogroup"] > label:has(input:checked) > div,
+        div[role="radiogroup"] > label:has(input:checked) > span {
+            color: rgba(255, 0, 0, 0.90) !important;
         }
     }
     </style>
