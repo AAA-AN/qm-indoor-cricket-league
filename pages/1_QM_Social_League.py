@@ -657,6 +657,49 @@ if selected_tab == "League Table":
                 border-left: none !important;
                 border-right: none !important;
               }
+              /* ============================
+                Dark mode overrides for League Table
+                Matches Streamlit dataframe styling
+                ============================ */
+            @media (prefers-color-scheme: dark) {
+
+                .lt-wrap {
+                    background: rgba(14, 17, 23, 1) !important;                 /* Streamlit dark bg */
+                    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+                }
+
+                .lt-wrap table {
+                    background: transparent !important;
+                }
+
+                .lt-wrap thead th {
+                    background: rgba(28, 31, 38, 1) !important;                 /* dark header bar */
+                    color: rgba(255, 255, 255, 0.90) !important;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+                }
+
+                .lt-wrap tbody td {
+                    color: rgba(255, 255, 255, 0.88) !important;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+                }
+
+                /* Row hover similar to Streamlit dark table hover */
+                .lt-wrap tbody tr:hover td {
+                    background: rgba(255, 255, 255, 0.06) !important;
+                }
+
+                /* Keep top-3 highlighting but make it subtle in dark mode */
+                .lt-wrap tbody tr:nth-child(1) td { background: rgba(255, 215, 0, 0.10) !important; }
+                .lt-wrap tbody tr:nth-child(2) td { background: rgba(192, 192, 192, 0.10) !important; }
+                .lt-wrap tbody tr:nth-child(3) td { background: rgba(205, 127, 50, 0.10) !important; }
+
+                /* Remove any accidental light borders */
+                .lt-wrap table, .lt-wrap th, .lt-wrap td {
+                    border-left: none !important;
+                    border-right: none !important;
+                }
+            }
+            
             </style>
             """,
             unsafe_allow_html=True,
