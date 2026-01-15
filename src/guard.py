@@ -1,4 +1,5 @@
 import streamlit as st
+
 from src.db import init_db
 
 APP_TITLE = "QM Indoor Cricket League"
@@ -8,51 +9,7 @@ def hide_sidebar():
     st.markdown(
         """
         <style>
-        [data-testid="stSidebar"] { display: none; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def hide_home_page_when_logged_in():
-    """
-    Hides the Home/app.py entry from the Streamlit multipage sidebar list
-    when the user is logged in.
-    """
-    if st.session_state.get("user") is None:
-        return
-
-    st.markdown(
-        """
-        <style>
-        /* Hide the first page in the sidebar page list (Home/app.py) */
-        section[data-testid="stSidebar"] ul li:first-child {
-            display: none !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def hide_admin_page_for_non_admins():
-    """
-    Hides the Admin page from the sidebar for non-admin users.
-    Assumes Admin is the LAST page in the multipage list.
-    """
-    user = st.session_state.get("user")
-
-    if not user or user.get("role") == "admin":
-        return
-
-    st.markdown(
-        """
-        <style>
-        /* Hide last page (Admin) from sidebar for non-admins */
-        section[data-testid="stSidebar"] ul li:last-child {
-            display: none !important;
-        }
+            [data-testid="stSidebar"] {display: none;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -60,7 +17,6 @@ def hide_admin_page_for_non_admins():
 
 
 def sidebar_divider_compact():
-    """A tighter divider than st.sidebar.markdown('---') to reduce vertical whitespace."""
     st.sidebar.markdown(
         '<hr style="margin: 0.25rem 0; border: 0; border-top: 1px solid rgba(49, 51, 63, 0.2);" />',
         unsafe_allow_html=True,
@@ -77,38 +33,74 @@ def require_login():
         st.stop()
 
 
-
 def require_admin():
-    """Requires login first, then admin role."""
+    """Require logged-in admin. Non-admins are redirected to app.py."""
     require_login()
     user = st.session_state.get("user") or {}
     if user.get("role") != "admin":
-        st.error("Admin access required.")
+        st.switch_page("app.py")
         st.stop()
 
 
-def render_sidebar_header():
-    """Sidebar user info shown only when logged in."""
+def hide_home_page_when_logged_in():
+    """
+    Hide app.py from sidebar once logged in.
+    """
+    if st.session_state.get("user") is not None:
+        st.markdown(
+            """
+            <style>
+                [data-testid="stSidebarNav"] ul li:first-child {display: none;}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def hide_admin_page_for_non_admins():
+    """
+    Hide the last page in the sidebar nav for non-admin users.
+    Assumes the Admin page is the last page (e.g., pages/99_Admin.py).
+    """
     user = st.session_state.get("user")
     if not user:
         return
 
-    st.sidebar.write(f"**{user['first_name']} {user['last_name']}**")
+    if user.get("role") != "admin":
+        st.markdown(
+            """
+            <style>
+                [data-testid="stSidebarNav"] ul li:last-child {display: none;}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    # Only show role if admin
-    if user.get("role") == "admin":
-        st.sidebar.caption("Role: admin")
 
+def render_sidebar_header():
+    """
+    Shows a single divider (between nav items and user block),
+    then the user's name and (admin role only).
+    """
+    user = st.session_state.get("user")
+    if not user:
+        return
+
+    # Keep ONE divider between pages list and user block
     sidebar_divider_compact()
+
+    name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
+    st.sidebar.markdown(f"### {name}")
+
+    if user.get("role") == "admin":
+        st.sidebar.caption("Admin")
 
 
 def render_logout_button():
-    """Logout button in sidebar (separate from pages list)."""
+    """Logout button directly under user block (no extra divider)."""
     if st.session_state.get("user") is None:
         return
 
-    # No divider here: keeps only the divider between pages and the user header
     if st.sidebar.button("Logout", use_container_width=True):
         st.session_state["user"] = None
         st.switch_page("app.py")
-
