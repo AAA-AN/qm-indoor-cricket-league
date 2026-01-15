@@ -56,7 +56,7 @@ with st.spinner("Loading latest league workbook from Dropbox..."):
         st.stop()
 
 fixtures = data.fixture_results.copy()
-fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
+fixtures.columns = [str(c).strip() for c in fixtures.columns]
 
 
 def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
@@ -89,38 +89,26 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
     winner_col = "Won By"
     status_col = "Status" if "Status" in df.columns else None
 
-    required = [home_col, away_col, winner_col]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        return pd.DataFrame(columns=["Pos", "Team", "Played", "Points"])
-
     if status_col:
         played_mask = df[status_col].astype(str).str.strip().isin(["Played", "Abandoned"])
     else:
-        played_mask = df[winner_col].notna() & (df[winner_col].astype(str).str.strip() != "")
+        played_mask = df[winner_col].notna()
 
-    played = df.loc[played_mask].copy()
+    played = df.loc[played_mask]
 
     rows = []
     for _, r in played.iterrows():
         home = str(r[home_col]).strip()
         away = str(r[away_col]).strip()
-        winner = "" if pd.isna(r[winner_col]) else str(r[winner_col]).strip()
+        winner = str(r[winner_col]).strip()
 
-        home_pts = 0
-        away_pts = 0
+        home_pts, away_pts = 0, 0
 
-        if winner == "No Result":
-            home_pts = 0
-            away_pts = 0
-        elif winner == "Tied":
-            home_pts = 1
-            away_pts = 1
+        if winner == "Tied":
+            home_pts = away_pts = 1
         elif winner == home:
             home_pts = 3
-            away_pts = 0
         elif winner == away:
-            home_pts = 0
             away_pts = 3
 
         rows.append({"Team": home, "Played": 1, "Points": home_pts})
@@ -129,240 +117,119 @@ def compute_points_table(fixtures_df: pd.DataFrame) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=["Pos", "Team", "Played", "Points"])
 
-    pts = pd.DataFrame(rows).groupby("Team", as_index=False).sum(numeric_only=True)
-    pts = pts.sort_values(by=["Points", "Team"], ascending=[False, True]).reset_index(drop=True)
+    pts = pd.DataFrame(rows).groupby("Team", as_index=False).sum()
+    pts = pts.sort_values(by=["Points", "Team"], ascending=[False, True])
     pts.insert(0, "Pos", range(1, len(pts) + 1))
-    return pts
+    return pts.reset_index(drop=True)
 
 
 def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
-    cols = list(df.columns)
     for c in candidates:
-        if c in cols:
+        if c in df.columns:
             return c
     return None
 
 
 # ----------------------------
-# Tabs
+# Tabs (Player Stats FIRST)
 # ----------------------------
-tab1, tab2, tab3 = st.tabs(["Fixtures & Results", "Teams", "Player Stats"])
+tab_stats, tab_fixtures, tab_teams = st.tabs(
+    ["Player Stats", "Fixtures & Results", "Teams"]
+)
 
-with tab1:
+# ============================
+# TAB 1: PLAYER STATS
+# ============================
+with tab_stats:
+    st.subheader("Player Stats")
+
+    league = data.league_data.copy()
+    league.columns = [str(c).strip() for c in league.columns]
+
+    numeric_cols = [
+        "Runs Scored", "Balls Faced", "6s", "Retirements",
+        "Batting Strike Rate", "Batting Average", "Highest Score",
+        "Innings Played", "Not Out's", "Sum of Overs", "Overs",
+        "Balls Bowled", "Maidens", "Runs Conceded", "Wickets",
+        "Wides", "No Balls", "Economy",
+        "Bowling Strike Rate", "Bowling Average",
+        "Catches", "Run Outs", "Stumpings", "Fantasy Points",
+    ]
+    for c in numeric_cols:
+        if c in league.columns:
+            league[c] = pd.to_numeric(league[c], errors="coerce")
+
+    name_col = _find_col(league, ["Name"])
+    team_col = _find_col(league, ["Team", "Team Name"])
+
+    with st.form("player_filters", clear_on_submit=False):
+        c1, c2 = st.columns([2, 1])
+
+        with c2:
+            teams = ["All"]
+            if team_col:
+                teams += sorted(league[team_col].dropna().astype(str).unique())
+            st.selectbox("Team", teams, key="team")
+
+        with c1:
+            names = []
+            if name_col:
+                names = sorted(league[name_col].dropna().astype(str).unique())
+            st.multiselect("Players", names, key="players")
+
+        st.form_submit_button("Apply")
+
+    filtered = league.copy()
+
+    if team_col and st.session_state.team != "All":
+        filtered = filtered[filtered[team_col] == st.session_state.team]
+
+    if name_col and st.session_state.players:
+        filtered = filtered[filtered[name_col].isin(st.session_state.players)]
+
+    main_cols = [
+        "Name", "Runs Scored", "Batting Average",
+        "Wickets", "Economy", "Fantasy Points",
+    ]
+
+    desired_cols = [
+        "Name", "Runs Scored", "Balls Faced", "6s", "Retirements",
+        "Batting Strike Rate", "Batting Average", "Highest Score",
+        "Innings Played", "Not Out's", "Sum of Overs", "Overs",
+        "Balls Bowled", "Maidens", "Runs Conceded", "Wickets",
+        "Wides", "No Balls", "Economy",
+        "Bowling Strike Rate", "Bowling Average",
+        "Catches", "Run Outs", "Stumpings", "Fantasy Points",
+    ]
+
+    st.dataframe(filtered[main_cols], hide_index=True, use_container_width=True)
+
+    with st.expander("Show all stats"):
+        st.dataframe(filtered[desired_cols], hide_index=True, use_container_width=True)
+
+
+# ============================
+# TAB 2: FIXTURES
+# ============================
+with tab_fixtures:
     st.subheader("Fixtures & Results")
 
     display = fixtures.copy()
-
     if "Date" in display.columns:
         display["Date"] = _format_date_dd_mmm(display["Date"])
     if "Time" in display.columns:
         display["Time"] = _format_time_ampm(display["Time"])
 
-    ordered_cols = ["Date", "Time", "Home Team", "Away Team", "Status", "Won By", "Home Score", "Away Score"]
-    show_cols = [c for c in ordered_cols if c in display.columns]
-
-    st.dataframe(
-        display[show_cols] if show_cols else display,
-        width="stretch",
-        hide_index=True,
-    )
+    st.dataframe(display, hide_index=True, use_container_width=True)
 
     st.markdown("---")
     st.subheader("League Table")
-
-    table = compute_points_table(fixtures)
-    if table.empty:
-        st.info("No completed matches found yet.")
-    else:
-        st.dataframe(table, width="stretch", hide_index=True)
+    st.dataframe(compute_points_table(fixtures), hide_index=True, use_container_width=True)
 
 
-with tab2:
+# ============================
+# TAB 3: TEAMS
+# ============================
+with tab_teams:
     st.subheader("Teams")
     st.info("Teams page will be built next (rosters + team totals).")
-
-
-with tab3:
-    st.subheader("Player Stats")
-
-    league_df = data.league_data
-    if league_df is None or league_df.empty:
-        st.info("No player stats found yet (League_Data_Stats table not loaded).")
-        st.stop()
-
-    league = league_df.copy()
-    league.columns = [str(c).strip() for c in league.columns]
-
-    # Coerce numeric columns so Streamlit sorts numerically (not as strings)
-    numeric_cols = [
-        "Runs Scored",
-        "Balls Faced",
-        "6s",
-        "Retirements",
-        "Batting Strike Rate",
-        "Batting Average",
-        "Highest Score",
-        "Innings Played",
-        "Not Out's",
-        "Sum of Overs",
-        "Overs",
-        "Balls Bowled",
-        "Maidens",
-        "Runs Conceded",
-        "Wickets",
-        "Wides",
-        "No Balls",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-        "Catches",
-        "Run Outs",
-        "Stumpings",
-        "Fantasy Points",
-    ]
-    for col in numeric_cols:
-        if col in league.columns:
-            league[col] = pd.to_numeric(league[col], errors="coerce")
-
-    # -----------------------------
-    # Filters (use a form to avoid tab "snapping" on reruns)
-    # -----------------------------
-    name_col = _find_col(league, ["Name"])
-    team_col = _find_col(league, ["Team", "TeamName", "Team Name"])
-
-    with st.form("player_stats_filters", clear_on_submit=False):
-        c1, c2 = st.columns([2, 1])
-
-        with c2:
-            if team_col and team_col in league.columns:
-                teams = (
-                    league[team_col]
-                    .dropna()
-                    .astype(str)
-                    .map(str.strip)
-                )
-                teams = sorted([t for t in teams.unique().tolist() if t != ""])
-                st.selectbox("Team", ["All"] + teams, key="ps_team")
-            else:
-                st.selectbox("Team", ["All"], key="ps_team", disabled=True)
-
-        with c1:
-            if name_col and name_col in league.columns:
-                names = (
-                    league[name_col]
-                    .dropna()
-                    .astype(str)
-                    .map(str.strip)
-                )
-                names = sorted([n for n in names.unique().tolist() if n != ""])
-                st.selectbox("Player", ["All"] + names, key="ps_player")
-            else:
-                st.selectbox("Player", ["All"], key="ps_player", disabled=True)
-
-        st.form_submit_button("Apply")
-
-    team_choice = st.session_state.get("ps_team", "All")
-    player_choice = st.session_state.get("ps_player", "All")
-
-    filtered = league.copy()
-
-    if team_col and team_col in filtered.columns and team_choice != "All":
-        filtered = filtered[filtered[team_col].astype(str).str.strip() == team_choice]
-
-    if name_col and name_col in filtered.columns and player_choice != "All":
-        filtered = filtered[filtered[name_col].astype(str).str.strip() == player_choice]
-
-    # -----------------------------
-    # Main + Expanded table columns
-    # -----------------------------
-    main_cols = [
-        "Name",
-        "Runs Scored",
-        "Batting Average",
-        "Wickets",
-        "Economy",
-        "Fantasy Points",
-    ]
-
-    desired_cols = [
-        "Name",
-        "Runs Scored",
-        "Balls Faced",
-        "6s",
-        "Retirements",
-        "Batting Strike Rate",
-        "Batting Average",
-        "Highest Score",
-        "Innings Played",
-        "Not Out's",
-        "Sum of Overs",
-        "Overs",
-        "Balls Bowled",
-        "Maidens",
-        "Runs Conceded",
-        "Wickets",
-        "Wides",
-        "No Balls",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-        "Best Figures",
-        "Catches",
-        "Run Outs",
-        "Stumpings",
-        "Fantasy Points",
-    ]
-
-    show_main_cols = [c for c in main_cols if c in filtered.columns]
-    show_full_cols = [c for c in desired_cols if c in filtered.columns]
-
-    main_view = filtered[show_main_cols] if show_main_cols else filtered
-    full_view = filtered[show_full_cols] if show_full_cols else filtered
-
-    # Sort by Fantasy Points if present (apply to both views)
-    if "Fantasy Points" in main_view.columns:
-        try:
-            main_view = main_view.sort_values(by="Fantasy Points", ascending=False)
-        except Exception:
-            pass
-
-    if "Fantasy Points" in full_view.columns:
-        try:
-            full_view = full_view.sort_values(by="Fantasy Points", ascending=False)
-        except Exception:
-            pass
-
-    # 2dp formatting for specific columns
-    two_dp_cols = [
-        "Batting Strike Rate",
-        "Batting Average",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-    ]
-
-    def _col_config_for(df: pd.DataFrame) -> dict:
-        return {
-            c: st.column_config.NumberColumn(format="%.2f")
-            for c in two_dp_cols
-            if c in df.columns
-        }
-
-    # -----------------------------
-    # Render
-    # -----------------------------
-    st.markdown("#### Key Stats")
-    st.dataframe(
-        main_view,
-        width="stretch",
-        hide_index=True,
-        column_config=_col_config_for(main_view),
-    )
-
-    with st.expander("Show all stats"):
-        st.dataframe(
-            full_view,
-            width="stretch",
-            hide_index=True,
-            column_config=_col_config_for(full_view),
-        )
