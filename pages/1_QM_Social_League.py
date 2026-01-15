@@ -342,30 +342,54 @@ if selected_tab == "Player Stats":
     else:
         player_options = []
 
-    with st.form("player_stats_filters", clear_on_submit=False):
-        c1, c2 = st.columns([2, 1])
+    # -----------------------------
+    # Filters (no Apply button)
+    # Team by name; Players optional and scoped by current team
+    # -----------------------------
+    team_names = sorted([t for t in team_name_to_id.keys() if str(t).strip() != ""]) if team_name_to_id else []
+    team_dropdown_options = ["All"] + team_names
 
-        with c2:
-            st.selectbox(
-                "Team",
-                team_dropdown_options if team_dropdown_options else ["All"],
-                key="ps_team_name",
-            )
+    c1, c2 = st.columns([2, 1])
 
-        with c1:
-            st.multiselect(
-                "Players (optional)",
-                player_options,
-                default=st.session_state.get("ps_players", []),
-                key="ps_players",
-            )
+    with c2:
+        selected_team_name = st.selectbox(
+            "Team",
+            team_dropdown_options if team_dropdown_options else ["All"],
+            key="ps_team_name",
+        )
 
-        st.form_submit_button("Apply")
-
-    selected_team_name = st.session_state.get("ps_team_name", "All")
     selected_team_id = team_name_to_id.get(selected_team_name) if selected_team_name != "All" else None
-    selected_players = st.session_state.get("ps_players", [])
 
+    # Build player options based on currently selected team
+    player_options_df = league
+    if selected_team_id is not None and team_id_col_league and team_id_col_league in league.columns:
+        player_options_df = league[
+            league[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()
+        ]
+
+    if name_col and name_col in league.columns:
+        player_options = (
+            player_options_df[name_col]
+            .dropna()
+            .astype(str)
+            .map(str.strip)
+        )
+        player_options = sorted([p for p in player_options.unique().tolist() if p != ""])
+    else:
+        player_options = []
+
+    # Drop any previously selected players that are no longer valid for this team
+    current_players = st.session_state.get("ps_players", [])
+    current_players = [p for p in current_players if p in player_options]
+    st.session_state["ps_players"] = current_players
+
+    with c1:
+        selected_players = st.multiselect(
+            "Players (optional)",
+            player_options,
+            key="ps_players",
+        )
+        
     filtered = league.copy()
 
     if selected_team_id is not None and team_id_col_league and team_id_col_league in filtered.columns:
