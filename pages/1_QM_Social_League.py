@@ -512,16 +512,24 @@ with tab_table:
                 border-bottom: none !important;
               }
 
-              /* Zebra striping */
-              .lt-wrap tbody tr:nth-child(even) td {
-                background: rgba(250, 250, 252, 1);
+                /* Medal colouring for top 3 positions only */
+              .lt-wrap tbody tr:nth-child(1) td {
+                background: rgba(255, 215, 0, 0.08); /* gold */
               }
 
-              /* Hover similar to Streamlit row hover */
+              .lt-wrap tbody tr:nth-child(2) td {
+                background: rgba(192, 192, 192, 0.10); /* silver */
+              }
+
+              .lt-wrap tbody tr:nth-child(3) td {
+                background: rgba(205, 127, 50, 0.10); /* bronze */
+              }
+
+              /* Hover similar to Streamlit row hover (no persistent colour for rows 4+) */
               .lt-wrap tbody tr:hover td {
                 background: rgba(240, 242, 246, 1);
               }
-
+              
               /* Remove pandas default borders */
               .lt-wrap table, .lt-wrap th, .lt-wrap td {
                 border-left: none !important;
