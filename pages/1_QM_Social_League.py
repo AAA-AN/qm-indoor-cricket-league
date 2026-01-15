@@ -114,12 +114,13 @@ st.markdown(
     /* ===== Streamlit radio -> native tabs styling ===== */
 
     /* Layout like native tabs */
+        /* Radiogroup styled as native tabs (no separator line) */
     div[role="radiogroup"] {
         display: flex !important;
         flex-direction: row !important;
         gap: 1.25rem !important;
-        border-bottom: 1px solid rgba(49, 51, 63, 0.15);
-        padding-bottom: 0.35rem;
+        border-bottom: none !important;   /* remove separator line */
+        padding-bottom: 0 !important;
         margin-bottom: 1.25rem;
     }
 
@@ -145,9 +146,10 @@ st.markdown(
     }
 
     /* Selected tab underline */
+    /* Selected tab underline – pixel-matched to Streamlit native tabs */
     div[role="radiogroup"] > label:has(input:checked) {
-        border-bottom: 2px solid rgba(49, 51, 63, 0.85);
-        margin-bottom: -2px;
+        border-bottom: 2px solid rgb(49, 51, 63); /* exact native colour */
+        padding-bottom: 0.45rem;                 /* native vertical spacing */
     }
 
     /* Selected tab text */
