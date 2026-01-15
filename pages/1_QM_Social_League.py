@@ -156,9 +156,25 @@ st.markdown(
         color: rgba(49, 51, 63, 1);
     }
 
-    /* ===== Hide radio controls ONLY ===== */
+        /* ===== Hide radio controls ONLY ===== */
 
-    /* Hide the radio input */
+    /* Hide the control element used by BaseWeb/Streamlit (commonly the first span) */
+    div[role="radiogroup"] > label > span:first-of-type {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Hide any SVG that might be used for the circle (but ONLY within the radiogroup labels) */
+    div[role="radiogroup"] > label svg {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+    }
+
+    /* Hide the input itself but keep it in the DOM for state */
     div[role="radiogroup"] input[type="radio"] {
         position: absolute !important;
         opacity: 0 !important;
@@ -167,17 +183,10 @@ st.markdown(
         pointer-events: none !important;
     }
 
-    /* Hide the BaseWeb radio circle */
-    div[role="radiogroup"] > label [data-baseweb="radio"] {
-        display: none !important;
-        width: 0 !important;
-        height: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-
-    /* Remove spacing reserved for radio */
+    /* Remove any reserved spacing for the missing control */
     div[role="radiogroup"] > label {
+        padding-left: 0 !important;
+        margin-left: 0 !important;
         column-gap: 0 !important;
         gap: 0 !important;
     }
