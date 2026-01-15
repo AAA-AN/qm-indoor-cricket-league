@@ -759,71 +759,219 @@ if selected_tab == "Teams":
     team_names = sorted([t for t in teams[team_name_col].dropna().unique().tolist() if str(t).strip() != ""], key=str.lower)
     team_choice = st.selectbox("Team", ["All Teams"] + team_names, key="ts_team_name")
 
-    # ---------- All Teams overview ----------
+    # ---------- All Teams: Team totals with selectable stats (like Player Stats) ----------
     if team_choice == "All Teams":
-        # Build base from league_table if available; otherwise show Teams_Table basics
-        overview = None
 
-        if league_table is not None and not league_table.empty:
-            lt = league_table.copy()
-            lt.columns = [str(c).strip() for c in lt.columns]
+        if league_df is None or league_df.empty:
+            st.info("No League_Data_Stats found yet, so team totals cannot be calculated.")
+            st.stop()
 
-            # Ensure NRR displays to 2dp in overview too (keep numeric for sorting)
-            if "NRR" in lt.columns:
-                lt["NRR"] = pd.to_numeric(lt["NRR"], errors="coerce").round(2)
+        league = league_df.copy()
+        league.columns = [str(c).strip() for c in league.columns]
 
-            # Attempt to join captain/active by Team name
-            if "Team" in lt.columns:
-                join_cols = [team_name_col]
-                add_cols = []
-                if active_col:
-                    add_cols.append(active_col)
-                if captain_name_col:
-                    add_cols.append(captain_name_col)
+        team_id_col_league = _find_col(league, ["TeamID", "Team Id", "Team ID"])
 
-                if add_cols:
-                    tmini = teams[[team_name_col] + add_cols].drop_duplicates()
-                    overview = lt.merge(tmini, left_on="Team", right_on=team_name_col, how="left")
-                    overview = overview.drop(columns=[team_name_col], errors="ignore")
-                else:
-                    overview = lt
-            else:
-                overview = lt
+        # Map TeamID -> Team Name using Teams_Table
+        team_id_to_name: dict[str, str] = {}
+        if team_id_col and team_name_col and team_id_col in teams.columns and team_name_col in teams.columns:
+            tmap = teams[[team_id_col, team_name_col]].copy()
+            tmap[team_id_col] = tmap[team_id_col].astype(str).str.strip()
+            tmap[team_name_col] = tmap[team_name_col].astype(str).str.strip()
+            tmap = tmap[(tmap[team_id_col] != "") & (tmap[team_name_col] != "")].drop_duplicates()
+            team_id_to_name = dict(zip(tmap[team_id_col], tmap[team_name_col]))
 
-            # Hide any raw stat columns you previously hid in League Table display
-            cols_to_hide = [
-                "Runs Scored",
-                "Runs Conceeded",
-                "Wickets Taken",
-                "Wickets Lost",
-                "Overs Faced",
-                "Overs Bowled",
-            ]
-            overview = overview.drop(columns=[c for c in cols_to_hide if c in overview.columns], errors="ignore")
+        if not team_id_col_league or team_id_col_league not in league.columns or not team_id_to_name:
+            st.info("Team totals require TeamID in League_Data and TeamID/Team Names in Teams_Table.")
+            st.stop()
 
-            # If Position not present, add it based on current order
-            if "Position" not in overview.columns:
-                overview.insert(0, "Position", range(1, len(overview) + 1))
+        league[team_id_col_league] = league[team_id_col_league].astype(str).str.strip()
+        league["Team"] = league[team_id_col_league].map(team_id_to_name)
 
-        if overview is None:
-            # Fallback: simple overview from Teams_Table
-            cols = [team_name_col]
-            if active_col:
-                cols.append(active_col)
-            if captain_name_col:
-                cols.append(captain_name_col)
-            overview = teams[cols].copy()
-            overview.insert(0, "Position", range(1, len(overview) + 1))
+        # Drop rows that cannot be mapped to a team name
+        league = league[league["Team"].notna() & (league["Team"].astype(str).str.strip() != "")]
+        if league.empty:
+            st.info("No mapped team stats available yet.")
+            st.stop()
+
+        # Numeric coercion for aggregations
+        sum_cols = [
+            "Runs Scored",
+            "Balls Faced",
+            "6s",
+            "Retirements",
+            "Innings Played",
+            "Not Out's",
+            "Overs",
+            "Balls Bowled",
+            "Maidens",
+            "Runs Conceded",
+            "Wickets",
+            "Wides",
+            "No Balls",
+            "Catches",
+            "Run Outs",
+            "Stumpings",
+            "Fantasy Points",
+        ]
+        for c in sum_cols:
+            if c in league.columns:
+                league[c] = pd.to_numeric(league[c], errors="coerce")
+
+        # Aggregate to team totals (sums)
+        agg_map = {c: "sum" for c in sum_cols if c in league.columns}
+        team_totals = league.groupby("Team", as_index=False).agg(agg_map) if agg_map else league[["Team"]].drop_duplicates()
+
+        # Derived metrics to match Player Stats logic
+        if "Runs Scored" in team_totals.columns and "Balls Faced" in team_totals.columns:
+            bf = pd.to_numeric(team_totals["Balls Faced"], errors="coerce")
+            rs = pd.to_numeric(team_totals["Runs Scored"], errors="coerce")
+            team_totals["Team Batting Strike Rate"] = (rs / bf) * 100
+            team_totals.loc[(bf.isna()) | (bf <= 0), "Team Batting Strike Rate"] = pd.NA
+
+        if "Runs Conceded" in team_totals.columns and "Overs" in team_totals.columns:
+            ov = pd.to_numeric(team_totals["Overs"], errors="coerce")
+            rc = pd.to_numeric(team_totals["Runs Conceded"], errors="coerce")
+            team_totals["Team Economy"] = rc / ov
+            team_totals.loc[(ov.isna()) | (ov <= 0), "Team Economy"] = pd.NA
+
+        # Optional: show Active + Captain (nice for context)
+        active_col = _find_col(teams, ["Active"])
+        captain_name_col = _find_col(teams, ["Captain's Name", "Captains Name", "Captain Name"])
+        tmeta_cols = [team_name_col]
+        if active_col:
+            tmeta_cols.append(active_col)
+        if captain_name_col:
+            tmeta_cols.append(captain_name_col)
+
+        if tmeta_cols and team_name_col in teams.columns:
+            tmeta = teams[tmeta_cols].copy().drop_duplicates()
+            tmeta.columns = [str(c).strip() for c in tmeta.columns]
+            # Join by team name
+            team_totals = team_totals.merge(
+                tmeta,
+                left_on="Team",
+                right_on=team_name_col,
+                how="left",
+            ).drop(columns=[team_name_col], errors="ignore")
+
+        # -----------------------------
+        # Team stat selectors (same UX as Player Stats)
+        # -----------------------------
+        TEAM_BATTING_STATS = [
+            "Runs Scored",
+            "Balls Faced",
+            "6s",
+            "Retirements",
+            "Team Batting Strike Rate",
+        ]
+
+        TEAM_BOWLING_STATS = [
+            "Overs",
+            "Balls Bowled",
+            "Maidens",
+            "Runs Conceded",
+            "Wickets",
+            "Wides",
+            "No Balls",
+            "Team Economy",
+        ]
+
+        TEAM_FIELDING_STATS = [
+            "Catches",
+            "Run Outs",
+            "Stumpings",
+        ]
+
+        batting_options = [c for c in TEAM_BATTING_STATS if c in team_totals.columns]
+        bowling_options = [c for c in TEAM_BOWLING_STATS if c in team_totals.columns]
+        fielding_options = [c for c in TEAM_FIELDING_STATS if c in team_totals.columns]
+
+        default_batting = [c for c in ["Runs Scored", "Team Batting Strike Rate"] if c in batting_options]
+        default_bowling = [c for c in ["Wickets", "Team Economy"] if c in bowling_options]
+        default_fielding: list[str] = []
+
+        def _init_or_sanitize_multiselect_state(key: str, options: list[str], defaults: list[str]) -> None:
+            if key not in st.session_state:
+                st.session_state[key] = defaults
+                return
+            current = st.session_state.get(key, [])
+            current = [c for c in current if c in options]
+            st.session_state[key] = current if current else defaults
+
+        _init_or_sanitize_multiselect_state("ts_all_batting_cols", batting_options, default_batting)
+        _init_or_sanitize_multiselect_state("ts_all_bowling_cols", bowling_options, default_bowling)
+        _init_or_sanitize_multiselect_state("ts_all_fielding_cols", fielding_options, default_fielding)
+
+        st.markdown("#### Select Team Stats To Display")
+        d1, d2, d3 = st.columns(3)
+
+        with d1:
+            selected_batting = st.multiselect(
+                "Batting Stats",
+                options=batting_options,
+                key="ts_all_batting_cols",
+            )
+
+        with d2:
+            selected_bowling = st.multiselect(
+                "Bowling Stats",
+                options=bowling_options,
+                key="ts_all_bowling_cols",
+            )
+
+        with d3:
+            selected_fielding = st.multiselect(
+                "Fielding Stats",
+                options=fielding_options,
+                key="ts_all_fielding_cols",
+            )
+
+        selected_columns = selected_batting + selected_bowling + selected_fielding
+
+        display_cols = ["Team"]
+        # Keep optional meta columns right after Team if present
+        for meta in [active_col, captain_name_col]:
+            if meta and meta in team_totals.columns and meta not in display_cols:
+                display_cols.append(meta)
+
+        for c in selected_columns:
+            if c not in display_cols:
+                display_cols.append(c)
+
+        if "Fantasy Points" in team_totals.columns and "Fantasy Points" not in display_cols:
+            display_cols.append("Fantasy Points")
+
+        view = team_totals[display_cols].copy() if all(c in team_totals.columns for c in display_cols) else team_totals.copy()
+
+        # Default sorting (Fantasy Points if present, otherwise Runs Scored)
+        sort_col = None
+        if "Fantasy Points" in view.columns:
+            sort_col = "Fantasy Points"
+        elif "Runs Scored" in view.columns:
+            sort_col = "Runs Scored"
+
+        if sort_col:
+            try:
+                view = view.sort_values(by=sort_col, ascending=False)
+            except Exception:
+                pass
+
+        # Formatting for derived rate stats (2dp)
+        col_config = {"Team": st.column_config.TextColumn(pinned=True)}
+        for c in ["Team Batting Strike Rate", "Team Economy"]:
+            if c in view.columns:
+                col_config[c] = st.column_config.NumberColumn(format="%.2f")
 
         st.data_editor(
-            overview,
+            view,
             width="stretch",
             hide_index=True,
             disabled=True,
+            column_config=col_config,
         )
 
         st.markdown("---")
-        st.caption("Select a team above to view roster and team totals.")
+        st.caption("Select a team above to view roster and team details.")
         st.stop()
 
     # ---------- Single Team view ----------
