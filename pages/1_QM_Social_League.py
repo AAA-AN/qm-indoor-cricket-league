@@ -353,29 +353,18 @@ with tab_stats:
     default_bowling = [c for c in ["Wickets", "Economy"] if c in bowling_options]
     default_fielding: list[str] = []  # old key stats had no fielding columns by default
 
-    # Reset invalid prior selections if the available options change (e.g. team filter changes)
-    prev_batting = st.session_state.get("ps_batting_cols", default_batting)
-    prev_bowling = st.session_state.get("ps_bowling_cols", default_bowling)
-    prev_fielding = st.session_state.get("ps_fielding_cols", default_fielding)
+        # Reset invalid prior selections if the available options change (e.g. team filter changes)
+    def _init_or_sanitize_multiselect_state(key: str, options: list[str], defaults: list[str]) -> None:
+        if key not in st.session_state:
+            st.session_state[key] = defaults
+            return
+        current = st.session_state.get(key, [])
+        current = [c for c in current if c in options]
+        st.session_state[key] = current if current else defaults
 
-    prev_batting = [c for c in prev_batting if c in batting_options]
-    prev_bowling = [c for c in prev_bowling if c in bowling_options]
-    prev_fielding = [c for c in prev_fielding if c in fielding_options]
-
-    if "ps_batting_cols" not in st.session_state:
-        st.session_state["ps_batting_cols"] = default_batting
-    else:
-        st.session_state["ps_batting_cols"] = prev_batting if prev_batting else default_batting
-
-    if "ps_bowling_cols" not in st.session_state:
-        st.session_state["ps_bowling_cols"] = default_bowling
-    else:
-        st.session_state["ps_bowling_cols"] = prev_bowling if prev_bowling else default_bowling
-
-    if "ps_fielding_cols" not in st.session_state:
-        st.session_state["ps_fielding_cols"] = default_fielding
-    else:
-        st.session_state["ps_fielding_cols"] = prev_fielding
+    _init_or_sanitize_multiselect_state("ps_batting_cols", batting_options, default_batting)
+    _init_or_sanitize_multiselect_state("ps_bowling_cols", bowling_options, default_bowling)
+    _init_or_sanitize_multiselect_state("ps_fielding_cols", fielding_options, default_fielding)
 
     st.markdown("#### Select Stats To Display")
     d1, d2, d3 = st.columns(3)
@@ -384,7 +373,6 @@ with tab_stats:
         selected_batting = st.multiselect(
             "Batting Stats",
             options=batting_options,
-            default=st.session_state["ps_batting_cols"],
             key="ps_batting_cols",
         )
 
@@ -392,7 +380,6 @@ with tab_stats:
         selected_bowling = st.multiselect(
             "Bowling Stats",
             options=bowling_options,
-            default=st.session_state["ps_bowling_cols"],
             key="ps_bowling_cols",
         )
 
@@ -400,11 +387,8 @@ with tab_stats:
         selected_fielding = st.multiselect(
             "Fielding Stats",
             options=fielding_options,
-            default=st.session_state["ps_fielding_cols"],
             key="ps_fielding_cols",
         )
-
-    selected_columns = selected_batting + selected_bowling + selected_fielding
 
     # Always keep Name first and Fantasy Points included by default (to match old Key Stats)
     display_cols = ["Name"]
