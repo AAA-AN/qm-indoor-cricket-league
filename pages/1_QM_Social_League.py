@@ -306,66 +306,9 @@ with tab_stats:
         filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
 
     # -----------------------------
-    # Main + Expanded table columns
-    # -----------------------------
-    main_cols = [
-        "Name",
-        "Runs Scored",
-        "Batting Average",
-        "Wickets",
-        "Economy",
-        "Fantasy Points",
-    ]
-
-    desired_cols = [
-        "Name",
-        "Runs Scored",
-        "Balls Faced",
-        "6s",
-        "Retirements",
-        "Batting Strike Rate",
-        "Batting Average",
-        "Highest Score",
-        "Innings Played",
-        "Not Out's",
-        "Sum of Overs",
-        "Overs",
-        "Balls Bowled",
-        "Maidens",
-        "Runs Conceded",
-        "Wickets",
-        "Wides",
-        "No Balls",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-        "Best Figures",
-        "Catches",
-        "Run Outs",
-        "Stumpings",
-        "Fantasy Points",
-    ]
-
-    show_main_cols = [c for c in main_cols if c in filtered.columns]
-    show_full_cols = [c for c in desired_cols if c in filtered.columns]
-
-    main_view = filtered[show_main_cols] if show_main_cols else filtered
-    full_view = filtered[show_full_cols] if show_full_cols else filtered
-
-    # Default sort by Fantasy Points (users can still click to sort)
-    if "Fantasy Points" in main_view.columns:
-        try:
-            main_view = main_view.sort_values(by="Fantasy Points", ascending=False)
-        except Exception:
-            pass
-    if "Fantasy Points" in full_view.columns:
-        try:
-            full_view = full_view.sort_values(by="Fantasy Points", ascending=False)
-        except Exception:
-            pass
-
-    # -----------------------------
-    # NEW: Replace "Show all stats" expander with 3 dropdown selectors
+    # Three selectors + single table (no "Key Stats" table)
+    # Defaults match old Key Stats:
+    # Name, Runs Scored, Batting Average, Wickets, Economy, Fantasy Points
     # -----------------------------
     BATTING_STATS = [
         "Runs Scored",
@@ -400,12 +343,88 @@ with tab_stats:
         "Stumpings",
     ]
 
-    # Keep only columns that exist in the dataframe
-    batting_options = [c for c in BATTING_STATS if c in full_view.columns]
-    bowling_options = [c for c in BOWLING_STATS if c in full_view.columns]
-    fielding_options = [c for c in FIELDING_STATS if c in full_view.columns]
+    # Keep only columns that exist
+    batting_options = [c for c in BATTING_STATS if c in filtered.columns]
+    bowling_options = [c for c in BOWLING_STATS if c in filtered.columns]
+    fielding_options = [c for c in FIELDING_STATS if c in filtered.columns]
 
-    st.markdown("#### Key Stats")
+    # Defaults = old Key Stats (where they live)
+    default_batting = [c for c in ["Runs Scored", "Batting Average"] if c in batting_options]
+    default_bowling = [c for c in ["Wickets", "Economy"] if c in bowling_options]
+    default_fielding: list[str] = []  # old key stats had no fielding columns by default
+
+    # Reset invalid prior selections if the available options change (e.g. team filter changes)
+    prev_batting = st.session_state.get("ps_batting_cols", default_batting)
+    prev_bowling = st.session_state.get("ps_bowling_cols", default_bowling)
+    prev_fielding = st.session_state.get("ps_fielding_cols", default_fielding)
+
+    prev_batting = [c for c in prev_batting if c in batting_options]
+    prev_bowling = [c for c in prev_bowling if c in bowling_options]
+    prev_fielding = [c for c in prev_fielding if c in fielding_options]
+
+    if "ps_batting_cols" not in st.session_state:
+        st.session_state["ps_batting_cols"] = default_batting
+    else:
+        st.session_state["ps_batting_cols"] = prev_batting if prev_batting else default_batting
+
+    if "ps_bowling_cols" not in st.session_state:
+        st.session_state["ps_bowling_cols"] = default_bowling
+    else:
+        st.session_state["ps_bowling_cols"] = prev_bowling if prev_bowling else default_bowling
+
+    if "ps_fielding_cols" not in st.session_state:
+        st.session_state["ps_fielding_cols"] = default_fielding
+    else:
+        st.session_state["ps_fielding_cols"] = prev_fielding
+
+    st.markdown("#### Select Stats To Display")
+    d1, d2, d3 = st.columns(3)
+
+    with d1:
+        selected_batting = st.multiselect(
+            "Batting Stats",
+            options=batting_options,
+            default=st.session_state["ps_batting_cols"],
+            key="ps_batting_cols",
+        )
+
+    with d2:
+        selected_bowling = st.multiselect(
+            "Bowling Stats",
+            options=bowling_options,
+            default=st.session_state["ps_bowling_cols"],
+            key="ps_bowling_cols",
+        )
+
+    with d3:
+        selected_fielding = st.multiselect(
+            "Fielding Stats",
+            options=fielding_options,
+            default=st.session_state["ps_fielding_cols"],
+            key="ps_fielding_cols",
+        )
+
+    selected_columns = selected_batting + selected_bowling + selected_fielding
+
+    # Always keep Name first and Fantasy Points included by default (to match old Key Stats)
+    display_cols = ["Name"]
+    for c in selected_columns:
+        if c not in display_cols:
+            display_cols.append(c)
+
+    if "Fantasy Points" in filtered.columns and "Fantasy Points" not in display_cols:
+        display_cols.append("Fantasy Points")
+
+    # Build view
+    view = filtered[display_cols] if all(c in filtered.columns for c in display_cols) else filtered
+
+    # Default sort by Fantasy Points (users can still click to sort)
+    if "Fantasy Points" in view.columns:
+        try:
+            view = view.sort_values(by="Fantasy Points", ascending=False)
+        except Exception:
+            pass
+
     # Column config: pin Name, 2dp formatting for specified metrics
     def _col_config_for(df: pd.DataFrame) -> dict:
         config: dict = {}
@@ -426,72 +445,18 @@ with tab_stats:
         return config
 
     st.data_editor(
-        main_view,
+        view,
         width="stretch",
         hide_index=True,
         disabled=True,
-        column_config=_col_config_for(main_view),
-    )
-
-    st.markdown("#### Detailed Stats")
-
-    d1, d2, d3 = st.columns(3)
-
-    with d1:
-        selected_batting = st.multiselect(
-            "Batting Stats",
-            options=batting_options,
-            default=batting_options,
-            key="ps_batting_cols",
-        )
-
-    with d2:
-        selected_bowling = st.multiselect(
-            "Bowling Stats",
-            options=bowling_options,
-            default=bowling_options,
-            key="ps_bowling_cols",
-        )
-
-    with d3:
-        selected_fielding = st.multiselect(
-            "Fielding Stats",
-            options=fielding_options,
-            default=fielding_options,
-            key="ps_fielding_cols",
-        )
-
-    selected_columns = selected_batting + selected_bowling + selected_fielding
-
-    # Always keep Name first (and Fantasy Points last if present)
-    detail_cols = ["Name"]
-    for c in selected_columns:
-        if c not in detail_cols:
-            detail_cols.append(c)
-    if "Fantasy Points" in full_view.columns and "Fantasy Points" not in detail_cols:
-        detail_cols.append("Fantasy Points")
-
-    detail_view = full_view[detail_cols] if all(c in full_view.columns for c in detail_cols) else full_view
-
-    # Default sort by Fantasy Points for detailed view as well
-    if "Fantasy Points" in detail_view.columns:
-        try:
-            detail_view = detail_view.sort_values(by="Fantasy Points", ascending=False)
-        except Exception:
-            pass
-
-    st.data_editor(
-        detail_view,
-        width="stretch",
-        hide_index=True,
-        disabled=True,
-        column_config=_col_config_for(detail_view),
+        column_config=_col_config_for(view),
     )
 
 
 # ============================
 # TAB 2: FIXTURES & RESULTS
 # ============================
+
 with tab_fixtures:
     st.subheader("Fixtures & Results")
 
