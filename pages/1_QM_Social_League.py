@@ -199,7 +199,7 @@ st.markdown(
             color: #FFFFFF !important;              /* unselected = white */
             font-weight: 650 !important;
             opacity: 1 !important;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+            text-shadow: none !important;
         }
 
         html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) > div,
@@ -218,7 +218,7 @@ st.markdown(
         div[role="radiogroup"] > label > span {
             color: #FFFFFF !important;
             font-weight: 650 !important;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+            text-shadow: none !important;
         }
 
         /* Keep selected tab red (works even if :has is inconsistent elsewhere) */
