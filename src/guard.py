@@ -107,7 +107,8 @@ def render_logout_button():
     if st.session_state.get("user") is None:
         return
 
-    sidebar_divider_compact()
+    # No divider here: keeps only the divider between pages and the user header
     if st.sidebar.button("Logout", use_container_width=True):
         st.session_state["user"] = None
         st.switch_page("app.py")
+
