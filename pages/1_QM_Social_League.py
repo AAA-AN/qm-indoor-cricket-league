@@ -437,7 +437,7 @@ with tab_table:
         # Build HTML table (non-interactive; prevents user sorting)
         html_table = lt.to_html(index=False, escape=True)
 
-                st.markdown(
+        st.markdown(
             """
             <style>
               /* Container styled to resemble Streamlit's dataframe */
