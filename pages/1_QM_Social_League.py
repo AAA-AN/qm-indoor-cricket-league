@@ -193,6 +193,37 @@ with tab3:
     league = league_df.copy()
     league.columns = [str(c).strip() for c in league.columns]
 
+    # Coerce numeric columns so Streamlit sorts numerically (not as strings)
+    numeric_cols = [
+        "Runs Scored",
+        "Balls Faced",
+        "6s",
+        "Retirements",
+        "Batting Strike Rate",
+        "Batting Average",
+        "Highest Score",
+        "Innings Played",
+        "Not Out's",
+        "Sum of Overs",
+        "Overs",
+        "Balls Bowled",
+        "Maidens",
+        "Runs Conceded",
+        "Wickets",
+        "Wides",
+        "No Balls",
+        "Economy",
+        "Bowling Strike Rate",
+        "Bowling Average",
+        "Catches",
+        "Run Outs",
+        "Stumpings",
+        "Fantasy Points",
+    ]
+    for col in numeric_cols:
+        if col in league.columns:
+            league[col] = pd.to_numeric(league[col], errors="coerce")
+
     # Filters
     name_col = _find_col(league, ["Name"])
     team_col = _find_col(league, ["Team", "TeamName", "Team Name"])
@@ -215,7 +246,6 @@ with tab3:
     if q and name_col and name_col in filtered.columns:
         filtered = filtered[filtered[name_col].astype(str).str.lower().str.contains(q, na=False)]
     elif q:
-        # Fallback: search all columns if Name isn't available for some reason
         mask = False
         for c in filtered.columns:
             mask = mask | filtered[c].astype(str).str.lower().str.contains(q, na=False)
@@ -230,7 +260,7 @@ with tab3:
         "Retirements",
         "Batting Strike Rate",
         "Batting Average",
-        "Best Score",
+        "Highest Score",
         "Innings Played",
         "Not Out's",
         "Sum of Overs",
