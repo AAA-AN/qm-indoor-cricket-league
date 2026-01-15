@@ -1208,6 +1208,18 @@ if selected_tab == "Teams":
             col_config[c] = st.column_config.NumberColumn(format="%.2f")
 
     st.markdown("#### Player Stats (Team)")
+    st.markdown(
+    """
+    <style>
+    /* Emphasise Team Totals row (last row only) */
+    div[data-testid="stDataEditor"] tbody tr:last-child td {
+        font-weight: 700 !important;
+        border-top: 2px solid rgba(49, 51, 63, 0.25) !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
     st.data_editor(
         view,
         width="stretch",
