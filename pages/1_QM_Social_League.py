@@ -224,48 +224,53 @@ with tab3:
         if col in league.columns:
             league[col] = pd.to_numeric(league[col], errors="coerce")
 
-        # Filters
+    # -----------------------------
+    # Filters (use a form to avoid tab "snapping" on reruns)
+    # -----------------------------
     name_col = _find_col(league, ["Name"])
     team_col = _find_col(league, ["Team", "TeamName", "Team Name"])
 
+    with st.form("player_stats_filters", clear_on_submit=False):
+        c1, c2 = st.columns([2, 1])
+
+        with c2:
+            if team_col and team_col in league.columns:
+                teams = (
+                    league[team_col]
+                    .dropna()
+                    .astype(str)
+                    .map(str.strip)
+                )
+                teams = sorted([t for t in teams.unique().tolist() if t != ""])
+                st.selectbox("Team", ["All"] + teams, key="ps_team")
+            else:
+                st.selectbox("Team", ["All"], key="ps_team", disabled=True)
+
+        with c1:
+            if name_col and name_col in league.columns:
+                names = (
+                    league[name_col]
+                    .dropna()
+                    .astype(str)
+                    .map(str.strip)
+                )
+                names = sorted([n for n in names.unique().tolist() if n != ""])
+                st.selectbox("Player", ["All"] + names, key="ps_player")
+            else:
+                st.selectbox("Player", ["All"], key="ps_player", disabled=True)
+
+        st.form_submit_button("Apply")
+
+    team_choice = st.session_state.get("ps_team", "All")
+    player_choice = st.session_state.get("ps_player", "All")
+
     filtered = league.copy()
 
-    # Team filter (keep as-is)
-    c1, c2 = st.columns([2, 1])
+    if team_col and team_col in filtered.columns and team_choice != "All":
+        filtered = filtered[filtered[team_col].astype(str).str.strip() == team_choice]
 
-    with c2:
-        if team_col:
-            teams = sorted([t for t in league[team_col].dropna().astype(str).unique().tolist() if t.strip() != ""])
-            team_choice = st.selectbox("Team", ["All"] + teams)
-        else:
-            team_choice = "All"
-
-    if team_col and team_choice != "All":
-        filtered = filtered[filtered[team_col].astype(str) == team_choice]
-
-    # Player dropdown (type-to-search)
-    with c1:
-        if name_col and name_col in league.columns:
-            names = (
-                league[name_col]
-                .dropna()
-                .astype(str)
-                .map(str.strip)
-            )
-            names = sorted([n for n in names.unique().tolist() if n != ""])
-
-            player_choice = st.selectbox(
-                "Player",
-                ["All"] + names,
-                index=0,
-            )
-        else:
-            player_choice = "All"
-            st.warning("Name column not found; player filter disabled.")
-
-    if name_col and player_choice != "All":
+    if name_col and name_col in filtered.columns and player_choice != "All":
         filtered = filtered[filtered[name_col].astype(str).str.strip() == player_choice]
-
 
     # -----------------------------
     # Main + Expanded table columns
@@ -279,7 +284,6 @@ with tab3:
         "Fantasy Points",
     ]
 
-    # Expanded (full) view columns (your existing order)
     desired_cols = [
         "Name",
         "Runs Scored",
@@ -309,7 +313,6 @@ with tab3:
         "Fantasy Points",
     ]
 
-    # Keep only columns that exist (avoids crashes if headers change)
     show_main_cols = [c for c in main_cols if c in filtered.columns]
     show_full_cols = [c for c in desired_cols if c in filtered.columns]
 
