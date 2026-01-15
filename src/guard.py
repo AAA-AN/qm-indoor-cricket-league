@@ -68,14 +68,14 @@ def sidebar_divider_compact():
 
 
 def require_login():
-    """Ensure DB exists, then require login."""
+    """Ensure DB exists, then require login. If not logged in, redirect to app.py."""
     init_db()
+
     if st.session_state.get("user") is None:
         hide_sidebar()
-        st.warning("Please log in to access this page.")
-        if st.button("Go to Welcome / Login"):
-            st.switch_page("app.py")
+        st.switch_page("app.py")
         st.stop()
+
 
 
 def require_admin():
