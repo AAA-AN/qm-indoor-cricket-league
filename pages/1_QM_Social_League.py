@@ -193,13 +193,23 @@ st.markdown(
     /* =========================================================
        Dark mode: unselected white, selected red, underline red
        ========================================================= */
-    @media (prefers-color-scheme: dark) {
+        /* Streamlit dark theme (reliable on desktop + mobile) */
+        html[data-theme="dark"] div[role="radiogroup"] > label > div,
+        html[data-theme="dark"] div[role="radiogroup"] > label > span {
+            color: #FFFFFF !important;              /* unselected = white */
+            font-weight: 650 !important;
+            opacity: 1 !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+        }
 
-        /* Dark mode readability fix (desktop + mobile) without :has() dependency */
-        div[role="radiogroup"],
-        div[role="radiogroup"] * {
-            opacity: 1 !important;      /* defeat any inherited dimming */
-            filter: none !important;
+        html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) > div,
+        html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) > span {
+            color: rgba(255, 0, 0, 0.90) !important; /* selected = red */
+            font-weight: 700 !important;
+        }
+
+        html[data-theme="dark"] div[role="radiogroup"] > label:has(input:checked) {
+            border-bottom-color: rgba(255, 0, 0, 0.90) !important; /* underline red */
         }
 
         /* Make ALL tab labels readable in dark mode */
