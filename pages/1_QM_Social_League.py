@@ -130,13 +130,14 @@ with tab1:
     st.subheader("Fixtures & Results")
 
     preferred_cols = [
-        "MatchID",
         "Date",
         "Time",
         "Home Team",
         "Away Team",
         "Status",
-        "Won By"
+        "Won By",
+        "Home Score",
+        "Away Score"
     ]
     show_cols = [c for c in preferred_cols if c in fixtures.columns]
     st.dataframe(
