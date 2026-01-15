@@ -146,7 +146,7 @@ with tab1:
     )
 
     st.markdown("---")
-    st.subheader("League Table (Win 3, Tie 1, Loss 0, Abandoned 0)")
+    st.subheader("League Table")
 
     if "Won By" not in fixtures.columns:
         st.warning(
