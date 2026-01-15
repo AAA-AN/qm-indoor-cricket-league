@@ -195,10 +195,10 @@ st.markdown(
        ========================================================= */
     @media (prefers-color-scheme: dark) {
 
-        /* Unselected */
+        /* Unselected (dark mode) – clearly readable */
         div[role="radiogroup"] > label > div,
         div[role="radiogroup"] > label > span {
-            color: rgba(255, 255, 255, 0.90) !important;
+            color: rgba(255, 255, 255, 0.75) !important;
         }
 
         /* Hover */
@@ -221,7 +221,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
 
 # ============================
 # TAB 1: PLAYER STATS
