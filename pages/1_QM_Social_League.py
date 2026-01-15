@@ -163,48 +163,43 @@ with tab_stats:
     league = league_df.copy()
     league.columns = [str(c).strip() for c in league.columns]
 
-    # ---- Pull Team name from Teams_Table using TeamID (do NOT display TeamID) ----
+    # ---- Team mapping from Teams_Table via TeamID ----
     teams_df = getattr(data, "teams_table", None)
     if teams_df is None:
         teams_df = getattr(data, "teams", None)
     if teams_df is None:
         teams_df = getattr(data, "teams_data", None)
 
-    league_team_id_col = _find_col(league, ["TeamID", "Team Id", "Team ID"])
+    team_id_col_league = _find_col(league, ["TeamID", "Team Id", "Team ID"])
+    name_col = _find_col(league, ["Name"])
 
-    if teams_df is not None and not teams_df.empty and league_team_id_col:
+    team_id_to_name: dict = {}
+    team_name_to_id: dict = {}
+
+    if teams_df is not None and not teams_df.empty:
         teams = teams_df.copy()
         teams.columns = [str(c).strip() for c in teams.columns]
 
-        teams_team_id_col = _find_col(teams, ["TeamID", "Team Id", "Team ID"])
-        teams_team_name_col = _find_col(teams, ["Team", "TeamName", "Team Name"])
+        team_id_col_teams = _find_col(teams, ["TeamID", "Team Id", "Team ID"])
+        team_name_col_teams = _find_col(teams, ["Team", "TeamName", "Team Name"])
 
-        if teams_team_id_col and teams_team_name_col:
-            # Normalise types for merge safety
-            league[league_team_id_col] = pd.to_numeric(league[league_team_id_col], errors="coerce")
+        if team_id_col_teams and team_name_col_teams:
+            ttmp = teams[[team_id_col_teams, team_name_col_teams]].copy()
+            ttmp[team_id_col_teams] = pd.to_numeric(ttmp[team_id_col_teams], errors="coerce")
+            ttmp[team_name_col_teams] = ttmp[team_name_col_teams].astype(str).str.strip()
+            ttmp = ttmp.dropna(subset=[team_id_col_teams, team_name_col_teams]).drop_duplicates()
 
-            teams[teams_team_id_col] = pd.to_numeric(teams[teams_team_id_col], errors="coerce")
-            teams[teams_team_name_col] = teams[teams_team_name_col].astype(str).str.strip()
+            team_id_to_name = dict(zip(ttmp[team_id_col_teams], ttmp[team_name_col_teams]))
+            team_name_to_id = dict(zip(ttmp[team_name_col_teams], ttmp[team_id_col_teams]))
 
-            team_map = teams[[teams_team_id_col, teams_team_name_col]].drop_duplicates()
-
-            league = league.merge(
-                team_map,
-                how="left",
-                left_on=league_team_id_col,
-                right_on=teams_team_id_col,
-                suffixes=("", "_teams"),
-            )
-
-            # Create a consistent "Team" column name for display/filtering
-            if "Team" not in league.columns:
-                league.rename(columns={teams_team_name_col: "Team"}, inplace=True)
-            else:
-                # If league already has Team, prefer the Teams_Table value when present
-                league["Team"] = league["Team"].where(
-                    league["Team"].astype(str).str.strip().ne(""),
-                    league[teams_team_name_col],
-                )
+    # Add a friendly Team name column to league (do NOT show TeamID in dropdown)
+    if team_id_col_league and team_id_col_league in league.columns and team_id_to_name:
+        league[team_id_col_league] = pd.to_numeric(league[team_id_col_league], errors="coerce")
+        league["Team"] = league[team_id_col_league].map(team_id_to_name)
+    else:
+        # If TeamID is missing or Teams_Table not available, keep Team blank (but app still runs)
+        if "Team" not in league.columns:
+            league["Team"] = None
 
     # Coerce numeric columns so Streamlit sorts numerically (not as strings)
     numeric_cols = [
@@ -232,68 +227,75 @@ with tab_stats:
         "Run Outs",
         "Stumpings",
         "Fantasy Points",
-        # TeamID if present (internal use only)
-        "TeamID",
-        "Team Id",
-        "Team ID",
     ]
     for col in numeric_cols:
         if col in league.columns:
             league[col] = pd.to_numeric(league[col], errors="coerce")
 
     # -----------------------------
-    # Filters (form + multi-select)
+    # Filters (Team by name; Players optional)
     # -----------------------------
-    name_col = _find_col(league, ["Name"])
-    team_name_col = _find_col(league, ["Team"])  # this should exist after merge
-    # Keep using TeamID internally for filtering stability when possible
-    team_id_col = _find_col(league, ["TeamID", "Team Id", "Team ID"])
+    # Team options shown as Team Name, but we filter by TeamID internally.
+    team_names = sorted([t for t in team_name_to_id.keys() if str(t).strip() != ""]) if team_name_to_id else []
+    team_dropdown_options = ["All"] + team_names
+
+    # Determine current "effective" team for building player list (use last applied selection)
+    current_team_name = st.session_state.get("ps_team_name", "All")
+    current_team_id = team_name_to_id.get(current_team_name) if current_team_name != "All" else None
+
+    # Build players list based on current team selection (if any)
+    player_options_df = league
+    if current_team_id is not None and team_id_col_league and team_id_col_league in league.columns:
+        player_options_df = league[league[team_id_col_league] == current_team_id]
+
+    if name_col and name_col in league.columns:
+        player_options = (
+            player_options_df[name_col]
+            .dropna()
+            .astype(str)
+            .map(str.strip)
+        )
+        player_options = sorted([p for p in player_options.unique().tolist() if p != ""])
+    else:
+        player_options = []
 
     with st.form("player_stats_filters", clear_on_submit=False):
         c1, c2 = st.columns([2, 1])
 
         with c2:
-            if team_name_col and team_name_col in league.columns:
-                teams_list = (
-                    league[team_name_col]
-                    .dropna()
-                    .astype(str)
-                    .map(str.strip)
-                )
-                teams_list = sorted([t for t in teams_list.unique().tolist() if t != ""])
-                st.selectbox("Team", ["All"] + teams_list, key="ps_team_name")
-            else:
-                st.selectbox("Team", ["All"], key="ps_team_name", disabled=True)
+            st.selectbox(
+                "Team",
+                team_dropdown_options if team_dropdown_options else ["All"],
+                key="ps_team_name",
+            )
 
         with c1:
-            if name_col and name_col in league.columns:
-                names = league[name_col].dropna().astype(str).map(str.strip)
-                names = sorted([n for n in names.unique().tolist() if n != ""])
-                st.multiselect(
-                    "Players",
-                    names,
-                    default=st.session_state.get("ps_players", []),
-                    key="ps_players",
-                )
-            else:
-                st.multiselect("Players", [], key="ps_players", disabled=True)
+            st.multiselect(
+                "Players (optional)",
+                player_options,
+                default=st.session_state.get("ps_players", []),
+                key="ps_players",
+            )
 
         st.form_submit_button("Apply")
 
-    team_choice_name = st.session_state.get("ps_team_name", "All")
-    player_choices = st.session_state.get("ps_players", [])
+    # Apply filters after submit/rerun
+    selected_team_name = st.session_state.get("ps_team_name", "All")
+    selected_team_id = team_name_to_id.get(selected_team_name) if selected_team_name != "All" else None
+    selected_players = st.session_state.get("ps_players", [])
 
     filtered = league.copy()
 
-    # Filter by Team NAME (display value). We do not show TeamID to users.
-    if team_choice_name != "All" and team_name_col and team_name_col in filtered.columns:
-        filtered = filtered[filtered[team_name_col].astype(str).str.strip() == team_choice_name]
+    # Filter by TeamID (internal), using Team name dropdown
+    if selected_team_id is not None and team_id_col_league and team_id_col_league in filtered.columns:
+        filtered = filtered[filtered[team_id_col_league] == selected_team_id]
 
-    if name_col and name_col in filtered.columns and player_choices:
-        filtered = filtered[filtered[name_col].astype(str).str.strip().isin(player_choices)]
+    # If players chosen, further restrict; if blank, show whole team (or everyone if Team=All)
+    if name_col and name_col in filtered.columns and selected_players:
+        filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
 
     # -----------------------------
-    # Main + Expanded table columns
+    # Main + Expanded table columns (Team shown; TeamID not shown)
     # -----------------------------
     main_cols = [
         "Name",
@@ -341,22 +343,19 @@ with tab_stats:
     main_view = filtered[show_main_cols] if show_main_cols else filtered
     full_view = filtered[show_full_cols] if show_full_cols else filtered
 
-    # Default sort (users can still click to sort differently)
+    # Default sort by Fantasy Points (users can still click to sort themselves)
     if "Fantasy Points" in main_view.columns:
         try:
             main_view = main_view.sort_values(by="Fantasy Points", ascending=False)
         except Exception:
             pass
-
     if "Fantasy Points" in full_view.columns:
         try:
             full_view = full_view.sort_values(by="Fantasy Points", ascending=False)
         except Exception:
             pass
 
-    # -----------------------------
-    # Column config: pin Name/Team + 2dp formatting
-    # -----------------------------
+    # Column config: pin Name + Team, 2dp formatting for specified metrics
     def _col_config_for(df: pd.DataFrame) -> dict:
         config: dict = {}
 
@@ -377,7 +376,6 @@ with tab_stats:
 
         return config
 
-    # Render (data_editor enables pinned columns)
     st.markdown("#### Key Stats")
     st.data_editor(
         main_view,
