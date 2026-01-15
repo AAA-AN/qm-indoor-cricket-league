@@ -251,7 +251,19 @@ with tab3:
             mask = mask | filtered[c].astype(str).str.lower().str.contains(q, na=False)
         filtered = filtered[mask]
 
-    # Only show requested columns, in the exact order provided
+    # -----------------------------
+    # Main + Expanded table columns
+    # -----------------------------
+    main_cols = [
+        "Name",
+        "Runs Scored",
+        "Batting Average",
+        "Wickets",
+        "Economy",
+        "Fantasy Points",
+    ]
+
+    # Expanded (full) view columns (your existing order)
     desired_cols = [
         "Name",
         "Runs Scored",
@@ -281,34 +293,57 @@ with tab3:
         "Fantasy Points",
     ]
 
-    show_cols = [c for c in desired_cols if c in filtered.columns]
-    filtered_view = filtered[show_cols] if show_cols else filtered
+    # Keep only columns that exist (avoids crashes if headers change)
+    show_main_cols = [c for c in main_cols if c in filtered.columns]
+    show_full_cols = [c for c in desired_cols if c in filtered.columns]
 
-    # Optional: sort by Fantasy Points if present
-    if "Fantasy Points" in filtered_view.columns:
+    main_view = filtered[show_main_cols] if show_main_cols else filtered
+    full_view = filtered[show_full_cols] if show_full_cols else filtered
+
+    # Sort by Fantasy Points if present (apply to both views)
+    if "Fantasy Points" in main_view.columns:
         try:
-            filtered_view = filtered_view.sort_values(by="Fantasy Points", ascending=False)
+            main_view = main_view.sort_values(by="Fantasy Points", ascending=False)
         except Exception:
             pass
 
+    if "Fantasy Points" in full_view.columns:
+        try:
+            full_view = full_view.sort_values(by="Fantasy Points", ascending=False)
+        except Exception:
+            pass
+
+    # 2dp formatting for specific columns
     two_dp_cols = [
-    "Batting Strike Rate",
-    "Batting Average",
-    "Economy",
-    "Bowling Strike Rate",
-    "Bowling Average",
-]
+        "Batting Strike Rate",
+        "Batting Average",
+        "Economy",
+        "Bowling Strike Rate",
+        "Bowling Average",
+    ]
 
-col_config = {
-    c: st.column_config.NumberColumn(format="%.2f")
-    for c in two_dp_cols
-    if c in filtered_view.columns
-}
+    def _col_config_for(df: pd.DataFrame) -> dict:
+        return {
+            c: st.column_config.NumberColumn(format="%.2f")
+            for c in two_dp_cols
+            if c in df.columns
+        }
 
-st.dataframe(
-    filtered_view,
-    width="stretch",
-    hide_index=True,
-    column_config=col_config,
-)
+    # -----------------------------
+    # Render
+    # -----------------------------
+    st.markdown("#### Key Stats")
+    st.dataframe(
+        main_view,
+        width="stretch",
+        hide_index=True,
+        column_config=_col_config_for(main_view),
+    )
 
+    with st.expander("Show all stats"):
+        st.dataframe(
+            full_view,
+            width="stretch",
+            hide_index=True,
+            column_config=_col_config_for(full_view),
+        )
