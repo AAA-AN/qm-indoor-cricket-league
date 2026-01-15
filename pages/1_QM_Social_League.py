@@ -291,4 +291,24 @@ with tab3:
         except Exception:
             pass
 
-    st.dataframe(filtered_view, width="stretch", hide_index=True)
+    two_dp_cols = [
+    "Batting Strike Rate",
+    "Batting Average",
+    "Economy",
+    "Bowling Strike Rate",
+    "Bowling Average",
+]
+
+col_config = {
+    c: st.column_config.NumberColumn(format="%.2f")
+    for c in two_dp_cols
+    if c in filtered_view.columns
+}
+
+st.dataframe(
+    filtered_view,
+    width="stretch",
+    hide_index=True,
+    column_config=col_config,
+)
+
