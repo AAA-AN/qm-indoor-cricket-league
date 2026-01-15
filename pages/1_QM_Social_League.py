@@ -378,38 +378,18 @@ if selected_tab == "Player Stats":
     else:
         player_options = []
 
-    # -------------------------------------------------
-    # Players dropdown with "All" option
-    # -------------------------------------------------
-    PLAYER_ALL = "All"
-
-    player_dropdown_options = [PLAYER_ALL] + player_options
-
-    # Sanitize existing selections
+    # Drop any previously selected players that are no longer valid for this team
     current_players = st.session_state.get("ps_players", [])
-
-    # If team changes, drop invalid players
-    current_players = [p for p in current_players if p in player_dropdown_options]
-
-    # Default to ["All"] if nothing valid remains
-    if not current_players:
-        current_players = [PLAYER_ALL]
-
+    current_players = [p for p in current_players if p in player_options]
     st.session_state["ps_players"] = current_players
 
     with c1:
         selected_players = st.multiselect(
-            "Players",
-            options=player_dropdown_options,
+            "Players (optional)",
+            player_options,
             key="ps_players",
         )
-
-    # Interpret selection:
-    # - If "All" selected → no player filtering
-    # - Otherwise → filter by selected players
-    if PLAYER_ALL in selected_players:
-        selected_players = []
-
+        
     filtered = league.copy()
 
     if selected_team_id is not None and team_id_col_league and team_id_col_league in filtered.columns:
