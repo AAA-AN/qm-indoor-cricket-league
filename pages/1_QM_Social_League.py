@@ -292,7 +292,7 @@ if selected_tab == "Player Stats":
         "Highest Score",
         "Innings Played",
         "Not Out's",
-        "Sum of Overs",
+        "Total Overs",
         "Overs",
         "Balls Bowled",
         "Maidens",
@@ -390,7 +390,7 @@ if selected_tab == "Player Stats":
     ]
 
     BOWLING_STATS = [
-        "Sum of Overs",
+        "Total Overs",
         "Overs",
         "Balls Bowled",
         "Maidens",
@@ -699,7 +699,7 @@ if selected_tab == "League Table":
                     border-right: none !important;
                 }
             }
-            
+
             </style>
             """,
             unsafe_allow_html=True,
