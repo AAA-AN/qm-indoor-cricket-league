@@ -808,8 +808,6 @@ if selected_tab == "Teams":
         meta_cols: list[str] = []
         if active_col and active_col in teams_named.columns:
             meta_cols.append(active_col)
-        if captain_name_col and captain_name_col in teams_named.columns:
-            meta_cols.append(captain_name_col)
 
         tmeta = teams_named[["Team"] + meta_cols].drop_duplicates() if meta_cols else teams_named[["Team"]].drop_duplicates()
         team_totals = team_totals.merge(tmeta, on="Team", how="left")
