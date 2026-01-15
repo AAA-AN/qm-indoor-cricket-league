@@ -135,8 +135,8 @@ with tab1:
         "Time",
         "Home Team",
         "Away Team",
-        "Won By",
         "Status",
+        "Won By"
     ]
     show_cols = [c for c in preferred_cols if c in fixtures.columns]
     st.dataframe(
