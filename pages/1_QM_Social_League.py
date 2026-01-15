@@ -224,13 +224,15 @@ with tab3:
         if col in league.columns:
             league[col] = pd.to_numeric(league[col], errors="coerce")
 
-    # Filters
+        # Filters
     name_col = _find_col(league, ["Name"])
     team_col = _find_col(league, ["Team", "TeamName", "Team Name"])
 
+    filtered = league.copy()
+
+    # Team filter (keep as-is)
     c1, c2 = st.columns([2, 1])
-    with c1:
-        q = st.text_input("Search players", placeholder="Type a player name...").strip().lower()
+
     with c2:
         if team_col:
             teams = sorted([t for t in league[team_col].dropna().astype(str).unique().tolist() if t.strip() != ""])
@@ -238,18 +240,32 @@ with tab3:
         else:
             team_choice = "All"
 
-    filtered = league.copy()
-
     if team_col and team_choice != "All":
         filtered = filtered[filtered[team_col].astype(str) == team_choice]
 
-    if q and name_col and name_col in filtered.columns:
-        filtered = filtered[filtered[name_col].astype(str).str.lower().str.contains(q, na=False)]
-    elif q:
-        mask = False
-        for c in filtered.columns:
-            mask = mask | filtered[c].astype(str).str.lower().str.contains(q, na=False)
-        filtered = filtered[mask]
+    # Player dropdown (type-to-search)
+    with c1:
+        if name_col and name_col in league.columns:
+            names = (
+                league[name_col]
+                .dropna()
+                .astype(str)
+                .map(str.strip)
+            )
+            names = sorted([n for n in names.unique().tolist() if n != ""])
+
+            player_choice = st.selectbox(
+                "Player",
+                ["All"] + names,
+                index=0,
+            )
+        else:
+            player_choice = "All"
+            st.warning("Name column not found; player filter disabled.")
+
+    if name_col and player_choice != "All":
+        filtered = filtered[filtered[name_col].astype(str).str.strip() == player_choice]
+
 
     # -----------------------------
     # Main + Expanded table columns
