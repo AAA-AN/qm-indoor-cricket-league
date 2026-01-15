@@ -111,73 +111,76 @@ selected_tab = st.radio(
 st.markdown(
     """
     <style>
-      /* Make the radio look like Streamlit native tabs (and hide the radio circles) */
+    /* ===== Streamlit radio -> native tabs styling ===== */
 
-      /* Completely hide radio controls (covers BaseWeb + multiple Streamlit versions) */
-      div[role="radiogroup"] input[type="radio"],
-      div[role="radiogroup"] svg,
-      div[role="radiogroup"] [data-baseweb="radio"],
-      div[role="radiogroup"] [data-baseweb="radio"] * {
+    /* Layout like native tabs */
+    div[role="radiogroup"] {
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 1.25rem !important;
+        border-bottom: 1px solid rgba(49, 51, 63, 0.15);
+        padding-bottom: 0.35rem;
+        margin-bottom: 1.25rem;
+    }
+
+    /* Each tab label */
+    div[role="radiogroup"] > label {
+        margin: 0 !important;
+        padding: 0.35rem 0 !important;
+        cursor: pointer !important;
+        border: none !important;
+        background: transparent !important;
+    }
+
+    /* Text inside tab */
+    div[role="radiogroup"] > label > div {
+        padding: 0 !important;
+        font-weight: 500;
+        color: rgba(49, 51, 63, 0.75);
+    }
+
+    /* Hover like native tabs */
+    div[role="radiogroup"] > label:hover > div {
+        color: rgba(49, 51, 63, 1);
+    }
+
+    /* Selected tab underline */
+    div[role="radiogroup"] > label:has(input:checked) {
+        border-bottom: 2px solid rgba(49, 51, 63, 0.85);
+        margin-bottom: -2px;
+    }
+
+    /* Selected tab text */
+    div[role="radiogroup"] > label:has(input:checked) > div {
+        font-weight: 600;
+        color: rgba(49, 51, 63, 1);
+    }
+
+    /* ===== Hide radio controls ONLY ===== */
+
+    /* Hide the radio input */
+    div[role="radiogroup"] input[type="radio"] {
+        position: absolute !important;
+        opacity: 0 !important;
+        width: 0 !important;
+        height: 0 !important;
+        pointer-events: none !important;
+    }
+
+    /* Hide the BaseWeb radio circle */
+    div[role="radiogroup"] > label [data-baseweb="radio"] {
         display: none !important;
-        visibility: hidden !important;
         width: 0 !important;
         height: 0 !important;
         margin: 0 !important;
         padding: 0 !important;
-      }
+    }
 
-      /* Also remove any reserved space for the control */
-      div[role="radiogroup"] > label {
-        grid-template-columns: 0px auto !important;
+    /* Remove spacing reserved for radio */
+    div[role="radiogroup"] > label {
         column-gap: 0 !important;
-      }
-
-      /* Layout similar to tabs: horizontal, small gap, no boxy borders */
-      div[role="radiogroup"]{
-        display: flex !important;
-        flex-direction: row !important;
-        gap: 1rem !important;
-        border-bottom: 1px solid rgba(49, 51, 63, 0.15);
-        padding-bottom: 0.25rem;
-        margin-bottom: 0.75rem;
-      }
-
-      /* Each option label: clean, tab-like */
-      div[role="radiogroup"] > label{
-        margin: 0 !important;
-        padding: 0.35rem 0.15rem !important;
-        border: none !important;
-        background: transparent !important;
-        cursor: pointer !important;
-      }
-
-      /* The text container inside label (Streamlit uses input + div) */
-      div[role="radiogroup"] > label > div{
-        padding: 0 !important;
-      }
-
-      /* Hover state like native tabs */
-      div[role="radiogroup"] > label:hover > div{
-        color: rgba(49, 51, 63, 1) !important;
-      }
-
-      /* Selected tab: underline indicator */
-      div[role="radiogroup"] > label:has(input:checked){
-        border-bottom: 2px solid rgba(49, 51, 63, 0.85) !important;
-        margin-bottom: -2px !important;
-      }
-
-      /* Selected tab text slightly stronger */
-      div[role="radiogroup"] > label:has(input:checked) > div{
-        font-weight: 600 !important;
-        color: rgba(49, 51, 63, 1) !important;
-      }
-
-      /* Non-selected tab text */
-      div[role="radiogroup"] > label:not(:has(input:checked)) > div{
-        font-weight: 500 !important;
-        color: rgba(49, 51, 63, 0.75) !important;
-      }
+        gap: 0 !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
