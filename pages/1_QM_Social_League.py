@@ -195,7 +195,7 @@ with tab_stats:
             league[col] = pd.to_numeric(league[col], errors="coerce")
 
     # -----------------------------
-    # Filters (form to reduce tab snapping + allow multi-select)
+    # Filters (form + multi-select)
     # -----------------------------
     name_col = _find_col(league, ["Name"])
     team_col = _find_col(league, ["Team", "TeamName", "Team Name"])
@@ -206,10 +206,7 @@ with tab_stats:
         with c2:
             if team_col and team_col in league.columns:
                 teams = (
-                    league[team_col]
-                    .dropna()
-                    .astype(str)
-                    .map(str.strip)
+                    league[team_col].dropna().astype(str).map(str.strip)
                 )
                 teams = sorted([t for t in teams.unique().tolist() if t != ""])
                 st.selectbox("Team", ["All"] + teams, key="ps_team")
@@ -219,10 +216,7 @@ with tab_stats:
         with c1:
             if name_col and name_col in league.columns:
                 names = (
-                    league[name_col]
-                    .dropna()
-                    .astype(str)
-                    .map(str.strip)
+                    league[name_col].dropna().astype(str).map(str.strip)
                 )
                 names = sorted([n for n in names.unique().tolist() if n != ""])
                 st.multiselect(
@@ -246,10 +240,7 @@ with tab_stats:
 
     if name_col and name_col in filtered.columns and player_choices:
         filtered = filtered[
-            filtered[name_col]
-            .astype(str)
-            .str.strip()
-            .isin(player_choices)
+            filtered[name_col].astype(str).str.strip().isin(player_choices)
         ]
 
     # -----------------------------
@@ -312,36 +303,43 @@ with tab_stats:
         except Exception:
             pass
 
-    # 2dp formatting for specific columns
-    two_dp_cols = [
-        "Batting Strike Rate",
-        "Batting Average",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-    ]
-
+    # -----------------------------
+    # Column config: pin Name + 2dp formatting
+    # -----------------------------
     def _col_config_for(df: pd.DataFrame) -> dict:
-        return {
-            c: st.column_config.NumberColumn(format="%.2f")
-            for c in two_dp_cols
-            if c in df.columns
-        }
+        config: dict = {}
 
-    # Render
+        if "Name" in df.columns:
+            config["Name"] = st.column_config.TextColumn(pinned=True)
+
+        for c in [
+            "Batting Strike Rate",
+            "Batting Average",
+            "Economy",
+            "Bowling Strike Rate",
+            "Bowling Average",
+        ]:
+            if c in df.columns:
+                config[c] = st.column_config.NumberColumn(format="%.2f")
+
+        return config
+
+    # Render (data_editor enables pinned columns)
     st.markdown("#### Key Stats")
-    st.dataframe(
+    st.data_editor(
         main_view,
         width="stretch",
         hide_index=True,
+        disabled=True,
         column_config=_col_config_for(main_view),
     )
 
     with st.expander("Show all stats"):
-        st.dataframe(
+        st.data_editor(
             full_view,
             width="stretch",
             hide_index=True,
+            disabled=True,
             column_config=_col_config_for(full_view),
         )
 
