@@ -509,9 +509,9 @@ with tab_table:
 
               /* Remove bottom border from final row */
                 .lt-wrap tbody tr:last-child td {
-                border-bottom: none !important;
+                border-bottom: 1px solid transparent;
               }
-
+              
                 /* Medal colouring for top 3 positions only */
                 .lt-wrap tbody tr:nth-child(1) td {
                 background: rgba(255, 215, 0, 0.08); /* gold */
@@ -520,7 +520,6 @@ with tab_table:
                 .lt-wrap tbody tr:nth-child(2) td {
                 background: rgba(192, 192, 192, 0.22); /* clearer silver */
               }
-
 
                 .lt-wrap tbody tr:nth-child(3) td {
                 background: rgba(205, 127, 50, 0.10); /* bronze */
