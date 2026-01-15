@@ -376,7 +376,7 @@ if selected_tab == "Player Stats":
 
     # -----------------------------
     # Stat selectors (Batting / Bowling / Fielding)
-    # Name + Fantasy Points fixed (Fantasy Points pinned)
+    # Name fixed; Fantasy Points always last column
     # Defaults on first load: Runs Scored, Batting Average, Wickets, Economy
     # Users can clear all stat selections.
     # -----------------------------
@@ -437,14 +437,14 @@ if selected_tab == "Player Stats":
 
     selected_columns = selected_batting + selected_bowling + selected_fielding
 
-    # Fixed columns
+    # Fixed columns (Name first)
     fixed_cols: list[str] = []
     if "Name" in filtered.columns:
         fixed_cols.append("Name")
     elif name_col and name_col in filtered.columns:
         fixed_cols.append(name_col)
 
-    # Assemble display columns
+    # Assemble display columns (Fantasy Points appended last)
     display_cols: list[str] = []
     for c in fixed_cols:
         if c and c in filtered.columns and c not in display_cols:
@@ -467,19 +467,20 @@ if selected_tab == "Player Stats":
 
     def _col_config_for(df: pd.DataFrame) -> dict:
         config: dict = {}
-        # Pin Name
+        # Pin Name only (Fantasy Points not pinned so it stays at the far right)
         if "Name" in df.columns:
             config["Name"] = st.column_config.TextColumn(pinned=True)
         elif name_col and name_col in df.columns:
             config[name_col] = st.column_config.TextColumn(pinned=True)
 
-        # Pin Fantasy Points
-        if "Fantasy Points" in df.columns:
-            config["Fantasy Points"] = st.column_config.NumberColumn(pinned=True)
-
         for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
             if c in df.columns:
                 config[c] = st.column_config.NumberColumn(format="%.2f")
+
+        # Do not pin Fantasy Points (ensures it stays the last visible column)
+        if "Fantasy Points" in df.columns:
+            config["Fantasy Points"] = st.column_config.NumberColumn()
+
         return config
 
     st.data_editor(
@@ -860,7 +861,7 @@ if selected_tab == "Teams":
 
         selected_columns = selected_batting + selected_bowling + selected_fielding
 
-        # Build columns: Team + meta + selected + Fantasy Points
+        # Build columns: Team + meta + selected + Fantasy Points (Fantasy Points last)
         display_cols = ["Team"]
         for mc in meta_cols:
             if mc in team_totals.columns and mc not in display_cols:
@@ -887,12 +888,13 @@ if selected_tab == "Teams":
                 pass
 
         col_config = {"Team": st.column_config.TextColumn(pinned=True)}
-        if "Fantasy Points" in view.columns:
-            col_config["Fantasy Points"] = st.column_config.NumberColumn(pinned=True)
-
         for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
             if c in view.columns:
                 col_config[c] = st.column_config.NumberColumn(format="%.2f")
+
+        # Do not pin Fantasy Points (ensures it stays far right)
+        if "Fantasy Points" in view.columns:
+            col_config["Fantasy Points"] = st.column_config.NumberColumn()
 
         st.data_editor(
             view,
@@ -1063,12 +1065,14 @@ if selected_tab == "Teams":
     col_config: dict = {}
     if fixed_name and fixed_name in player_view.columns:
         col_config[fixed_name] = st.column_config.TextColumn(pinned=True)
-    if "Fantasy Points" in player_view.columns:
-        col_config["Fantasy Points"] = st.column_config.NumberColumn(pinned=True)
 
     for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
         if c in player_view.columns:
             col_config[c] = st.column_config.NumberColumn(format="%.2f")
+
+    # Do not pin Fantasy Points (ensures it stays far right)
+    if "Fantasy Points" in player_view.columns:
+        col_config["Fantasy Points"] = st.column_config.NumberColumn()
 
     st.markdown("#### Player Stats (Team)")
     st.data_editor(
