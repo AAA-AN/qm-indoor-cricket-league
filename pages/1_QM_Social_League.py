@@ -195,10 +195,10 @@ st.markdown(
        ========================================================= */
     @media (prefers-color-scheme: dark) {
 
-        /* Unselected (dark mode) – clearly readable */
+         /* Unselected (dark mode) – higher contrast, still subordinate */
         div[role="radiogroup"] > label > div,
         div[role="radiogroup"] > label > span {
-            color: rgba(255, 255, 255, 0.75) !important;
+            color: rgba(255, 255, 255, 0.88) !important;
         }
 
         /* Hover */
