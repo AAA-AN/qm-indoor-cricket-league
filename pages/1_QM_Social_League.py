@@ -66,31 +66,19 @@ def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
     return None
 
 
-def _init_or_sanitize_multiselect_state(key: str, options: list[str]) -> None:
+def _init_or_sanitize_multiselect_state_allow_empty(key: str, options: list[str], defaults: list[str]) -> None:
     """
-    No defaults. Keep prior user selections if still valid; otherwise empty list.
+    - On first load: apply defaults.
+    - On later loads: only remove invalid selections.
+    - Allow user to clear everything (empty selection stays empty).
     """
     if key not in st.session_state:
-        st.session_state[key] = []
+        st.session_state[key] = [c for c in defaults if c in options]
         return
     current = st.session_state.get(key, [])
-    current = [c for c in current if c in options]
-    st.session_state[key] = current
-
-
-def _build_display_cols(
-    fixed_cols: list[str],
-    selected_cols: list[str],
-    df_cols: list[str],
-) -> list[str]:
-    out: list[str] = []
-    for c in fixed_cols:
-        if c in df_cols and c not in out:
-            out.append(c)
-    for c in selected_cols:
-        if c in df_cols and c not in out:
-            out.append(c)
-    return out
+    if current is None:
+        current = []
+    st.session_state[key] = [c for c in current if c in options]
 
 
 # ---- Read secrets ----
@@ -122,6 +110,7 @@ if league_table_df is not None and not league_table_df.empty:
     league_table.columns = [str(c).strip() for c in league_table.columns]
 else:
     league_table = pd.DataFrame()
+
 
 # ----------------------------
 # Tabs
@@ -248,6 +237,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # ============================
 # TAB 1: PLAYER STATS
 # ============================
@@ -286,10 +276,15 @@ if selected_tab == "Player Stats":
 
         if team_id_col_teams and team_name_col_teams:
             ttmp = teams[[team_id_col_teams, team_name_col_teams]].copy()
+
             ttmp[team_id_col_teams] = ttmp[team_id_col_teams].astype(str).str.strip()
             ttmp[team_name_col_teams] = ttmp[team_name_col_teams].astype(str).str.strip()
 
-            ttmp = ttmp[(ttmp[team_id_col_teams] != "") & (ttmp[team_name_col_teams] != "")].drop_duplicates()
+            ttmp = ttmp[
+                (ttmp[team_id_col_teams] != "") &
+                (ttmp[team_name_col_teams] != "")
+            ].drop_duplicates()
+
             team_id_to_name = dict(zip(ttmp[team_id_col_teams], ttmp[team_name_col_teams]))
             team_name_to_id = dict(zip(ttmp[team_name_col_teams], ttmp[team_id_col_teams]))
 
@@ -343,10 +338,17 @@ if selected_tab == "Player Stats":
 
     player_options_df = league
     if current_team_id is not None and team_id_col_league and team_id_col_league in league.columns:
-        player_options_df = league[league[team_id_col_league].astype(str).str.strip() == str(current_team_id).strip()]
+        player_options_df = league[
+            league[team_id_col_league].astype(str).str.strip() == str(current_team_id).strip()
+        ]
 
     if name_col and name_col in league.columns:
-        player_options = player_options_df[name_col].dropna().astype(str).map(str.strip)
+        player_options = (
+            player_options_df[name_col]
+            .dropna()
+            .astype(str)
+            .map(str.strip)
+        )
         player_options = sorted([p for p in player_options.unique().tolist() if p != ""])
     else:
         player_options = []
@@ -378,92 +380,52 @@ if selected_tab == "Player Stats":
     filtered = league.copy()
 
     if selected_team_id is not None and team_id_col_league and team_id_col_league in filtered.columns:
-        filtered = filtered[filtered[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()]
+        filtered = filtered[
+            filtered[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()
+        ]
 
     if name_col and name_col in filtered.columns and selected_players:
         filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
 
     # -----------------------------
-    # Stat selectors (NO DEFAULTS) + single table
-    # Fixed columns: Name + Fantasy Points
+    # Single selector: user can choose ANY stats to display.
+    # Name + Fantasy Points always present; stats can be empty.
+    # First load defaults: Runs Scored, Batting Average, Wickets, Economy.
     # -----------------------------
-    BATTING_STATS = [
-        "Runs Scored",
-        "Balls Faced",
-        "6s",
-        "Retirements",
-        "Batting Strike Rate",
-        "Batting Average",
-        "Highest Score",
-        "Innings Played",
-        "Not Out's",
-    ]
-
-    BOWLING_STATS = [
-        "Total Overs",
-        "Overs",
-        "Balls Bowled",
-        "Maidens",
-        "Runs Conceded",
-        "Wickets",
-        "Wides",
-        "No Balls",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-        "Best Figures",
-    ]
-
-    FIELDING_STATS = [
-        "Catches",
-        "Run Outs",
-        "Stumpings",
-    ]
-
-    batting_options = [c for c in BATTING_STATS if c in filtered.columns]
-    bowling_options = [c for c in BOWLING_STATS if c in filtered.columns]
-    fielding_options = [c for c in FIELDING_STATS if c in filtered.columns]
-
-    _init_or_sanitize_multiselect_state("ps_batting_cols", batting_options)
-    _init_or_sanitize_multiselect_state("ps_bowling_cols", bowling_options)
-    _init_or_sanitize_multiselect_state("ps_fielding_cols", fielding_options)
-
-    st.markdown("#### Select Stats To Display")
-    d1, d2, d3 = st.columns(3)
-
-    with d1:
-        selected_batting = st.multiselect(
-            "Batting Stats",
-            options=batting_options,
-            key="ps_batting_cols",
-        )
-
-    with d2:
-        selected_bowling = st.multiselect(
-            "Bowling Stats",
-            options=bowling_options,
-            key="ps_bowling_cols",
-        )
-
-    with d3:
-        selected_fielding = st.multiselect(
-            "Fielding Stats",
-            options=fielding_options,
-            key="ps_fielding_cols",
-        )
-
-    selected_columns = selected_batting + selected_bowling + selected_fielding
-
     fixed_cols = []
     if "Name" in filtered.columns:
         fixed_cols.append("Name")
+    elif name_col and name_col in filtered.columns:
+        fixed_cols.append(name_col)
+
     if "Fantasy Points" in filtered.columns:
         fixed_cols.append("Fantasy Points")
 
-    display_cols = _build_display_cols(fixed_cols=fixed_cols, selected_cols=selected_columns, df_cols=list(filtered.columns))
-    view = filtered[display_cols] if display_cols else filtered.copy()
+    # Build selectable stat list (exclude fixed + helper columns)
+    exclude = set(fixed_cols + ["Team", "TeamID", "Team Id", "Team ID"])
+    all_stat_options = [c for c in filtered.columns if c not in exclude]
 
-    # Default sort (no UI) by Fantasy Points if present
+    default_stats = [c for c in ["Runs Scored", "Batting Average", "Wickets", "Economy"] if c in all_stat_options]
+    _init_or_sanitize_multiselect_state_allow_empty("ps_stats_cols", all_stat_options, default_stats)
+
+    st.markdown("#### Select Stats To Display")
+    selected_stats = st.multiselect(
+        "Stats",
+        options=all_stat_options,
+        key="ps_stats_cols",
+    )
+
+    # Display columns: fixed + selected stats (dedupe preserving order)
+    display_cols = []
+    for c in fixed_cols:
+        if c and c in filtered.columns and c not in display_cols:
+            display_cols.append(c)
+    for c in selected_stats:
+        if c in filtered.columns and c not in display_cols:
+            display_cols.append(c)
+
+    view = filtered[display_cols].copy() if display_cols else filtered.copy()
+
     if "Fantasy Points" in view.columns:
         try:
             view = view.sort_values(by="Fantasy Points", ascending=False)
@@ -472,10 +434,13 @@ if selected_tab == "Player Stats":
 
     def _col_config_for(df: pd.DataFrame) -> dict:
         config: dict = {}
+        # Pin Name + Fantasy Points
         if "Name" in df.columns:
             config["Name"] = st.column_config.TextColumn(pinned=True)
+        elif name_col and name_col in df.columns:
+            config[name_col] = st.column_config.TextColumn(pinned=True)
+
         if "Fantasy Points" in df.columns:
-            # Pin Fantasy Points as requested
             config["Fantasy Points"] = st.column_config.NumberColumn(pinned=True)
 
         for c in [
@@ -497,6 +462,7 @@ if selected_tab == "Player Stats":
         column_config=_col_config_for(view),
     )
 
+
 # ============================
 # TAB 2: FIXTURES & RESULTS
 # ============================
@@ -510,27 +476,15 @@ if selected_tab == "Fixtures & Results":
     if "Time" in display.columns:
         display["Time"] = _format_time_ampm(display["Time"])
 
-    # Fixed columns for Fixtures (non-stats): keep core match identifiers fixed
-    FIXED_FIXTURE_COLS = [c for c in ["Date", "Time", "Home Team", "Away Team"] if c in display.columns]
-    selectable = [c for c in display.columns if c not in FIXED_FIXTURE_COLS]
-
-    _init_or_sanitize_multiselect_state("fx_cols", selectable)
-
-    st.markdown("#### Select Columns To Display")
-    selected_fx = st.multiselect(
-        "Fixtures Columns",
-        options=selectable,
-        key="fx_cols",
-    )
-
-    show_cols = _build_display_cols(FIXED_FIXTURE_COLS, selected_fx, list(display.columns))
-    view = display[show_cols] if show_cols else display.copy()
+    ordered_cols = ["Date", "Time", "Home Team", "Away Team", "Status", "Won By", "Home Score", "Away Score"]
+    show_cols = [c for c in ordered_cols if c in display.columns]
 
     st.dataframe(
-        view,
+        display[show_cols] if show_cols else display,
         width="stretch",
         hide_index=True,
     )
+
 
 # ============================
 # TAB 3: LEAGUE TABLE
@@ -546,33 +500,27 @@ if selected_tab == "League Table":
     else:
         lt = league_table.copy()
 
+        # Hide requested columns (if present)
+        cols_to_hide = [
+            "Runs Scored",
+            "Runs Conceeded",
+            "Wickets Taken",
+            "Wickets Lost",
+            "Overs Faced",
+            "Overs Bowled",
+        ]
+        lt = lt.drop(columns=[c for c in cols_to_hide if c in lt.columns], errors="ignore")
+
         # Add Position as the first column (fixed to current displayed order)
-        if "Position" not in lt.columns:
-            lt.insert(0, "Position", range(1, len(lt) + 1))
+        lt.insert(0, "Position", range(1, len(lt) + 1))
 
         # Format NRR to 2dp (render as text to lock formatting)
         if "NRR" in lt.columns:
             nrr = pd.to_numeric(lt["NRR"], errors="coerce")
             lt["NRR"] = nrr.map(lambda x: f"{x:.2f}" if pd.notna(x) else "")
 
-        # Fixed columns for League Table
-        FIXED_LT_COLS = [c for c in ["Position", "Team"] if c in lt.columns]
-        selectable = [c for c in lt.columns if c not in FIXED_LT_COLS]
-
-        _init_or_sanitize_multiselect_state("lt_cols", selectable)
-
-        st.markdown("#### Select Columns To Display")
-        selected_lt = st.multiselect(
-            "League Table Columns",
-            options=selectable,
-            key="lt_cols",
-        )
-
-        show_cols = _build_display_cols(FIXED_LT_COLS, selected_lt, list(lt.columns))
-        lt_view = lt[show_cols] if show_cols else lt.copy()
-
         # Build HTML table (non-interactive; prevents user sorting)
-        html_table = lt_view.to_html(index=False, escape=True)
+        html_table = lt.to_html(index=False, escape=True)
 
         st.markdown(
             """
@@ -584,7 +532,7 @@ if selected_tab == "League Table":
                 border-radius: 0.5rem;
                 overflow: hidden;
                 background: white;
-                padding-bottom: 0;
+                padding-bottom: 0;   /* remove extra space under last row */
               }
 
               /* Horizontal scroll like st.dataframe when needed */
@@ -602,7 +550,7 @@ if selected_tab == "League Table":
                 font-size: 0.95rem;
                 border-top: none !important;
                 border-bottom: none !important;
-                margin: 0 !important;
+                margin: 0 !important;           /* remove extra white space below table */
                 padding: 0 !important;
               }
 
@@ -620,7 +568,7 @@ if selected_tab == "League Table":
                 white-space: nowrap;
               }
 
-              /* Cells */
+                /* Cells */
                 .lt-wrap tbody td {
                 padding: 0.6rem 0.75rem;
                 border-bottom: 1px solid rgba(49, 51, 63, 0.08);
@@ -628,27 +576,23 @@ if selected_tab == "League Table":
                 white-space: nowrap;
               }
 
-              /* Centre-align numeric columns (all except Team if present) */
-                .lt-wrap tbody td,
-                .lt-wrap thead th {
+              /* Centre-align numeric columns (all except Team) */
+                .lt-wrap tbody td:not(:nth-child(2)),
+                .lt-wrap thead th:not(:nth-child(2)) {
                 text-align: center;
-              }
-
-              /* If Team exists, align that column left */
-              .lt-wrap thead th:nth-child(2),
-              .lt-wrap tbody td:nth-child(2) {
-                text-align: left;
               }
 
               /* Medal colouring for top 3 positions */
                 .lt-wrap tbody tr:nth-child(1) td {
-                background: rgba(255, 215, 0, 0.08);
+                background: rgba(255, 215, 0, 0.08); /* gold */
               }
+
                 .lt-wrap tbody tr:nth-child(2) td {
-                background: rgba(192, 192, 192, 0.22);
+                background: rgba(192, 192, 192, 0.22); /* clearer silver */
               }
+
               .lt-wrap tbody tr:nth-child(3) td {
-                background: rgba(205, 127, 50, 0.10);
+                background: rgba(205, 127, 50, 0.10); /* bronze */
               }
 
               /* Remove bottom border from final row */
@@ -656,11 +600,11 @@ if selected_tab == "League Table":
                 border-bottom: 1px solid transparent;
               }
 
-              /* Hover similar to Streamlit row hover */
+              /* Hover similar to Streamlit row hover (no persistent colour for rows 4+) */
                 .lt-wrap tbody tr:hover td {
                 background: rgba(240, 242, 246, 1);
               }
-
+              
               /* Remove pandas default borders */
                 .lt-wrap table, .lt-wrap th, .lt-wrap td {
                 border-left: none !important;
@@ -722,6 +666,7 @@ if selected_tab == "League Table":
             unsafe_allow_html=True,
         )
 
+
 # ============================
 # TAB 4: TEAMS
 # ============================
@@ -769,7 +714,9 @@ if selected_tab == "Teams":
     team_choice = st.selectbox("Team", ["All Teams"] + team_names, key="ts_team_name")
 
     # ---------------------------------------------------------
-    # ALL TEAMS: Team totals with selectable stats (NO DEFAULTS)
+    # ALL TEAMS: Team totals with selectable stats (single selector)
+    # Team + Fantasy Points always present; stats can be empty.
+    # Defaults (first load): Runs Scored, Batting Average, Wickets, Economy
     # ---------------------------------------------------------
     if team_choice == "All Teams":
 
@@ -828,20 +775,50 @@ if selected_tab == "Teams":
                 league[c] = pd.to_numeric(league[c], errors="coerce")
 
         agg_map = {c: "sum" for c in sum_cols if c in league.columns}
-        team_totals = league.groupby("Team", as_index=False).agg(agg_map) if agg_map else league[["Team"]].drop_duplicates()
+        team_totals = (
+            league.groupby("Team", as_index=False).agg(agg_map)
+            if agg_map
+            else league[["Team"]].drop_duplicates()
+        )
 
-        # Derived metrics
+        # Derived metrics (use the SAME names as player stats where possible)
+        # Batting Strike Rate = (Runs / Balls) * 100
         if "Runs Scored" in team_totals.columns and "Balls Faced" in team_totals.columns:
             rs = pd.to_numeric(team_totals["Runs Scored"], errors="coerce")
             bf = pd.to_numeric(team_totals["Balls Faced"], errors="coerce")
-            team_totals["Team Batting Strike Rate"] = (rs / bf) * 100
-            team_totals.loc[(bf.isna()) | (bf <= 0), "Team Batting Strike Rate"] = pd.NA
+            team_totals["Batting Strike Rate"] = (rs / bf) * 100
+            team_totals.loc[(bf.isna()) | (bf <= 0), "Batting Strike Rate"] = pd.NA
 
+        # Batting Average = Runs / Outs (Outs = Innings - Not Outs; minimum 1)
+        if "Runs Scored" in team_totals.columns and "Innings Played" in team_totals.columns and "Not Out's" in team_totals.columns:
+            rs = pd.to_numeric(team_totals["Runs Scored"], errors="coerce")
+            inn = pd.to_numeric(team_totals["Innings Played"], errors="coerce")
+            no = pd.to_numeric(team_totals["Not Out's"], errors="coerce")
+            outs = inn - no
+            outs = outs.where((outs.notna()) & (outs > 0), 1)
+            team_totals["Batting Average"] = rs / outs
+            team_totals.loc[rs.isna(), "Batting Average"] = pd.NA
+
+        # Economy = Runs Conceded / Overs
         if "Runs Conceded" in team_totals.columns and "Overs" in team_totals.columns:
             rc = pd.to_numeric(team_totals["Runs Conceded"], errors="coerce")
             ov = pd.to_numeric(team_totals["Overs"], errors="coerce")
-            team_totals["Team Economy"] = rc / ov
-            team_totals.loc[(ov.isna()) | (ov <= 0), "Team Economy"] = pd.NA
+            team_totals["Economy"] = rc / ov
+            team_totals.loc[(ov.isna()) | (ov <= 0), "Economy"] = pd.NA
+
+        # Bowling Strike Rate = Balls Bowled / Wickets
+        if "Balls Bowled" in team_totals.columns and "Wickets" in team_totals.columns:
+            bb = pd.to_numeric(team_totals["Balls Bowled"], errors="coerce")
+            wk = pd.to_numeric(team_totals["Wickets"], errors="coerce")
+            team_totals["Bowling Strike Rate"] = bb / wk
+            team_totals.loc[(wk.isna()) | (wk <= 0), "Bowling Strike Rate"] = pd.NA
+
+        # Bowling Average = Runs Conceded / Wickets
+        if "Runs Conceded" in team_totals.columns and "Wickets" in team_totals.columns:
+            rc = pd.to_numeric(team_totals["Runs Conceded"], errors="coerce")
+            wk = pd.to_numeric(team_totals["Wickets"], errors="coerce")
+            team_totals["Bowling Average"] = rc / wk
+            team_totals.loc[(wk.isna()) | (wk <= 0), "Bowling Average"] = pd.NA
 
         # Optional: join Active + Captain for context
         teams_named = teams.rename(columns={team_name_col: "Team"}).copy()
@@ -856,45 +833,36 @@ if selected_tab == "Teams":
         tmeta = teams_named[[c for c in tmeta_cols if c in teams_named.columns]].drop_duplicates()
         team_totals = team_totals.merge(tmeta, on="Team", how="left")
 
-        # ---- selectors (NO DEFAULTS) ----
-        TEAM_BATTING_STATS = ["Runs Scored", "Balls Faced", "6s", "Retirements", "Team Batting Strike Rate"]
-        TEAM_BOWLING_STATS = ["Overs", "Balls Bowled", "Maidens", "Runs Conceded", "Wickets", "Wides", "No Balls", "Team Economy"]
-        TEAM_FIELDING_STATS = ["Catches", "Run Outs", "Stumpings"]
-
-        batting_options = [c for c in TEAM_BATTING_STATS if c in team_totals.columns]
-        bowling_options = [c for c in TEAM_BOWLING_STATS if c in team_totals.columns]
-        fielding_options = [c for c in TEAM_FIELDING_STATS if c in team_totals.columns]
-
-        _init_or_sanitize_multiselect_state("ts_all_batting_cols", batting_options)
-        _init_or_sanitize_multiselect_state("ts_all_bowling_cols", bowling_options)
-        _init_or_sanitize_multiselect_state("ts_all_fielding_cols", fielding_options)
-
-        st.markdown("#### Select Team Stats To Display")
-        d1, d2, d3 = st.columns(3)
-
-        with d1:
-            selected_batting = st.multiselect("Batting Stats", options=batting_options, key="ts_all_batting_cols")
-        with d2:
-            selected_bowling = st.multiselect("Bowling Stats", options=bowling_options, key="ts_all_bowling_cols")
-        with d3:
-            selected_fielding = st.multiselect("Fielding Stats", options=fielding_options, key="ts_all_fielding_cols")
-
-        selected_columns = selected_batting + selected_bowling + selected_fielding
-
+        # ---- selector ----
         fixed_cols = ["Team"]
         if "Fantasy Points" in team_totals.columns:
             fixed_cols.append("Fantasy Points")
 
-        # Always keep meta columns visible if present
-        meta_cols: list[str] = []
-        for meta in [active_col, captain_name_col]:
-            if meta and meta in team_totals.columns and meta not in meta_cols:
-                meta_cols.append(meta)
+        exclude = set(fixed_cols)
+        all_stat_options = [c for c in team_totals.columns if c not in exclude and c not in [active_col, captain_name_col]]
+        # keep meta separate (always shown if present)
+        meta_cols = [c for c in [active_col, captain_name_col] if c and c in team_totals.columns]
 
-        # Build display columns: Team + (meta) + selected + Fantasy Points pinned
-        display_cols = _build_display_cols(fixed_cols=["Team"], selected_cols=meta_cols + selected_columns, df_cols=list(team_totals.columns))
-        if "Fantasy Points" in team_totals.columns and "Fantasy Points" not in display_cols:
-            display_cols.append("Fantasy Points")
+        default_stats = [c for c in ["Runs Scored", "Batting Average", "Wickets", "Economy"] if c in all_stat_options]
+        _init_or_sanitize_multiselect_state_allow_empty("ts_all_stats_cols", all_stat_options, default_stats)
+
+        st.markdown("#### Select Team Stats To Display")
+        selected_stats = st.multiselect(
+            "Stats",
+            options=all_stat_options,
+            key="ts_all_stats_cols",
+        )
+
+        display_cols = []
+        for c in fixed_cols:
+            if c in team_totals.columns and c not in display_cols:
+                display_cols.append(c)
+        for c in meta_cols:
+            if c in team_totals.columns and c not in display_cols:
+                display_cols.append(c)
+        for c in selected_stats:
+            if c in team_totals.columns and c not in display_cols:
+                display_cols.append(c)
 
         view = team_totals[display_cols].copy() if display_cols else team_totals.copy()
 
@@ -913,7 +881,8 @@ if selected_tab == "Teams":
         col_config = {"Team": st.column_config.TextColumn(pinned=True)}
         if "Fantasy Points" in view.columns:
             col_config["Fantasy Points"] = st.column_config.NumberColumn(pinned=True)
-        for c in ["Team Batting Strike Rate", "Team Economy"]:
+
+        for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
             if c in view.columns:
                 col_config[c] = st.column_config.NumberColumn(format="%.2f")
 
@@ -930,7 +899,9 @@ if selected_tab == "Teams":
         st.stop()
 
     # ---------------------------------------------------------
-    # SINGLE TEAM VIEW: selectors + player table + totals table (same columns)
+    # SINGLE TEAM VIEW: selector + player table + totals table (same columns)
+    # Name + Fantasy Points always present; stats can be empty.
+    # Defaults (first load): Runs Scored, Batting Average, Wickets, Economy
     # ---------------------------------------------------------
     team_row = teams.loc[teams[team_name_col] == team_choice]
     if team_row.empty:
@@ -1005,62 +976,36 @@ if selected_tab == "Teams":
         if c in filtered_team.columns:
             filtered_team[c] = pd.to_numeric(filtered_team[c], errors="coerce")
 
-    # Selectors (NO DEFAULTS) with fixed columns Name + Fantasy Points
-    BATTING_STATS = [
-        "Runs Scored",
-        "Balls Faced",
-        "6s",
-        "Retirements",
-        "Batting Strike Rate",
-        "Batting Average",
-        "Highest Score",
-        "Innings Played",
-        "Not Out's",
-    ]
-    BOWLING_STATS = [
-        "Total Overs",
-        "Overs",
-        "Balls Bowled",
-        "Maidens",
-        "Runs Conceded",
-        "Wickets",
-        "Wides",
-        "No Balls",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-        "Best Figures",
-    ]
-    FIELDING_STATS = ["Catches", "Run Outs", "Stumpings"]
-
-    batting_options = [c for c in BATTING_STATS if c in filtered_team.columns]
-    bowling_options = [c for c in BOWLING_STATS if c in filtered_team.columns]
-    fielding_options = [c for c in FIELDING_STATS if c in filtered_team.columns]
-
-    _init_or_sanitize_multiselect_state("ts_batting_cols", batting_options)
-    _init_or_sanitize_multiselect_state("ts_bowling_cols", bowling_options)
-    _init_or_sanitize_multiselect_state("ts_fielding_cols", fielding_options)
-
-    st.markdown("#### Select Stats To Display")
-    d1, d2, d3 = st.columns(3)
-    with d1:
-        selected_batting = st.multiselect("Batting Stats", options=batting_options, key="ts_batting_cols")
-    with d2:
-        selected_bowling = st.multiselect("Bowling Stats", options=bowling_options, key="ts_bowling_cols")
-    with d3:
-        selected_fielding = st.multiselect("Fielding Stats", options=fielding_options, key="ts_fielding_cols")
-
-    selected_columns = selected_batting + selected_bowling + selected_fielding
-
-    name_key = "Name" if "Name" in filtered_team.columns else (name_col if name_col in filtered_team.columns else None)
-
+    # Selector (single multiselect)
+    fixed_name = "Name" if "Name" in filtered_team.columns else (name_col if name_col in filtered_team.columns else None)
     fixed_cols = []
-    if name_key and name_key in filtered_team.columns:
-        fixed_cols.append(name_key)
+    if fixed_name:
+        fixed_cols.append(fixed_name)
     if "Fantasy Points" in filtered_team.columns:
         fixed_cols.append("Fantasy Points")
 
-    display_cols = _build_display_cols(fixed_cols=fixed_cols, selected_cols=selected_columns, df_cols=list(filtered_team.columns))
+    exclude = set(fixed_cols + ["Team", "TeamID", "Team Id", "Team ID"])
+    all_stat_options = [c for c in filtered_team.columns if c not in exclude]
+
+    default_stats = [c for c in ["Runs Scored", "Batting Average", "Wickets", "Economy"] if c in all_stat_options]
+    _init_or_sanitize_multiselect_state_allow_empty("ts_team_stats_cols", all_stat_options, default_stats)
+
+    st.markdown("#### Select Stats To Display")
+    selected_stats = st.multiselect(
+        "Stats",
+        options=all_stat_options,
+        key="ts_team_stats_cols",
+    )
+
+    # Player table columns (fixed + selected)
+    display_cols = []
+    for c in fixed_cols:
+        if c in filtered_team.columns and c not in display_cols:
+            display_cols.append(c)
+    for c in selected_stats:
+        if c in filtered_team.columns and c not in display_cols:
+            display_cols.append(c)
+
     player_view = filtered_team[display_cols].copy() if display_cols else filtered_team.copy()
 
     # Default sort (no UI)
@@ -1077,8 +1022,8 @@ if selected_tab == "Teams":
 
     # Column config (shared by both tables)
     col_config: dict = {}
-    if name_key and name_key in player_view.columns:
-        col_config[name_key] = st.column_config.TextColumn(pinned=True)
+    if fixed_name and fixed_name in player_view.columns:
+        col_config[fixed_name] = st.column_config.TextColumn(pinned=True)
     if "Fantasy Points" in player_view.columns:
         col_config["Fantasy Points"] = st.column_config.NumberColumn(pinned=True)
 
@@ -1107,8 +1052,8 @@ if selected_tab == "Teams":
         return float(s)
 
     totals_row: dict = {}
-    if name_key:
-        totals_row[name_key] = "Team Totals"
+    if fixed_name:
+        totals_row[fixed_name] = "Team Totals"
 
     # Straight sums (only populate displayed columns)
     for col in [
@@ -1121,13 +1066,12 @@ if selected_tab == "Teams":
         if val is not None and col in player_view.columns:
             totals_row[col] = val
 
-    # Derived team batting SR (runs/balls * 100)
+    # Derived totals (only if column is displayed)
     if "Batting Strike Rate" in player_view.columns:
         rs = _sum("Runs Scored") or 0.0
         bf = _sum("Balls Faced") or 0.0
         totals_row["Batting Strike Rate"] = (rs / bf) * 100 if bf > 0 else pd.NA
 
-    # Derived team batting average (runs / outs)
     if "Batting Average" in player_view.columns:
         rs = _sum("Runs Scored") or 0.0
         inn = _sum("Innings Played")
@@ -1139,19 +1083,16 @@ if selected_tab == "Teams":
         else:
             totals_row["Batting Average"] = pd.NA
 
-    # Derived team economy (runs conceded / overs)
     if "Economy" in player_view.columns:
         rc = _sum("Runs Conceded") or 0.0
         ov = _sum("Overs") or 0.0
         totals_row["Economy"] = (rc / ov) if ov > 0 else pd.NA
 
-    # Derived bowling strike rate (balls / wickets)
     if "Bowling Strike Rate" in player_view.columns:
         bb = _sum("Balls Bowled") or 0.0
         wk = _sum("Wickets") or 0.0
         totals_row["Bowling Strike Rate"] = (bb / wk) if wk > 0 else pd.NA
 
-    # Derived bowling average (runs conceded / wickets)
     if "Bowling Average" in player_view.columns:
         rc = _sum("Runs Conceded") or 0.0
         wk = _sum("Wickets") or 0.0
