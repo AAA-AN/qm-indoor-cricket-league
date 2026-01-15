@@ -255,22 +255,37 @@ with tab3:
                     .map(str.strip)
                 )
                 names = sorted([n for n in names.unique().tolist() if n != ""])
-                st.selectbox("Player", ["All"] + names, key="ps_player")
+                st.multiselect(
+                    "Players",
+                    names,
+                    default=[],
+                    key="ps_players",
+                )
             else:
-                st.selectbox("Player", ["All"], key="ps_player", disabled=True)
+                st.multiselect(
+                    "Players",
+                    [],
+                    key="ps_players",
+                    disabled=True,
+                )
 
         st.form_submit_button("Apply")
 
     team_choice = st.session_state.get("ps_team", "All")
-    player_choice = st.session_state.get("ps_player", "All")
+    player_choices = st.session_state.get("ps_players", [])
 
     filtered = league.copy()
 
     if team_col and team_col in filtered.columns and team_choice != "All":
         filtered = filtered[filtered[team_col].astype(str).str.strip() == team_choice]
 
-    if name_col and name_col in filtered.columns and player_choice != "All":
-        filtered = filtered[filtered[name_col].astype(str).str.strip() == player_choice]
+    if name_col and name_col in filtered.columns and player_choices:
+        filtered = filtered[
+            filtered[name_col]
+            .astype(str)
+            .str.strip()
+            .isin(player_choices)
+        ]
 
     # -----------------------------
     # Main + Expanded table columns
