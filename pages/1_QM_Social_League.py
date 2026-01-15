@@ -1211,10 +1211,15 @@ if selected_tab == "Teams":
     st.markdown(
     """
     <style>
-    /* Emphasise Team Totals row (last row only) */
-    div[data-testid="stDataEditor"] tbody tr:last-child td {
+    /* Emphasise Team Totals row (last row) in st.data_editor (React grid) */
+    div[data-testid="stDataEditor"] div[role="rowgroup"] > div[role="row"]:last-child > div[role="gridcell"] {
         font-weight: 700 !important;
         border-top: 2px solid rgba(49, 51, 63, 0.25) !important;
+    }
+
+    /* Some Streamlit builds wrap cell text in additional spans/divs */
+    div[data-testid="stDataEditor"] div[role="rowgroup"] > div[role="row"]:last-child > div[role="gridcell"] * {
+        font-weight: 700 !important;
     }
     </style>
     """,
