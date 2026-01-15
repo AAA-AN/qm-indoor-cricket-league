@@ -77,7 +77,7 @@ def hide_admin_page_for_non_admins():
         )
 
 
-ddef render_sidebar_header():
+def render_sidebar_header():
     """
     User block under the built-in sidebar nav.
     Do NOT add a divider here because Streamlit already shows one under the nav list.
