@@ -45,7 +45,7 @@ def _download_scorecard_bytes(app_key: str, app_secret: str, refresh_token: str,
     return download_file(access_token, dropbox_path)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _get_temp_link(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str) -> str:
     access_token = get_access_token(app_key, app_secret, refresh_token)
     return get_temporary_link(access_token, dropbox_path)
@@ -1214,10 +1214,17 @@ if selected_tab == "Scorecards":
             return ""
         return str(v).strip()
 
-    options = []
-    option_to_match = {}
+    # Helper divider (works across Streamlit versions)
+    def _divider():
+        try:
+            st.divider()
+        except Exception:
+            st.markdown("---")
 
     # Build all fixture options
+    options: list[str] = []
+    option_to_match: dict[str, str] = {}
+
     for _, r in fsel.iterrows():
         mid = _safe(r.get("MatchID"))
         if not mid:
@@ -1239,12 +1246,19 @@ if selected_tab == "Scorecards":
         st.info("No fixtures with a valid MatchID were found.")
         st.stop()
 
-    # Only show fixtures that actually have scorecards
-    filtered_options = []
-    for label in options:
-        mid = option_to_match[label]
-        if _match_has_scorecards(mid):
-            filtered_options.append(label)
+    # -------------------------------------------------
+    # (3) Filter selector WITHOUT calling _match_has_scorecards in a loop
+    # Strategy: build candidate MatchIDs once, then check scorecards once per MatchID
+    # -------------------------------------------------
+    candidate_match_ids = list(dict.fromkeys(option_to_match.values()))  # preserves order, removes dups
+    match_ids_with_scorecards: set[str] = set()
+
+    for mid in candidate_match_ids:
+        # One DB call per match_id (still fast, avoids extra cached function layer)
+        if len(list_scorecards(mid)) > 0:
+            match_ids_with_scorecards.add(mid)
+
+    filtered_options = [label for label in options if option_to_match[label] in match_ids_with_scorecards]
 
     if not filtered_options:
         st.info("No scorecards have been uploaded for any fixtures yet.")
@@ -1287,10 +1301,17 @@ if selected_tab == "Scorecards":
             try:
                 img_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
                 st.write(f"**{fname}**")
+                # (1) Give image widget a stable unique key via caption/write separation
                 st.image(img_bytes, use_container_width=True)
-                st.markdown("---")
+
+                # (4) Reduce clutter: divider every 2 images instead of every image
+                if (i + 1) % 2 == 0 and (i + 1) != len(image_rows):
+                    _divider()
+
             except Exception as e:
                 st.warning(f"Could not load image '{fname}': {e}")
+
+        _divider()
 
     # -----------------------------
     # PDFs (open in a new tab via Dropbox temporary link)
@@ -1313,6 +1334,12 @@ if selected_tab == "Scorecards":
 
             try:
                 url = _get_temp_link(app_key, app_secret, refresh_token, dbx_path)
-                st.link_button(f"Open: {fname}", url, use_container_width=True)
+                # (1) Explicit key to prevent duplicate widget ID issues
+                st.link_button(
+                    f"Open: {fname}",
+                    url,
+                    use_container_width=True,
+                    key=f"pdf_link_{selected_match_id}_{i}",
+                )
             except Exception as e:
                 st.warning(f"Could not create link for '{fname}': {e}")
