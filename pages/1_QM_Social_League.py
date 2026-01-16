@@ -1324,6 +1324,9 @@ if selected_tab == "Scorecards":
         # Navigation buttons BELOW the image
         c_prev, c_mid, c_next = st.columns([1, 2, 1])
 
+        with c_mid:
+            st.caption(f"Image {idx + 1} of {n}")
+                    
         with c_prev:
             if st.button(
                 "◀ Previous",
@@ -1333,9 +1336,6 @@ if selected_tab == "Scorecards":
             ):
                 st.session_state[idx_key] = max(0, idx - 1)
                 st.rerun()
-
-        with c_mid:
-            st.caption(f"Image {idx + 1} of {n}")
 
         with c_next:
             if st.button(
