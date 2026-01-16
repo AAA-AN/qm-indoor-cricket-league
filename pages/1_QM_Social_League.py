@@ -1344,3 +1344,9 @@ if selected_tab == "Player Stats":
         disabled=True,
         column_config=_col_config_for(view),
     )
+
+# ============================
+# TAB 5: SCORECARDS
+# ============================
+if selected_tab == "Scorecards":
+    st.subheader("Scorecards")
