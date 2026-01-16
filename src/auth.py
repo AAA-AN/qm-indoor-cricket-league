@@ -10,8 +10,8 @@ from src.db import (
     count_users,
     update_password_hash,
     set_must_reset_password,
+    update_last_login,
 )
-
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -93,6 +93,8 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
             return None
         if not verify_password(password, row["password_hash"]):
             return None
+        
+        update_last_login(username, _now_iso())
 
         user = dict(row)
         user.pop("password_hash", None)

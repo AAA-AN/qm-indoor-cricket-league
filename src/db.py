@@ -1,5 +1,4 @@
 import sqlite3
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -17,14 +16,18 @@ def get_conn() -> sqlite3.Connection:
 
 def _ensure_users_schema(conn: sqlite3.Connection) -> None:
     """
-    Lightweight migration for older DBs created before must_reset_password existed.
+    Lightweight migrations for older DBs created before newer columns existed.
     """
     cols = conn.execute("PRAGMA table_info(users);").fetchall()
     col_names = {str(c["name"]) for c in cols}
+
     if "must_reset_password" not in col_names:
         conn.execute(
             "ALTER TABLE users ADD COLUMN must_reset_password INTEGER NOT NULL DEFAULT 0;"
         )
+
+    if "last_login_at" not in col_names:
+        conn.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT;")
 
 
 def init_db() -> None:
@@ -42,7 +45,8 @@ def init_db() -> None:
                 role TEXT NOT NULL CHECK(role IN ('admin','player')),
                 is_active INTEGER NOT NULL CHECK(is_active IN (0,1)),
                 created_at TEXT NOT NULL,
-                must_reset_password INTEGER NOT NULL DEFAULT 0 CHECK(must_reset_password IN (0,1))
+                must_reset_password INTEGER NOT NULL DEFAULT 0 CHECK(must_reset_password IN (0,1)),
+                last_login_at TEXT
             );
             """
         )
@@ -83,6 +87,7 @@ def count_users() -> int:
     finally:
         conn.close()
 
+
 def count_scorecards() -> int:
     conn = get_conn()
     try:
@@ -91,40 +96,6 @@ def count_scorecards() -> int:
     finally:
         conn.close()
 
-
-def upsert_scorecard(
-    match_id: str,
-    file_name: str,
-    dropbox_path: str,
-    uploaded_at: str,
-    uploaded_by: str | None = None,
-) -> None:
-    """
-    Insert scorecard row if it doesn't exist (dropbox_path is UNIQUE).
-    If it already exists, update file_name/uploaded_at/uploaded_by.
-    """
-    conn = get_conn()
-    try:
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO scorecards (match_id, file_name, dropbox_path, uploaded_by, uploaded_at)
-            VALUES (?, ?, ?, ?, ?);
-            """,
-            (match_id, file_name, dropbox_path, uploaded_by, uploaded_at),
-        )
-
-        conn.execute(
-            """
-            UPDATE scorecards
-            SET match_id = ?, file_name = ?, uploaded_by = ?, uploaded_at = ?
-            WHERE dropbox_path = ?;
-            """,
-            (match_id, file_name, uploaded_by, uploaded_at, dropbox_path),
-        )
-
-        conn.commit()
-    finally:
-        conn.close()
 
 # -----------------------------
 # Admin/user management helpers
@@ -135,7 +106,16 @@ def list_users() -> List[Dict[str, Any]]:
     try:
         rows = conn.execute(
             """
-            SELECT user_id, first_name, last_name, username, role, is_active, created_at, must_reset_password
+            SELECT
+                user_id,
+                first_name,
+                last_name,
+                username,
+                role,
+                is_active,
+                created_at,
+                must_reset_password,
+                last_login_at
             FROM users
             ORDER BY created_at ASC, user_id ASC;
             """
@@ -150,7 +130,16 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     try:
         row = conn.execute(
             """
-            SELECT user_id, first_name, last_name, username, role, is_active, created_at, must_reset_password
+            SELECT
+                user_id,
+                first_name,
+                last_name,
+                username,
+                role,
+                is_active,
+                created_at,
+                must_reset_password,
+                last_login_at
             FROM users
             WHERE username = ?;
             """,
@@ -173,7 +162,9 @@ def count_admins(active_only: bool = False) -> int:
                 "SELECT COUNT(*) AS n FROM users WHERE role='admin' AND is_active=1;"
             ).fetchone()
         else:
-            row = conn.execute("SELECT COUNT(*) AS n FROM users WHERE role='admin';").fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM users WHERE role='admin';"
+            ).fetchone()
         return int(row["n"])
     finally:
         conn.close()
@@ -220,6 +211,18 @@ def set_must_reset_password(username: str, must_reset: bool) -> None:
         conn.execute(
             "UPDATE users SET must_reset_password = ? WHERE username = ?;",
             (1 if must_reset else 0, username),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_last_login(username: str, last_login_at: str) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE users SET last_login_at = ? WHERE username = ?;",
+            (last_login_at, username),
         )
         conn.commit()
     finally:
@@ -301,8 +304,8 @@ def restore_users_from_backup_payload(
             conn.execute(
                 """
                 INSERT INTO users
-                    (first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    (first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password, last_login_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     first_name or " ",
@@ -313,6 +316,7 @@ def restore_users_from_backup_payload(
                     is_active,
                     created_at,
                     1 if force_reset else 0,
+                    None,  # last_login_at reset on restore
                 ),
             )
             inserted += 1
@@ -342,6 +346,41 @@ def add_scorecard(
             """,
             (match_id, file_name, dropbox_path, uploaded_by, uploaded_at),
         )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def upsert_scorecard(
+    match_id: str,
+    file_name: str,
+    dropbox_path: str,
+    uploaded_at: str,
+    uploaded_by: str | None = None,
+) -> None:
+    """
+    Insert scorecard row if it doesn't exist (dropbox_path is UNIQUE).
+    If it already exists, update file_name/uploaded_at/uploaded_by.
+    """
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO scorecards (match_id, file_name, dropbox_path, uploaded_by, uploaded_at)
+            VALUES (?, ?, ?, ?, ?);
+            """,
+            (match_id, file_name, dropbox_path, uploaded_by, uploaded_at),
+        )
+
+        conn.execute(
+            """
+            UPDATE scorecards
+            SET match_id = ?, file_name = ?, uploaded_by = ?, uploaded_at = ?
+            WHERE dropbox_path = ?;
+            """,
+            (match_id, file_name, uploaded_by, uploaded_at, dropbox_path),
+        )
+
         conn.commit()
     finally:
         conn.close()

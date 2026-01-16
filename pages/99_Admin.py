@@ -146,7 +146,7 @@ with tab_users:
 
     st.markdown("### All users")
     st.dataframe(
-        df_display[["username", "first_name", "last_name", "role", "is_active", "created_at"]],
+        df_display[["username", "first_name", "last_name", "role", "is_active", "created_at", "last_login_at"]],
         use_container_width=True,
         hide_index=True,
     )
