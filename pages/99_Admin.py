@@ -328,7 +328,7 @@ with tab_scorecards:
 
         existing = list_scorecards(match_id)
 
-            # --- Reconcile SQLite records with what actually exists in Dropbox ---
+        # --- Reconcile SQLite records with what actually exists in Dropbox ---
         # If a file was deleted directly in Dropbox, remove the stale DB record
         # so the UI does not show phantom uploads.
         try:
@@ -414,19 +414,19 @@ with tab_scorecards:
     # =========================
     # Collapsible: Delete all
     # =========================
-    with st.expander("Delete all files for this MatchID", expanded=False):
+    with st.expander("Delete all files for this Match", expanded=False):
         st.warning(
-            "This will permanently delete ALL uploaded scorecard files for this MatchID from Dropbox "
+            "This will permanently delete ALL uploaded scorecard files for this Match"
             "and remove their records from the database. This cannot be undone."
         )
 
         confirm_del_all = st.checkbox(
-            "I understand and want to delete ALL scorecard files for this MatchID",
+            "I understand and want to delete ALL scorecard files for this Match",
             key=f"scorecard_delete_all_confirm_{match_id}",
         )
 
         if st.button(
-            "Delete ALL files for this MatchID",
+            "Delete ALL files for this Match",
             type="primary",
             use_container_width=True,
             disabled=not confirm_del_all,
@@ -449,7 +449,7 @@ with tab_scorecards:
                 except Exception:
                     pass  # Folder already gone is acceptable
 
-                st.success("All scorecard files and database records for this MatchID have been deleted.")
+                st.success("All scorecard files and database records for this Match have been deleted.")
                 st.rerun()
             except Exception as e:
                 st.error(f"Delete-all failed: {e}")
