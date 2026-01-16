@@ -537,7 +537,7 @@ with tab_scorecards:
             st.info(f"Dropbox cross-check unavailable (showing DB records only): {e}")
 
         if not existing:
-            st.info("No scorecards uploaded yet for this MatchID.")
+            st.info("No scorecards uploaded yet for this Match.")
         else:
             for row in existing:
                 fname = row.get("file_name", "")
