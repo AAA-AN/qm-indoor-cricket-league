@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-import io
-import zipfile
 
 from src.guard import (
     APP_TITLE,
@@ -57,41 +55,6 @@ def _get_temp_link(app_key: str, app_secret: str, refresh_token: str, dropbox_pa
 def _match_has_scorecards(match_id: str) -> bool:
     """Fast check to filter the fixture selector to only fixtures with uploads."""
     return len(list_scorecards(match_id)) > 0
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _build_scorecards_zip(
-    app_key: str,
-    app_secret: str,
-    refresh_token: str,
-    match_id: str,
-    scorecard_rows: list[dict],
-) -> bytes:
-    """
-    Build a ZIP (in memory) containing all scorecards for a match.
-    """
-    mem = io.BytesIO()
-    used_names = set()
-
-    with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for idx, row in enumerate(scorecard_rows, start=1):
-            fname = (row.get("file_name") or f"scorecard_{idx}").strip()
-            dbx_path = row.get("dropbox_path")
-            if not dbx_path:
-                continue
-
-            b = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
-
-            # Ensure unique filenames inside ZIP
-            base_name = fname
-            if base_name in used_names:
-                fname = f"{idx:02d}_{base_name}"
-            used_names.add(fname)
-
-            zf.writestr(fname, b)
-
-    mem.seek(0)
-    return mem.getvalue()
 
 
 def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
@@ -1301,27 +1264,6 @@ if selected_tab == "Scorecards":
         st.stop()
 
     st.caption(f"{len(available)} file(s) available")
-
-    # -----------------------------
-    # Download all (ZIP) – only download option
-    # -----------------------------
-    try:
-        zip_bytes = _build_scorecards_zip(
-            app_key,
-            app_secret,
-            refresh_token,
-            selected_match_id,
-            available,
-        )
-        st.download_button(
-            label="Download all scorecards (ZIP)",
-            data=zip_bytes,
-            file_name=f"Match_{selected_match_id}_Scorecards.zip",
-            use_container_width=True,
-            key=f"dl_scorecards_zip_{selected_match_id}",
-        )
-    except Exception as e:
-        st.warning(f"Could not build ZIP download: {e}")
 
     # -----------------------------
     # Image previews (press & hold on mobile)
