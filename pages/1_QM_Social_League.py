@@ -1213,12 +1213,6 @@ if selected_tab == "Scorecards":
             return ""
         return str(v).strip()
 
-    # Helper divider (works across Streamlit versions)
-    def _divider():
-        try:
-            st.divider()
-        except Exception:
-            st.markdown("---")
 
     # Build all fixture options
     options: list[str] = []
