@@ -31,6 +31,26 @@ def init_db() -> None:
             );
             """
         )
+        # Scorecards uploaded for fixtures/results.
+        # One row per uploaded file (PDF or image).
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scorecards (
+                scorecard_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                dropbox_path TEXT NOT NULL UNIQUE,
+                uploaded_by TEXT,
+                uploaded_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_scorecards_match_id
+            ON scorecards(match_id);
+            """
+        )
         conn.commit()
     finally:
         conn.close()
@@ -137,6 +157,64 @@ def delete_user(username: str) -> None:
     conn = get_conn()
     try:
         conn.execute("DELETE FROM users WHERE username = ?;", (username,))
+        conn.commit()
+    finally:
+        conn.close()
+
+# -----------------------------
+# Scorecard helpers
+# -----------------------------
+def add_scorecard(
+    match_id: str,
+    file_name: str,
+    dropbox_path: str,
+    uploaded_at: str,
+    uploaded_by: Optional[str] = None,
+) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO scorecards (match_id, file_name, dropbox_path, uploaded_by, uploaded_at)
+            VALUES (?, ?, ?, ?, ?);
+            """,
+            (match_id, file_name, dropbox_path, uploaded_by, uploaded_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_scorecards(match_id: str):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT scorecard_id, match_id, file_name, dropbox_path, uploaded_by, uploaded_at
+            FROM scorecards
+            WHERE match_id = ?
+            ORDER BY uploaded_at DESC, scorecard_id DESC;
+            """,
+            (match_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_scorecard_by_path(dropbox_path: str) -> None:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM scorecards WHERE dropbox_path = ?;", (dropbox_path,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_scorecards_for_match(match_id: str) -> None:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM scorecards WHERE match_id = ?;", (match_id,))
         conn.commit()
     finally:
         conn.close()
