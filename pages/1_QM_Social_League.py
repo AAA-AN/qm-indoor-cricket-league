@@ -1193,7 +1193,6 @@ if selected_tab == "Scorecards":
     st.subheader("Scorecards")
 
     st.markdown("---")
-    st.markdown("### Download scorecards")
 
     if "MatchID" not in fixtures.columns:
         st.info("Scorecards are not available because this workbook does not contain a 'MatchID' column.")
@@ -1282,7 +1281,7 @@ if selected_tab == "Scorecards":
             image_rows.append(row)
 
     if image_rows:
-        st.markdown("#### Image viewer")
+        st.markdown("#### Scorecard")
         st.caption("Mobile (iPhone): press and hold the image to ‘Save to Photos’.")
 
         # Persistent index per match
