@@ -615,7 +615,7 @@ if selected_tab == "Teams":
                 won_by = str(r.get("Won By", "")).strip().lower()
 
                 # Completed match?
-                if status != "Played":
+                if status not in ("Played", "Abandoned"):
                     out.append("➖")
                     continue
 
