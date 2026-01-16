@@ -363,7 +363,7 @@ with tab_scorecards:
 
     colu1, colu2 = st.columns([1, 2])
     with colu1:
-        do_upload = st.button("Upload to Dropbox", use_container_width=True, disabled=not uploaded_files, key="scorecard_upload_btn")
+        do_upload = st.button("Upload to Match", use_container_width=True, disabled=not uploaded_files, key="scorecard_upload_btn")
     with colu2:
         st.write("Uploads are appended (existing files are not removed). Filenames may be auto-renamed if duplicates exist.")
 
