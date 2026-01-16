@@ -49,9 +49,20 @@ def _download_scorecard_bytes(app_key: str, app_secret: str, refresh_token: str,
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _get_temp_link(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str) -> str:
-    """Get a temporary HTTPS link for opening a file in a new tab (best for PDFs)."""
+    """
+    Get a temporary HTTPS link for opening a file in a new tab.
+    We append dl=0 to encourage inline viewing (especially on desktop browsers).
+    """
     access_token = get_access_token(app_key, app_secret, refresh_token)
-    return get_temporary_link(access_token, dropbox_path)
+    url = get_temporary_link(access_token, dropbox_path)
+
+    # Encourage preview/inline rendering
+    if "dl=1" in url:
+        url = url.replace("dl=1", "dl=0")
+    elif "dl=0" not in url:
+        url = url + ("&dl=0" if "?" in url else "?dl=0")
+
+    return url
 
 
 @st.cache_data(ttl=60, show_spinner=False)
