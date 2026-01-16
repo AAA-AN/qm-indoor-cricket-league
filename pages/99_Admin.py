@@ -210,7 +210,7 @@ with tab_users:
 
 
 # =========================================================
-# TAB 2: SCORECARD UPLOAD (new)
+# TAB 2: SCORECARD UPLOAD
 # =========================================================
 with tab_scorecards:
     st.subheader("Scorecard Upload")
@@ -291,11 +291,17 @@ with tab_scorecards:
     st.caption(f"Dropbox scorecard folder: {posixpath.join(scorecards_root, match_id)}")
 
     st.markdown("### Upload files")
+        # Used to clear the file_uploader after successful upload
+    if "scorecard_uploader_nonce" not in st.session_state:
+        st.session_state["scorecard_uploader_nonce"] = 0
+
+    uploader_key = f"scorecard_uploader_{match_id}_{st.session_state['scorecard_uploader_nonce']}"
+
     uploaded_files = st.file_uploader(
         "Upload scorecard PDFs or screenshots (you can select multiple files)",
         type=["pdf", "png", "jpg", "jpeg", "webp"],
         accept_multiple_files=True,
-        key="scorecard_uploader",
+        key=uploader_key,
     )
 
     colu1, colu2 = st.columns([1, 2])
@@ -342,6 +348,7 @@ with tab_scorecards:
                 )
 
             st.success("Upload complete.")
+            st.session_state["scorecard_uploader_nonce"] += 1
             st.rerun()
 
         except Exception as e:
