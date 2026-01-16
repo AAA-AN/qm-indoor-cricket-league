@@ -89,10 +89,10 @@ def _build_scorecards_zip(
     mem.seek(0)
     return mem.getvalue()
 
-def _pdf_new_tab_link(pdf_bytes: bytes, link_text: str = "Open PDF in a new tab") -> str:
+def _pdf_data_link(pdf_bytes: bytes, link_text: str = "Open PDF") -> str:
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    # data URL opened in a new tab
-    return f'<a href="data:application/pdf;base64,{b64}" target="_blank" rel="noopener noreferrer">{link_text}</a>'
+    # IMPORTANT: no target="_blank"
+    return f'<a href="data:application/pdf;base64,{b64}">{link_text}</a>'
 
 def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
     dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
@@ -1383,6 +1383,6 @@ if selected_tab == "Scorecards":
                                     refresh_token,
                                     dbx_path,
                                 )
-                                st.markdown(_pdf_new_tab_link(pdf_bytes, link_text=f"Open: {fname}"), unsafe_allow_html=True)
+                                st.markdown(_pdf_data_link(pdf_bytes, link_text=f"Open: {fname}"), unsafe_allow_html=True)
                             except Exception as e:
                                 st.warning(f"Could not load PDF '{fname}': {e}")
