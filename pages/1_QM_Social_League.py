@@ -1353,18 +1353,16 @@ if selected_tab == "Scorecards":
     # -----------------------------
     # PDFs (open in a new tab via Dropbox temporary link)
     # -----------------------------
-    st.markdown("#### PDFs")
-
     pdf_rows = []
     for row in available:
         fname = (row.get("file_name") or "").strip()
         if fname.lower().endswith(".pdf"):
             pdf_rows.append(row)
 
-    if not pdf_rows:
-        st.info("No PDFs uploaded for this fixture.")
-    else:
+    if pdf_rows:
+        st.markdown("#### PDFs")
         st.caption("Tap/click a PDF to open it in a new tab. Links are temporary.")
+
         for i, row in enumerate(pdf_rows):
             fname = (row.get("file_name") or f"scorecard_{i+1}.pdf").strip()
             dbx_path = row.get("dropbox_path")
