@@ -13,7 +13,13 @@ from src.db import (
 
 from src.auth import create_user, authenticate_user, change_password, hash_password
 from src.guard import APP_TITLE, hide_sidebar
-from src.dropbox_api import get_access_token, download_file, ensure_folder, upload_file, list_folder
+from src.dropbox_api import (
+    get_access_token,
+    download_file,
+    ensure_folder,
+    upload_file,
+    list_folder,
+)
 
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
@@ -94,7 +100,8 @@ def restore_users_from_dropbox_if_needed() -> None:
 
     except Exception:
         return
-    
+
+
 def restore_scorecards_from_dropbox_if_needed() -> None:
     """
     If scorecards table is empty, rebuild it by scanning Dropbox:
@@ -117,7 +124,9 @@ def restore_scorecards_from_dropbox_if_needed() -> None:
 
         # List match folders
         entries = list_folder(access_token, scorecards_root) or []
-        match_folders = [e for e in entries if str(e.get(".tag", "")).lower() == "folder"]
+        match_folders = [
+            e for e in entries if str(e.get(".tag", "")).lower() == "folder"
+        ]
 
         restored = 0
 
@@ -140,7 +149,9 @@ def restore_scorecards_from_dropbox_if_needed() -> None:
                     continue
 
                 file_name = str(f.get("name") or "").strip() or "scorecard"
-                uploaded_at = str(f.get("server_modified") or f.get("client_modified") or "").strip()
+                uploaded_at = str(
+                    f.get("server_modified") or f.get("client_modified") or ""
+                ).strip()
 
                 # If Dropbox did not include timestamps, set a stable-ish default
                 if not uploaded_at:
@@ -162,6 +173,7 @@ def restore_scorecards_from_dropbox_if_needed() -> None:
         # Non-blocking: if Dropbox unavailable or folder missing, just continue
         return
 
+
 def ensure_session_state():
     if "user" not in st.session_state:
         st.session_state["user"] = None
@@ -172,6 +184,14 @@ def ensure_session_state():
     if "restored_users_count" not in st.session_state:
         st.session_state["restored_users_count"] = 0
 
+    # Prefill username on login after signup (and keep it after failed logins)
+    if "prefill_login_username" not in st.session_state:
+        st.session_state["prefill_login_username"] = ""
+
+    # Optional: show a one-time success message on the login page after signup
+    if "signup_success" not in st.session_state:
+        st.session_state["signup_success"] = False
+
 
 def home_welcome():
     st.title(APP_TITLE)
@@ -179,6 +199,11 @@ def home_welcome():
         "Welcome to the QM Indoor Cricket League app.\n\n"
         "Log in to view fixtures, results, league tables, and player statistics."
     )
+
+    # Optional: signup success banner (one-time)
+    if st.session_state.get("signup_success"):
+        st.success("Account created. Please log in.")
+        st.session_state["signup_success"] = False
 
     restored_n = int(st.session_state.get("restored_users_count") or 0)
     if restored_n:
@@ -191,11 +216,17 @@ def home_welcome():
     st.subheader("Login")
 
     with st.form("login_form"):
-        username = st.text_input("Username")
+        username = st.text_input(
+            "Username",
+            value=st.session_state.get("prefill_login_username", ""),
+        )
         password = st.text_input("Password", type="password")
         submitted = st.form_submit_button("Login")
 
     if submitted:
+        # Keep what the user typed, so it stays filled in if login fails
+        st.session_state["prefill_login_username"] = (username or "").strip()
+
         user = authenticate_user(username, password)
         if user:
             # If this user must reset password, force the reset flow before continuing.
@@ -205,6 +236,8 @@ def home_welcome():
                 st.rerun()
 
             st.session_state["user"] = user
+            # Clear prefill after successful login
+            st.session_state["prefill_login_username"] = ""
             st.switch_page("pages/1_QM_Social_League.py")
         else:
             st.error("Invalid username or password, or the account is disabled.")
@@ -288,7 +321,9 @@ def home_signup():
                 except Exception:
                     pass
 
-                st.success("Account created. You can now log in.")
+                # Prefill login username and return to login page
+                st.session_state["prefill_login_username"] = (username or "").strip()
+                st.session_state["signup_success"] = True
                 st.session_state["home_view"] = "welcome"
                 st.rerun()
             except Exception as e:
