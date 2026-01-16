@@ -5,6 +5,7 @@ import requests
 
 TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
 DOWNLOAD_URL = "https://content.dropboxapi.com/2/files/download"
+TEMP_LINK_URL = "https://api.dropboxapi.com/2/files/get_temporary_link"
 UPLOAD_URL = "https://content.dropboxapi.com/2/files/upload"
 LIST_FOLDER_URL = "https://api.dropboxapi.com/2/files/list_folder"
 DELETE_URL = "https://api.dropboxapi.com/2/files/delete_v2"
@@ -134,3 +135,23 @@ def delete_path(access_token: str, dropbox_path: str, timeout_s: int = 30) -> No
 
     if not r.ok:
         raise RuntimeError(f"Dropbox delete error {r.status_code}: {r.text}")
+def get_temporary_link(access_token: str, dropbox_path: str, timeout_s: int = 30) -> str:
+    """
+    Returns a short-lived HTTPS link to a Dropbox file.
+    Ideal for opening PDFs in a new tab (avoids data: URL restrictions).
+    """
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    payload = {"path": dropbox_path}
+
+    r = requests.post(TEMP_LINK_URL, headers=headers, json=payload, timeout=timeout_s)
+    if not r.ok:
+        raise RuntimeError(f"Dropbox get_temporary_link error {r.status_code}: {r.text}")
+
+    data = r.json()
+    link = data.get("link")
+    if not link:
+        raise RuntimeError("Dropbox get_temporary_link returned no link.")
+    return link

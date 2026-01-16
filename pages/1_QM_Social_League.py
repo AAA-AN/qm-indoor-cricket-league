@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import io
 import zipfile
-import base64
-import streamlit.components.v1 as components
 
 from src.guard import (
     APP_TITLE,
@@ -13,7 +11,7 @@ from src.guard import (
     render_sidebar_header,
     render_logout_button,
 )
-from src.dropbox_api import get_access_token, download_file
+from src.dropbox_api import get_access_token, download_file, get_temporary_link
 from src.excel_io import load_league_workbook_from_bytes
 from src.db import list_scorecards
 
@@ -41,16 +39,26 @@ def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbo
     xbytes = download_file(access_token, dropbox_path)
     return load_league_workbook_from_bytes(xbytes)
 
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _download_scorecard_bytes(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str) -> bytes:
     """Download a scorecard file from Dropbox (cached briefly for UX)."""
     access_token = get_access_token(app_key, app_secret, refresh_token)
     return download_file(access_token, dropbox_path)
 
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_temp_link(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str) -> str:
+    """Get a temporary HTTPS link for opening a file in a new tab (best for PDFs)."""
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+    return get_temporary_link(access_token, dropbox_path)
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def _match_has_scorecards(match_id: str) -> bool:
     """Fast check to filter the fixture selector to only fixtures with uploads."""
     return len(list_scorecards(match_id)) > 0
+
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _build_scorecards_zip(
@@ -64,8 +72,6 @@ def _build_scorecards_zip(
     Build a ZIP (in memory) containing all scorecards for a match.
     """
     mem = io.BytesIO()
-
-    # Ensure unique filenames inside the zip
     used_names = set()
 
     with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -75,10 +81,9 @@ def _build_scorecards_zip(
             if not dbx_path:
                 continue
 
-            # Download bytes (cached)
             b = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
 
-            # Make unique if duplicates
+            # Ensure unique filenames inside ZIP
             base_name = fname
             if base_name in used_names:
                 fname = f"{idx:02d}_{base_name}"
@@ -89,39 +94,6 @@ def _build_scorecards_zip(
     mem.seek(0)
     return mem.getvalue()
 
-def _pdf_data_link(pdf_bytes: bytes, link_text: str = "Open PDF") -> str:
-    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    # IMPORTANT: no target="_blank"
-    return f'<a href="data:application/pdf;base64,{b64}">{link_text}</a>'
-
-def _render_pdf_open_button_same_tab(pdf_bytes: bytes, label: str = "Open PDF") -> None:
-    """
-    Renders a button that opens a data: PDF in the SAME tab by using JS navigation.
-    This avoids Streamlit link handling that may open a new tab.
-    """
-    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    data_url = f"data:application/pdf;base64,{b64}"
-
-    # Use a tiny HTML form/button + JS to force same-tab navigation
-    html = f"""
-    <button
-      style="
-        width: 100%;
-        padding: 0.5rem 0.75rem;
-        border-radius: 0.5rem;
-        border: 1px solid rgba(49, 51, 63, 0.2);
-        background: rgba(240, 242, 246, 1);
-        cursor: pointer;
-        text-align: left;
-      "
-      onclick="window.location.href='{data_url}';"
-      type="button"
-    >
-      {label}
-    </button>
-    """
-
-    components.html(html, height=60)
 
 def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
     dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
@@ -188,7 +160,7 @@ with st.spinner("Loading latest league workbook from Dropbox..."):
 
 # ---- Fixtures ----
 fixtures = data.fixture_results.copy()
-fixtures.columns = [str(c).strip() for c in fixtures.columns]  # robust header cleanup
+fixtures.columns = [str(c).strip() for c in fixtures.columns]
 
 # ---- League table (pre-calculated in Excel) ----
 league_table_df = getattr(data, "league_table", None)
@@ -197,7 +169,6 @@ if league_table_df is not None and not league_table_df.empty:
     league_table.columns = [str(c).strip() for c in league_table.columns]
 else:
     league_table = pd.DataFrame()
-
 
 # ----------------------------
 # Tabs
@@ -1264,154 +1235,147 @@ if selected_tab == "Scorecards":
 
     if "MatchID" not in fixtures.columns:
         st.info("Scorecards are not available because this workbook does not contain a 'MatchID' column.")
-    else:
-        # Build a friendly fixture selector (Option A)
-        fsel = fixtures.copy()
-        fsel.columns = [str(c).strip() for c in fsel.columns]
+        st.stop()
 
-        # Format date/time for display if present
+    # Build a friendly fixture selector (Option A)
+    fsel = fixtures.copy()
+    fsel.columns = [str(c).strip() for c in fsel.columns]
+
+    # Format date/time for display if present
+    if "Date" in fsel.columns:
+        fsel["Date"] = _format_date_dd_mmm(fsel["Date"])
+    if "Time" in fsel.columns:
+        fsel["Time"] = _format_time_ampm(fsel["Time"])
+
+    def _safe(v) -> str:
+        if pd.isna(v):
+            return ""
+        return str(v).strip()
+
+    options = []
+    option_to_match = {}
+
+    # Build all fixture options
+    for _, r in fsel.iterrows():
+        mid = _safe(r.get("MatchID"))
+        if not mid:
+            continue
+
+        parts = [mid]
         if "Date" in fsel.columns:
-            fsel["Date"] = _format_date_dd_mmm(fsel["Date"])
+            parts.append(_safe(r.get("Date")))
         if "Time" in fsel.columns:
-            fsel["Time"] = _format_time_ampm(fsel["Time"])
+            parts.append(_safe(r.get("Time")))
+        if "Home Team" in fsel.columns and "Away Team" in fsel.columns:
+            parts.append(f"{_safe(r.get('Home Team'))} vs {_safe(r.get('Away Team'))}")
 
-        def _safe(v) -> str:
-            if pd.isna(v):
-                return ""
-            return str(v).strip()
+        label = " — ".join([p for p in parts if p])
+        options.append(label)
+        option_to_match[label] = mid
 
-        options = []
-        option_to_match = {}
+    if not options:
+        st.info("No fixtures with a valid MatchID were found.")
+        st.stop()
 
-        # Build all fixture options
-        for _, r in fsel.iterrows():
-            mid = _safe(r.get("MatchID"))
-            if not mid:
+    # Only show fixtures that actually have scorecards
+    filtered_options = []
+    for label in options:
+        mid = option_to_match[label]
+        if _match_has_scorecards(mid):
+            filtered_options.append(label)
+
+    if not filtered_options:
+        st.info("No scorecards have been uploaded for any fixtures yet.")
+        st.stop()
+
+    selected_fixture = st.selectbox(
+        "Select a fixture to view available scorecards",
+        filtered_options,
+        key="fixtures_scorecard_select",
+    )
+    selected_match_id = option_to_match[selected_fixture]
+
+    available = list_scorecards(selected_match_id)
+
+    if not available:
+        st.info("No scorecards have been uploaded for this fixture yet.")
+        st.stop()
+
+    st.caption(f"{len(available)} file(s) available")
+
+    # -----------------------------
+    # Download all (ZIP) – only download option
+    # -----------------------------
+    try:
+        zip_bytes = _build_scorecards_zip(
+            app_key,
+            app_secret,
+            refresh_token,
+            selected_match_id,
+            available,
+        )
+        st.download_button(
+            label="Download all scorecards (ZIP)",
+            data=zip_bytes,
+            file_name=f"Match_{selected_match_id}_Scorecards.zip",
+            use_container_width=True,
+            key=f"dl_scorecards_zip_{selected_match_id}",
+        )
+    except Exception as e:
+        st.warning(f"Could not build ZIP download: {e}")
+
+    # -----------------------------
+    # Image previews (press & hold on mobile)
+    # -----------------------------
+    st.markdown("#### Scorecard previews (images only)")
+
+    image_rows = []
+    for row in available:
+        fname = (row.get("file_name") or "").strip()
+        if fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+            image_rows.append(row)
+
+    if not image_rows:
+        st.info("No image previews available for this fixture.")
+    else:
+        st.caption("Mobile (iPhone): press and hold an image to ‘Save to Photos’.")
+        for i, row in enumerate(image_rows):
+            fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
+            dbx_path = row.get("dropbox_path")
+            if not dbx_path:
                 continue
 
-            parts = [mid]
-            if "Date" in fsel.columns:
-                parts.append(_safe(r.get("Date")))
-            if "Time" in fsel.columns:
-                parts.append(_safe(r.get("Time")))
-            if "Home Team" in fsel.columns and "Away Team" in fsel.columns:
-                parts.append(f"{_safe(r.get('Home Team'))} vs {_safe(r.get('Away Team'))}")
+            try:
+                img_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
+                st.write(f"**{fname}**")
+                st.image(img_bytes, use_container_width=True)
+                st.markdown("---")
+            except Exception as e:
+                st.warning(f"Could not load image '{fname}': {e}")
 
-            label = " — ".join([p for p in parts if p])
-            options.append(label)
-            option_to_match[label] = mid
+    # -----------------------------
+    # PDFs (open in a new tab via Dropbox temporary link)
+    # -----------------------------
+    st.markdown("#### PDFs")
 
-        if not options:
-            st.info("No fixtures with a valid MatchID were found.")
-        else:
-            # Only show fixtures that actually have scorecards
-            filtered_options = []
-            for label in options:
-                mid = option_to_match[label]
-                if _match_has_scorecards(mid):
-                    filtered_options.append(label)
+    pdf_rows = []
+    for row in available:
+        fname = (row.get("file_name") or "").strip()
+        if fname.lower().endswith(".pdf"):
+            pdf_rows.append(row)
 
-            if not filtered_options:
-                st.info("No scorecards have been uploaded for any fixtures yet.")
-            else:
-                selected_fixture = st.selectbox(
-                    "Select a fixture to view available scorecards",
-                    filtered_options,
-                    key="fixtures_scorecard_select",
-                )
-                selected_match_id = option_to_match[selected_fixture]
+    if not pdf_rows:
+        st.info("No PDFs uploaded for this fixture.")
+    else:
+        st.caption("Tap/click a PDF to open it in a new tab. Links are temporary.")
+        for i, row in enumerate(pdf_rows):
+            fname = (row.get("file_name") or f"scorecard_{i+1}.pdf").strip()
+            dbx_path = row.get("dropbox_path")
+            if not dbx_path:
+                continue
 
-                available = list_scorecards(selected_match_id)
-
-                if not available:
-                    st.info("No scorecards have been uploaded for this fixture yet.")
-                else:
-                    st.caption(f"{len(available)} file(s) available")
-
-                    # -----------------------------
-                    # Download all (ZIP)
-                    # -----------------------------
-                    try:
-                        zip_bytes = _build_scorecards_zip(
-                            app_key,
-                            app_secret,
-                            refresh_token,
-                            selected_match_id,
-                            available,
-                        )
-                        st.download_button(
-                            label="Download all scorecards (ZIP)",
-                            data=zip_bytes,
-                            file_name=f"Match_{selected_match_id}_Scorecards.zip",
-                            use_container_width=True,
-                            key=f"dl_scorecards_zip_{selected_match_id}",
-                        )
-                    except Exception as e:
-                        st.warning(f"Could not build ZIP download: {e}")
-
-                    # -----------------------------
-                    # Image previews (press & hold on mobile)
-                    # -----------------------------
-                    st.markdown("#### Scorecard previews (images only)")
-
-                    image_rows = []
-                    for row in available:
-                        fname = (row.get("file_name") or "").strip()
-                        if fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                            image_rows.append(row)
-
-                    if not image_rows:
-                        st.info("No image previews available for this fixture.")
-                    else:
-                        st.caption("Mobile (iPhone): press and hold an image to ‘Save to Photos’.")
-                        for i, row in enumerate(image_rows):
-                            fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
-                            dbx_path = row.get("dropbox_path")
-                            if not dbx_path:
-                                continue
-
-                            try:
-                                img_bytes = _download_scorecard_bytes(
-                                    app_key,
-                                    app_secret,
-                                    refresh_token,
-                                    dbx_path,
-                                )
-                                st.write(f"**{fname}**")
-                                st.image(img_bytes, use_container_width=True)
-                                st.markdown("---")
-                            except Exception as e:
-                                st.warning(f"Could not load image '{fname}': {e}")
-
-                    # -----------------------------
-                    # PDFs (open in a new tab)
-                    # -----------------------------
-                    st.markdown("#### PDFs")
-
-                    pdf_rows = []
-                    for row in available:
-                        fname = (row.get("file_name") or "").strip()
-                        if fname.lower().endswith(".pdf"):
-                            pdf_rows.append(row)
-
-                    if not pdf_rows:
-                        st.info("No PDFs uploaded for this fixture.")
-                    else:
-                        st.caption("Tap/click a PDF to open it in a new tab. If your browser blocks it, use the ZIP download button above.")
-
-                        for i, row in enumerate(pdf_rows):
-                            fname = (row.get("file_name") or f"scorecard_{i+1}.pdf").strip()
-                            dbx_path = row.get("dropbox_path")
-                            if not dbx_path:
-                                continue
-
-                            try:
-                                pdf_bytes = _download_scorecard_bytes(
-                                    app_key,
-                                    app_secret,
-                                    refresh_token,
-                                    dbx_path,
-                                )
-                                _render_pdf_open_button_same_tab(pdf_bytes, label=f"Open: {fname}")
-                            except Exception as e:
-                                st.warning(f"Could not load PDF '{fname}': {e}")
+            try:
+                url = _get_temp_link(app_key, app_secret, refresh_token, dbx_path)
+                st.link_button(f"Open: {fname}", url, use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not create link for '{fname}': {e}")
