@@ -604,7 +604,14 @@ if selected_tab == "Teams":
             f["_dt"] = pd.to_datetime(dt.dt.date.astype(str) + " " + tm.astype(str), errors="coerce")
             f = f.sort_values("_dt", ascending=False)
 
-            # Take last N (most recent N)
+            # Keep only completed matches
+            f = f[f["Status"].astype(str).str.strip().isin(["Played", "Abandoned"])].copy()
+
+            # If no completed matches, show nothing
+            if f.empty:
+                return ""
+
+            # Take up to last N completed matches (most recent N)
             f = f.head(n)
 
             out = []
@@ -614,22 +621,18 @@ if selected_tab == "Teams":
                 status = str(r.get("Status", "")).strip()
                 won_by = str(r.get("Won By", "")).strip().lower()
 
-                # Completed match?
-                if status not in ("Played", "Abandoned"):
+                # Abandoned is always a dash in the form guide
+                if status == "Abandoned":
                     out.append("➖")
                     continue
 
-                # Winner known?
+                # Played: decide W/L if possible, else dash
                 if won_by and team_s in won_by:
                     out.append("✅")
                 elif won_by:
                     out.append("❌")
                 else:
                     out.append("➖")
-
-            # If fewer than N matches exist, pad with dashes on the right
-            while len(out) < n:
-                out.append("➖")
 
             return " ".join(out)
 
