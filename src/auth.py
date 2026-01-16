@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 
 import bcrypt
 
-from src.db import get_conn, count_users, update_password_hash
+from src.db import get_conn, count_users, update_password_hash, set_must_reset_password
 
 
 def _now_iso() -> str:
@@ -27,10 +27,6 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def create_user(first_name: str, last_name: str, username: str, password: str) -> Dict[str, Any]:
-    """
-    Creates a user.
-    First user becomes admin; subsequent users become player.
-    """
     first_name = (first_name or "").strip()
     last_name = (last_name or "").strip()
     username = (username or "").strip()
@@ -45,8 +41,8 @@ def create_user(first_name: str, last_name: str, username: str, password: str) -
     try:
         conn.execute(
             """
-            INSERT INTO users (first_name, last_name, username, password_hash, role, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, 1, ?);
+            INSERT INTO users (first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password)
+            VALUES (?, ?, ?, ?, ?, 1, ?, 0);
             """,
             (first_name, last_name, username, pw_hash, role, _now_iso()),
         )
@@ -54,7 +50,7 @@ def create_user(first_name: str, last_name: str, username: str, password: str) -
 
         row = conn.execute(
             """
-            SELECT user_id, first_name, last_name, username, role, is_active, created_at
+            SELECT user_id, first_name, last_name, username, role, is_active, created_at, must_reset_password
             FROM users
             WHERE username = ?;
             """,
@@ -75,7 +71,7 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
     try:
         row = conn.execute(
             """
-            SELECT user_id, first_name, last_name, username, password_hash, role, is_active, created_at
+            SELECT user_id, first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password
             FROM users
             WHERE username = ?;
             """,
@@ -96,14 +92,23 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
-def admin_reset_password(username: str, new_password: str) -> None:
-    """
-    Admin-only: reset a user's password.
-    The Admin page is responsible for ensuring the caller is an admin.
-    """
+def change_password(username: str, new_password: str) -> None:
     username = (username or "").strip()
     if not username or not new_password:
         raise ValueError("Username and new password are required.")
 
     pw_hash = hash_password(new_password)
     update_password_hash(username, pw_hash)
+    set_must_reset_password(username, False)
+
+
+def admin_reset_password(username: str, new_password: str) -> None:
+    username = (username or "").strip()
+    if not username or not new_password:
+        raise ValueError("Username and new password are required.")
+
+    pw_hash = hash_password(new_password)
+    update_password_hash(username, pw_hash)
+
+    # Optional (recommended): if an admin resets someone, force them to change it on next login
+    set_must_reset_password(username, True)
