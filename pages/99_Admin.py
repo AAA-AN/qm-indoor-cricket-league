@@ -319,132 +319,137 @@ with tab_scorecards:
         except Exception as e:
             st.error(f"Upload failed: {e}")
 
-    st.markdown("---")
-    st.markdown("### Uploaded scorecards for this fixture")
+        st.markdown("---")
 
-    existing = list_scorecards(match_id)
+    # =========================
+    # Collapsible: Uploaded files
+    # =========================
+    with st.expander("Uploaded scorecards for this fixture", expanded=False):
 
-        # --- Reconcile SQLite records with what actually exists in Dropbox ---
-    # If a file was deleted directly in Dropbox, remove the stale DB record
-    # so the UI does not show phantom uploads.
-    try:
-        access_token = get_access_token(app_key, app_secret, refresh_token)
-        match_folder = posixpath.join(scorecards_root, match_id)
+        existing = list_scorecards(match_id)
 
-        dbx_entries = list_folder(access_token, match_folder)
-
-        # Normalise to a comparable set of paths.
-        # Dropbox may return path_display and/or path_lower.
-        dbx_paths = set()
-        for e in dbx_entries:
-            p_disp = e.get("path_display")
-            p_low = e.get("path_lower")
-            if p_disp:
-                dbx_paths.add(str(p_disp))
-                dbx_paths.add(str(p_disp).lower())
-            if p_low:
-                dbx_paths.add(str(p_low))
-                dbx_paths.add(str(p_low).lower())
-
-        stale = []
-        for row in existing:
-            p = str(row.get("dropbox_path", "") or "")
-            if not p:
-                continue
-            if p not in dbx_paths and p.lower() not in dbx_paths:
-                stale.append(p)
-
-        # Auto-clean stale records (Dropbox file already gone)
-        if stale:
-            for p in stale:
-                delete_scorecard_by_path(p)
-
-            # Re-load now-clean list for display
-            existing = list_scorecards(match_id)
-
-            st.warning(
-                f"Cleaned up {len(stale)} stale scorecard record(s) (they were deleted directly in Dropbox)."
-            )
-
-    except Exception as e:
-        # If Dropbox check fails, we still show DB list rather than breaking Admin.
-        st.info(f"Dropbox cross-check unavailable (showing DB records only): {e}")
-
-    if not existing:
-        st.info("No scorecards uploaded yet for this MatchID.")
-    else:
-        for row in existing:
-            fname = row.get("file_name", "")
-            uploaded_at = row.get("uploaded_at", "")
-            uploaded_by = row.get("uploaded_by", "")
-            dbx_path = row.get("dropbox_path", "")
-            scorecard_id = row.get("scorecard_id", "")
-
-            with st.expander(f"{fname}", expanded=False):
-                st.write(f"**Uploaded at:** {uploaded_at}")
-                if uploaded_by:
-                    st.write(f"**Uploaded by:** {uploaded_by}")
-                st.write(f"**Dropbox path:** `{dbx_path}`")
-
-                confirm_del = st.checkbox(
-                    "I want to delete this file from Dropbox",
-                    key=f"scorecard_del_confirm_{scorecard_id}",
-                )
-
-                if st.button(
-                    "Delete file",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=not confirm_del,
-                    key=f"scorecard_del_btn_{scorecard_id}",
-                ):
-                    try:
-                        access_token = get_access_token(app_key, app_secret, refresh_token)
-                        delete_path(access_token, dbx_path)          # remove from Dropbox
-                        delete_scorecard_by_path(dbx_path)           # remove from SQLite
-                        st.success("Deleted.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Delete failed: {e}")
-    
-    st.markdown("---")
-    st.markdown("### Delete all files for this Match")
-
-    st.warning(
-        "This will permanently delete ALL uploaded scorecard files for this Match "
-        "and remove their records from the database. This cannot be undone."
-    )
-
-    confirm_del_all = st.checkbox(
-        "I understand and want to delete ALL scorecard files for this Match",
-        key=f"scorecard_delete_all_confirm_{match_id}",
-    )
-
-    if st.button(
-        "Delete ALL files for this Match",
-        type="primary",
-        use_container_width=True,
-        disabled=not confirm_del_all,
-        key=f"scorecard_delete_all_btn_{match_id}",
-    ):
+            # --- Reconcile SQLite records with what actually exists in Dropbox ---
+        # If a file was deleted directly in Dropbox, remove the stale DB record
+        # so the UI does not show phantom uploads.
         try:
             access_token = get_access_token(app_key, app_secret, refresh_token)
+            match_folder = posixpath.join(scorecards_root, match_id)
 
-            # 1) Delete all SQLite rows for this match
-            existing_rows = list_scorecards(match_id)
-            for row in existing_rows:
+            dbx_entries = list_folder(access_token, match_folder)
+
+            # Normalise to a comparable set of paths.
+            # Dropbox may return path_display and/or path_lower.
+            dbx_paths = set()
+            for e in dbx_entries:
+                p_disp = e.get("path_display")
+                p_low = e.get("path_lower")
+                if p_disp:
+                    dbx_paths.add(str(p_disp))
+                    dbx_paths.add(str(p_disp).lower())
+                if p_low:
+                    dbx_paths.add(str(p_low))
+                    dbx_paths.add(str(p_low).lower())
+
+            stale = []
+            for row in existing:
                 p = str(row.get("dropbox_path", "") or "")
-                if p:
+                if not p:
+                    continue
+                if p not in dbx_paths and p.lower() not in dbx_paths:
+                    stale.append(p)
+
+            # Auto-clean stale records (Dropbox file already gone)
+            if stale:
+                for p in stale:
                     delete_scorecard_by_path(p)
 
-            # 2) Delete the entire Dropbox folder for this match
-            match_folder = posixpath.join(scorecards_root, match_id)
-            try:
-                delete_path(access_token, match_folder)
-            except Exception:
-                pass  # Folder already gone is acceptable
+                # Re-load now-clean list for display
+                existing = list_scorecards(match_id)
 
-            st.success("All scorecard files and database records for this Match have been deleted.")
-            st.rerun()
+                st.warning(
+                    f"Cleaned up {len(stale)} stale scorecard record(s) (they were deleted directly in Dropbox)."
+                )
+
         except Exception as e:
-            st.error(f"Delete-all failed: {e}")
+            # If Dropbox check fails, we still show DB list rather than breaking Admin.
+            st.info(f"Dropbox cross-check unavailable (showing DB records only): {e}")
+
+        if not existing:
+            st.info("No scorecards uploaded yet for this MatchID.")
+        else:
+            for row in existing:
+                fname = row.get("file_name", "")
+                uploaded_at = row.get("uploaded_at", "")
+                uploaded_by = row.get("uploaded_by", "")
+                dbx_path = row.get("dropbox_path", "")
+                scorecard_id = row.get("scorecard_id", "")
+
+                with st.expander(f"{fname}", expanded=False):
+                    st.write(f"**Uploaded at:** {uploaded_at}")
+                    if uploaded_by:
+                        st.write(f"**Uploaded by:** {uploaded_by}")
+                    st.write(f"**Dropbox path:** `{dbx_path}`")
+
+                    confirm_del = st.checkbox(
+                        "I want to delete this file from Dropbox",
+                        key=f"scorecard_del_confirm_{scorecard_id}",
+                    )
+
+                    if st.button(
+                        "Delete file",
+                        type="primary",
+                        use_container_width=True,
+                        disabled=not confirm_del,
+                        key=f"scorecard_del_btn_{scorecard_id}",
+                    ):
+                        try:
+                            access_token = get_access_token(app_key, app_secret, refresh_token)
+                            delete_path(access_token, dbx_path)          # remove from Dropbox
+                            delete_scorecard_by_path(dbx_path)           # remove from SQLite
+                            st.success("Deleted.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Delete failed: {e}")
+
+    # =========================
+    # Collapsible: Delete all
+    # =========================
+    with st.expander("Delete all files for this MatchID", expanded=False):
+        st.warning(
+            "This will permanently delete ALL uploaded scorecard files for this MatchID from Dropbox "
+            "and remove their records from the database. This cannot be undone."
+        )
+
+        confirm_del_all = st.checkbox(
+            "I understand and want to delete ALL scorecard files for this MatchID",
+            key=f"scorecard_delete_all_confirm_{match_id}",
+        )
+
+        if st.button(
+            "Delete ALL files for this MatchID",
+            type="primary",
+            use_container_width=True,
+            disabled=not confirm_del_all,
+            key=f"scorecard_delete_all_btn_{match_id}",
+        ):
+            try:
+                access_token = get_access_token(app_key, app_secret, refresh_token)
+
+                # 1) Delete all SQLite rows for this match
+                existing_rows = list_scorecards(match_id)
+                for row in existing_rows:
+                    p = str(row.get("dropbox_path", "") or "")
+                    if p:
+                        delete_scorecard_by_path(p)
+
+                # 2) Delete the entire Dropbox folder for this match (removes all files inside)
+                match_folder = posixpath.join(scorecards_root, match_id)
+                try:
+                    delete_path(access_token, match_folder)
+                except Exception:
+                    pass  # Folder already gone is acceptable
+
+                st.success("All scorecard files and database records for this MatchID have been deleted.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Delete-all failed: {e}")
