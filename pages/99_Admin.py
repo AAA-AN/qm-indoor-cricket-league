@@ -345,7 +345,7 @@ with tab_scorecards:
     selected_label = st.selectbox("Select fixture", options, key="scorecard_match_select")
     match_id = option_to_match_id[selected_label]
 
-    st.caption(f"Dropbox scorecard folder: {posixpath.join(scorecards_root, match_id)}")
+    st.caption(f"Scorecard folder: {posixpath.join(scorecards_root, match_id)}")
 
     st.markdown("### Upload files")
         # Used to clear the file_uploader after successful upload
