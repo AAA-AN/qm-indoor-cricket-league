@@ -31,6 +31,7 @@ from src.dropbox_api import (
     ensure_folder,
     upload_file,
     delete_path,
+    list_folder,
 )
 from src.excel_io import load_league_workbook_from_bytes
 
@@ -322,6 +323,52 @@ with tab_scorecards:
     st.markdown("### Uploaded scorecards for this fixture")
 
     existing = list_scorecards(match_id)
+
+        # --- Reconcile SQLite records with what actually exists in Dropbox ---
+    # If a file was deleted directly in Dropbox, remove the stale DB record
+    # so the UI does not show phantom uploads.
+    try:
+        access_token = get_access_token(app_key, app_secret, refresh_token)
+        match_folder = posixpath.join(scorecards_root, match_id)
+
+        dbx_entries = list_folder(access_token, match_folder)
+
+        # Normalise to a comparable set of paths.
+        # Dropbox may return path_display and/or path_lower.
+        dbx_paths = set()
+        for e in dbx_entries:
+            p_disp = e.get("path_display")
+            p_low = e.get("path_lower")
+            if p_disp:
+                dbx_paths.add(str(p_disp))
+                dbx_paths.add(str(p_disp).lower())
+            if p_low:
+                dbx_paths.add(str(p_low))
+                dbx_paths.add(str(p_low).lower())
+
+        stale = []
+        for row in existing:
+            p = str(row.get("dropbox_path", "") or "")
+            if not p:
+                continue
+            if p not in dbx_paths and p.lower() not in dbx_paths:
+                stale.append(p)
+
+        # Auto-clean stale records (Dropbox file already gone)
+        if stale:
+            for p in stale:
+                delete_scorecard_by_path(p)
+
+            # Re-load now-clean list for display
+            existing = list_scorecards(match_id)
+
+            st.warning(
+                f"Cleaned up {len(stale)} stale scorecard record(s) (they were deleted directly in Dropbox)."
+            )
+
+    except Exception as e:
+        # If Dropbox check fails, we still show DB list rather than breaking Admin.
+        st.info(f"Dropbox cross-check unavailable (showing DB records only): {e}")
 
     if not existing:
         st.info("No scorecards uploaded yet for this MatchID.")
