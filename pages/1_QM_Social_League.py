@@ -1247,7 +1247,7 @@ if selected_tab == "Scorecards":
             match_txt = f"{_safe(r.get('Home Team'))} vs {_safe(r.get('Away Team'))}"
 
         label = " - ".join([p for p in [date_txt, time_txt, match_txt] if p])
-        
+
         options.append(label)
         option_to_match[label] = mid
 
@@ -1273,8 +1273,10 @@ if selected_tab == "Scorecards":
     )
     selected_match_id = option_to_match[selected_fixture]
 
-    available = list_scorecards(selected_match_id)
-
+    available = sorted(
+        list_scorecards(selected_match_id),
+        key=lambda r: (str(r.get("uploaded_at") or ""), int(r.get("scorecard_id") or 0)),
+    )
     if not available:
         st.info("No scorecards have been uploaded for this fixture yet.")
         st.stop()
