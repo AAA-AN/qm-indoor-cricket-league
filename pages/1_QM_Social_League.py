@@ -1329,7 +1329,7 @@ if selected_tab == "Scorecards":
                 url = _get_temp_link(app_key, app_secret, refresh_token, dbx_path)
                 # (1) Explicit key to prevent duplicate widget ID issues
                 st.link_button(
-                    f"{fname})",
+                    f"{fname}",
                     url,
                     use_container_width=True,
                 )
