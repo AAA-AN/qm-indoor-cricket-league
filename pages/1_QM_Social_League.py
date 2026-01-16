@@ -1273,66 +1273,72 @@ if selected_tab == "Scorecards":
     st.caption(f"{len(available)} file(s) available")
 
     # -----------------------------
-# Image viewer (press & hold on mobile)
-# -----------------------------
-image_rows = []
-for row in available:
-    fname = (row.get("file_name") or "").strip()
-    if fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-        image_rows.append(row)
+    # Image viewer (press & hold on mobile)
+    # -----------------------------
+    image_rows = []
+    for row in available:
+        fname = (row.get("file_name") or "").strip()
+        if fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+            image_rows.append(row)
 
-if image_rows:
-    st.markdown("#### Image viewer")
-    st.caption("Mobile (iPhone): press and hold the image to ‘Save to Photos’.")
+    if image_rows:
+        st.markdown("#### Image viewer")
+        st.caption("Mobile (iPhone): press and hold the image to ‘Save to Photos’.")
 
-    # Build labels for selection
-    img_labels = []
-    for idx, row in enumerate(image_rows, start=1):
-        fname = (row.get("file_name") or f"image_{idx}").strip()
-        img_labels.append(f"{idx}. {fname}")
+        # Labels for selection
+        img_labels = []
+        label_to_row = {}
+        for idx, row in enumerate(image_rows, start=1):
+            fname = (row.get("file_name") or f"image_{idx}").strip()
+            label = f"{idx}. {fname}"
+            img_labels.append(label)
+            label_to_row[label] = row
 
-    # Persistent selection per match
-    state_key = f"scorecard_img_idx_{selected_match_id}"
-    if state_key not in st.session_state:
-        st.session_state[state_key] = 0  # default first image
+        # Use the SELECTBOX state as the single source of truth
+        select_key = f"scorecard_img_select_{selected_match_id}"
 
-    # Dropdown selector (quick jump)
-    selected_label = st.selectbox(
-        "Select an image",
-        img_labels,
-        index=int(st.session_state[state_key]),
-        key=f"scorecard_img_select_{selected_match_id}",
-    )
-    selected_idx = img_labels.index(selected_label)
-    st.session_state[state_key] = selected_idx
+        # Initialise default selection (first image) only once per match
+        if select_key not in st.session_state:
+            st.session_state[select_key] = img_labels[0]
 
-    # Nav buttons
-    c_prev, c_mid, c_next = st.columns([1, 2, 1])
-    with c_prev:
-        if st.button("◀ Previous", use_container_width=True, disabled=(selected_idx == 0), key=f"img_prev_{selected_match_id}"):
-            st.session_state[state_key] = max(0, selected_idx - 1)
-            st.rerun()
+        # Navigation buttons update the selectbox value directly
+        current_label = st.session_state[select_key]
+        if current_label not in img_labels:
+            current_label = img_labels[0]
+            st.session_state[select_key] = current_label
 
-    with c_mid:
-        st.caption(f"Image {selected_idx + 1} of {len(image_rows)}")
+        current_idx = img_labels.index(current_label)
 
-    with c_next:
-        if st.button("Next ▶", use_container_width=True, disabled=(selected_idx >= len(image_rows) - 1), key=f"img_next_{selected_match_id}"):
-            st.session_state[state_key] = min(len(image_rows) - 1, selected_idx + 1)
-            st.rerun()
+        c_prev, c_mid, c_next = st.columns([1, 2, 1])
+        with c_prev:
+            if st.button("◀ Previous", width="stretch", disabled=(current_idx == 0)):
+                st.session_state[select_key] = img_labels[max(0, current_idx - 1)]
+        with c_mid:
+            st.caption(f"Image {current_idx + 1} of {len(img_labels)}")
+        with c_next:
+            if st.button("Next ▶", width="stretch", disabled=(current_idx >= len(img_labels) - 1)):
+                st.session_state[select_key] = img_labels[min(len(img_labels) - 1, current_idx + 1)]
 
-    # Render selected image (large)
-    current_row = image_rows[int(st.session_state[state_key])]
-    current_name = (current_row.get("file_name") or f"image_{int(st.session_state[state_key]) + 1}").strip()
-    current_path = current_row.get("dropbox_path")
+        # Selectbox reflects the current state (and allows jumping)
+        selected_label = st.selectbox(
+            "Select an image",
+            img_labels,
+            key=select_key,
+        )
 
-    if current_path:
-        try:
-            img_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, current_path)
-            st.markdown(f"**{current_name}**")
-            st.image(img_bytes, use_container_width=True)
-        except Exception as e:
-            st.warning(f"Could not load image '{current_name}': {e}")
+        # Render selected image
+        current_row = label_to_row.get(selected_label)
+        if current_row:
+            current_name = (current_row.get("file_name") or "image").strip()
+            current_path = current_row.get("dropbox_path")
+
+            if current_path:
+                try:
+                    img_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, current_path)
+                    st.markdown(f"**{current_name}**")
+                    st.image(img_bytes, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not load image '{current_name}': {e}")
 
     # -----------------------------
     # PDFs (open in a new tab via Dropbox temporary link)
