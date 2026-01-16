@@ -214,7 +214,7 @@ with tab_users:
 # TAB 2: SCORECARD UPLOAD
 # =========================================================
 with tab_scorecards:
-    st.subheader("Scorecard Upload")
+    st.subheader("Scorecard Management")
 
     # ---- Read Dropbox secrets (same as other pages) ----
     try:
