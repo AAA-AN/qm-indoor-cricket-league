@@ -151,13 +151,16 @@ with tab_users:
     df_display = df.copy()
     df_display["is_active"] = df_display["is_active"].map({1: "Active", 0: "Disabled"})
 
-    # Format last login timestamp for display
-    if "last_login_at" in users_df.columns:
-        users_df["last_login_at"] = _format_last_login(users_df["last_login_at"])
+    # NEW: format last_login_at for display as "16 Jan 2026 19:45"
+    if "last_login_at" in df_display.columns:
+        t = pd.to_datetime(df_display["last_login_at"], errors="coerce", utc=True)
+        df_display["last_login_at"] = t.dt.strftime("%d %b %Y %H:%M").fillna("Never")
 
     st.markdown("### All users")
     st.dataframe(
-        df_display[["username", "first_name", "last_name", "role", "is_active", "created_at", "last_login_at"]],
+        df_display[
+            ["username", "first_name", "last_name", "role", "is_active", "created_at", "last_login_at"]
+        ],
         use_container_width=True,
         hide_index=True,
     )
