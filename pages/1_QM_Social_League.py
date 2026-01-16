@@ -309,134 +309,6 @@ if selected_tab == "Fixtures & Results":
         width="stretch",
         hide_index=True,
     )
-    st.markdown("---")
-    st.markdown("### Download scorecards")
-
-    if "MatchID" not in fixtures.columns:
-        st.info("Scorecards are not available because this workbook does not contain a 'MatchID' column.")
-    else:
-        # Build a friendly fixture selector (Option A)
-        fsel = fixtures.copy()
-        fsel.columns = [str(c).strip() for c in fsel.columns]
-
-        # Format date/time for display if present
-        if "Date" in fsel.columns:
-            fsel["Date"] = _format_date_dd_mmm(fsel["Date"])
-        if "Time" in fsel.columns:
-            fsel["Time"] = _format_time_ampm(fsel["Time"])
-
-        def _safe(v) -> str:
-            if pd.isna(v):
-                return ""
-            return str(v).strip()
-
-    options = []
-    option_to_match = {}
-
-    # Build all options first
-    for _, r in fsel.iterrows():
-        mid = _safe(r.get("MatchID"))
-        if not mid:
-            continue
-
-        parts = [mid]
-        if "Date" in fsel.columns:
-            parts.append(_safe(r.get("Date")))
-        if "Time" in fsel.columns:
-            parts.append(_safe(r.get("Time")))
-        if "Home Team" in fsel.columns and "Away Team" in fsel.columns:
-            parts.append(f"{_safe(r.get('Home Team'))} vs {_safe(r.get('Away Team'))}")
-
-        label = " — ".join([p for p in parts if p])
-        options.append(label)
-        option_to_match[label] = mid
-
-    if not options:
-        st.info("No fixtures with a valid MatchID were found.")
-    else:
-        # Filter the selector to only fixtures that have scorecards
-        filtered_options = []
-        for label in options:
-            mid = option_to_match[label]
-            if _match_has_scorecards(mid):
-                filtered_options.append(label)
-
-        if not filtered_options:
-            st.info("No scorecards have been uploaded for any fixtures yet.")
-        else:
-            selected_fixture = st.selectbox(
-                "Select a fixture to view available scorecards",
-                filtered_options,
-                key="fixtures_scorecard_select",
-            )
-            selected_match_id = option_to_match[selected_fixture]
-
-            available = list_scorecards(selected_match_id)
-
-            if not available:
-                st.info("No scorecards have been uploaded for this fixture yet.")
-            else:
-                st.caption(f"{len(available)} file(s) available")
-
-                # Download-all ZIP
-                try:
-                    zip_bytes = _build_scorecards_zip(app_key, app_secret, refresh_token, selected_match_id, available)
-                    st.download_button(
-                        label="Download all scorecards (ZIP)",
-                        data=zip_bytes,
-                        file_name=f"Match_{selected_match_id}_Scorecards.zip",
-                        use_container_width=True,
-                        key=f"dl_scorecards_zip_{selected_match_id}",
-                    )
-                except Exception as e:
-                    st.warning(f"Could not build ZIP download: {e}")
-
-                st.markdown("#### Individual files")
-                for i, row in enumerate(available):
-                    fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
-                    dbx_path = row.get("dropbox_path")
-                    if not dbx_path:
-                        continue
-
-                    try:
-                        file_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
-
-                        lower = fname.lower()
-                        is_image = lower.endswith((".png", ".jpg", ".jpeg", ".webp"))
-
-                        if is_image:
-                            st.write(f"**{fname}**")
-                            st.caption("iPhone: press and hold the image to ‘Save to Photos’.")
-                            st.image(file_bytes, use_container_width=True)
-
-                        # Keep download button for everyone (Images will still go to Files on iOS)
-                        # Add correct MIME where we can
-                        mime = None
-                        if lower.endswith(".pdf"):
-                            mime = "application/pdf"
-                        elif lower.endswith(".png"):
-                            mime = "image/png"
-                        elif lower.endswith(".jpg") or lower.endswith(".jpeg"):
-                            mime = "image/jpeg"
-                        elif lower.endswith(".webp"):
-                            mime = "image/webp"
-
-                        st.download_button(
-                            label=f"Download: {fname}",
-                            data=file_bytes,
-                            file_name=fname,
-                            mime=mime,
-                            use_container_width=True,
-                            key=f"dl_scorecard_{selected_match_id}_{i}",
-                        )
-
-                        st.markdown("---")
-
-                    except Exception as e:
-                        st.warning(f"Could not load '{fname}': {e}")
-
-                    except Exception as e:
-                        st.warning(f"Could not download '{fname}': {e}")
 
 # ============================
 # TAB 2: LEAGUE TABLE
@@ -1350,3 +1222,132 @@ if selected_tab == "Player Stats":
 # ============================
 if selected_tab == "Scorecards":
     st.subheader("Scorecards")
+
+    st.markdown("---")
+    st.markdown("### Download scorecards")
+
+    if "MatchID" not in fixtures.columns:
+        st.info("Scorecards are not available because this workbook does not contain a 'MatchID' column.")
+    else:
+        # Build a friendly fixture selector (Option A)
+        fsel = fixtures.copy()
+        fsel.columns = [str(c).strip() for c in fsel.columns]
+
+        # Format date/time for display if present
+        if "Date" in fsel.columns:
+            fsel["Date"] = _format_date_dd_mmm(fsel["Date"])
+        if "Time" in fsel.columns:
+            fsel["Time"] = _format_time_ampm(fsel["Time"])
+
+        def _safe(v) -> str:
+            if pd.isna(v):
+                return ""
+            return str(v).strip()
+
+    options = []
+    option_to_match = {}
+
+    # Build all options first
+    for _, r in fsel.iterrows():
+        mid = _safe(r.get("MatchID"))
+        if not mid:
+            continue
+
+        parts = [mid]
+        if "Date" in fsel.columns:
+            parts.append(_safe(r.get("Date")))
+        if "Time" in fsel.columns:
+            parts.append(_safe(r.get("Time")))
+        if "Home Team" in fsel.columns and "Away Team" in fsel.columns:
+            parts.append(f"{_safe(r.get('Home Team'))} vs {_safe(r.get('Away Team'))}")
+
+        label = " — ".join([p for p in parts if p])
+        options.append(label)
+        option_to_match[label] = mid
+
+    if not options:
+        st.info("No fixtures with a valid MatchID were found.")
+    else:
+        # Filter the selector to only fixtures that have scorecards
+        filtered_options = []
+        for label in options:
+            mid = option_to_match[label]
+            if _match_has_scorecards(mid):
+                filtered_options.append(label)
+
+        if not filtered_options:
+            st.info("No scorecards have been uploaded for any fixtures yet.")
+        else:
+            selected_fixture = st.selectbox(
+                "Select a fixture to view available scorecards",
+                filtered_options,
+                key="fixtures_scorecard_select",
+            )
+            selected_match_id = option_to_match[selected_fixture]
+
+            available = list_scorecards(selected_match_id)
+
+            if not available:
+                st.info("No scorecards have been uploaded for this fixture yet.")
+            else:
+                st.caption(f"{len(available)} file(s) available")
+
+                # Download-all ZIP
+                try:
+                    zip_bytes = _build_scorecards_zip(app_key, app_secret, refresh_token, selected_match_id, available)
+                    st.download_button(
+                        label="Download all scorecards (ZIP)",
+                        data=zip_bytes,
+                        file_name=f"Match_{selected_match_id}_Scorecards.zip",
+                        use_container_width=True,
+                        key=f"dl_scorecards_zip_{selected_match_id}",
+                    )
+                except Exception as e:
+                    st.warning(f"Could not build ZIP download: {e}")
+
+                st.markdown("#### Individual files")
+                for i, row in enumerate(available):
+                    fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
+                    dbx_path = row.get("dropbox_path")
+                    if not dbx_path:
+                        continue
+
+                    try:
+                        file_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
+
+                        lower = fname.lower()
+                        is_image = lower.endswith((".png", ".jpg", ".jpeg", ".webp"))
+
+                        if is_image:
+                            st.write(f"**{fname}**")
+                            st.caption("iPhone: press and hold the image to ‘Save to Photos’.")
+                            st.image(file_bytes, use_container_width=True)
+
+                        # Keep download button for everyone (Images will still go to Files on iOS)
+                        # Add correct MIME where we can
+                        mime = None
+                        if lower.endswith(".pdf"):
+                            mime = "application/pdf"
+                        elif lower.endswith(".png"):
+                            mime = "image/png"
+                        elif lower.endswith(".jpg") or lower.endswith(".jpeg"):
+                            mime = "image/jpeg"
+                        elif lower.endswith(".webp"):
+                            mime = "image/webp"
+
+                        st.download_button(
+                            label=f"Download: {fname}",
+                            data=file_bytes,
+                            file_name=fname,
+                            mime=mime,
+                            use_container_width=True,
+                            key=f"dl_scorecard_{selected_match_id}_{i}",
+                        )
+
+                        st.markdown("---")
+
+                    except Exception as e:
+                        st.warning(f"Could not load '{fname}': {e}")
+
+                    except Exception as e:
+                        st.warning(f"Could not download '{fname}': {e}")
