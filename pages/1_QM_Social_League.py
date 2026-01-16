@@ -1223,15 +1223,31 @@ if selected_tab == "Scorecards":
         if not mid:
             continue
 
-        parts = [mid]
-        if "Date" in fsel.columns:
-            parts.append(_safe(r.get("Date")))
-        if "Time" in fsel.columns:
-            parts.append(_safe(r.get("Time")))
-        if "Home Team" in fsel.columns and "Away Team" in fsel.columns:
-            parts.append(f"{_safe(r.get('Home Team'))} vs {_safe(r.get('Away Team'))}")
+        # Dropdown label for normal users: "01-Jan - 7 PM - Home vs Away"
+        date_txt = _safe(r.get("Date")) if "Date" in fsel.columns else ""
 
-        label = " — ".join([p for p in parts if p])
+        # Time is already formatted earlier via _format_time_ampm; reduce to "H AM/PM"
+        time_txt = _safe(r.get("Time")) if "Time" in fsel.columns else ""
+        if time_txt:
+            # Examples handled: "7:00 PM" -> "7 PM", "7 PM" -> "7 PM"
+            t = time_txt.replace(".", "").strip()
+            if ":" in t:
+                # "7:00 PM" -> ["7", "00 PM"] -> hour="7", ampm="PM"
+                hour_part = t.split(":", 1)[0].strip()
+                ampm_part = t.split(" ", 1)[-1].strip().upper()  # "PM"/"AM"
+                time_txt = f"{hour_part} {ampm_part}"
+            else:
+                # Ensure spacing/case is consistent if already "7 PM"
+                parts = t.split()
+                if len(parts) >= 2:
+                    time_txt = f"{parts[0]} {parts[-1].upper()}"
+
+        match_txt = ""
+        if "Home Team" in fsel.columns and "Away Team" in fsel.columns:
+            match_txt = f"{_safe(r.get('Home Team'))} vs {_safe(r.get('Away Team'))}"
+
+        label = " - ".join([p for p in [date_txt, time_txt, match_txt] if p])
+        
         options.append(label)
         option_to_match[label] = mid
 
