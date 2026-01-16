@@ -46,6 +46,13 @@ hide_admin_page_for_non_admins()
 render_sidebar_header()
 render_logout_button()
 
+def _format_last_login(series: pd.Series) -> pd.Series:
+    """
+    Format ISO timestamps to: DD Mon YYYY HH:MM
+    Example: 16 Jan 2026 19:45
+    """
+    t = pd.to_datetime(series, errors="coerce", utc=True)
+    return t.dt.strftime("%d %b %Y %H:%M")
 
 def _get_secret(name: str) -> str:
     val = st.secrets.get(name, "")
@@ -143,6 +150,10 @@ with tab_users:
     df = pd.DataFrame(users)
     df_display = df.copy()
     df_display["is_active"] = df_display["is_active"].map({1: "Active", 0: "Disabled"})
+
+    # Format last login timestamp for display
+    if "last_login_at" in users_df.columns:
+        users_df["last_login_at"] = _format_last_login(users_df["last_login_at"])
 
     st.markdown("### All users")
     st.dataframe(
