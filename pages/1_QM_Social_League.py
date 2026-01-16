@@ -1305,49 +1305,38 @@ if selected_tab == "Scorecards":
                 except Exception as e:
                     st.warning(f"Could not build ZIP download: {e}")
 
-                st.markdown("#### Individual files")
-                for i, row in enumerate(available):
-                    fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
-                    dbx_path = row.get("dropbox_path")
-                    if not dbx_path:
+                st.markdown("#### Scorecard previews (images only)")
+
+                image_rows = []
+                for row in available:
+                    fname = (row.get("file_name") or "").strip()
+                    if not fname:
                         continue
+                    lower = fname.lower()
+                    if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+                        image_rows.append(row)
 
-                    try:
-                        file_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
+                if not image_rows:
+                    st.info("No image previews available for this fixture (only PDFs were uploaded).")
+                else:
+                    st.caption("Mobile (iPhone): press and hold an image to ‘Save to Photos’.")
+                    for i, row in enumerate(image_rows):
+                        fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
+                        dbx_path = row.get("dropbox_path")
+                        if not dbx_path:
+                            continue
 
-                        lower = fname.lower()
-                        is_image = lower.endswith((".png", ".jpg", ".jpeg", ".webp"))
-
-                        if is_image:
+                        try:
+                            file_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
                             st.write(f"**{fname}**")
-                            st.caption("iPhone: press and hold the image to ‘Save to Photos’.")
                             st.image(file_bytes, use_container_width=True)
+                            st.markdown("---")
+                        except Exception as e:
+                            st.warning(f"Could not load image '{fname}': {e}")
 
-                        # Keep download button for everyone (Images will still go to Files on iOS)
-                        # Add correct MIME where we can
-                        mime = None
-                        if lower.endswith(".pdf"):
-                            mime = "application/pdf"
-                        elif lower.endswith(".png"):
-                            mime = "image/png"
-                        elif lower.endswith(".jpg") or lower.endswith(".jpeg"):
-                            mime = "image/jpeg"
-                        elif lower.endswith(".webp"):
-                            mime = "image/webp"
 
-                        st.download_button(
-                            label=f"Download: {fname}",
-                            data=file_bytes,
-                            file_name=fname,
-                            mime=mime,
-                            use_container_width=True,
-                            key=f"dl_scorecard_{selected_match_id}_{i}",
-                        )
+                        except Exception as e:
+                            st.warning(f"Could not load '{fname}': {e}")
 
-                        st.markdown("---")
-
-                    except Exception as e:
-                        st.warning(f"Could not load '{fname}': {e}")
-
-                    except Exception as e:
-                        st.warning(f"Could not download '{fname}': {e}")
+                        except Exception as e:
+                            st.warning(f"Could not download '{fname}': {e}")
