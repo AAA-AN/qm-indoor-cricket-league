@@ -214,7 +214,7 @@ def list_scorecard_match_ids() -> list[str]:
             ORDER BY match_id;
             """
         ).fetchall()
-        return [str(r["match_id"]) for r in rows if r.get("match_id") is not None]
+        return [str(r[0]) for r in rows if r[0] is not None]
     finally:
         conn.close()
 
