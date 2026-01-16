@@ -201,6 +201,22 @@ def list_scorecards(match_id: str):
     finally:
         conn.close()
 
+def list_scorecard_match_ids() -> list[str]:
+    """
+    Return distinct match_ids that have at least one scorecard record.
+    """
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT match_id
+            FROM scorecards
+            ORDER BY match_id;
+            """
+        ).fetchall()
+        return [str(r["match_id"]) for r in rows if r.get("match_id") is not None]
+    finally:
+        conn.close()
 
 def delete_scorecard_by_path(dropbox_path: str) -> None:
     conn = get_conn()

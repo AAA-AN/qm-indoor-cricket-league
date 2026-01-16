@@ -11,7 +11,7 @@ from src.guard import (
 )
 from src.dropbox_api import get_access_token, download_file, get_temporary_link
 from src.excel_io import load_league_workbook_from_bytes
-from src.db import list_scorecards
+from src.db import list_scorecards, list_scorecard_match_ids
 
 st.set_page_config(page_title=f"{APP_TITLE} - QM Social League", layout="wide")
 
@@ -1247,16 +1247,9 @@ if selected_tab == "Scorecards":
         st.stop()
 
     # -------------------------------------------------
-    # (3) Filter selector WITHOUT calling _match_has_scorecards in a loop
-    # Strategy: build candidate MatchIDs once, then check scorecards once per MatchID
+    # Fast filter: one DB query for all MatchIDs that have scorecards
     # -------------------------------------------------
-    candidate_match_ids = list(dict.fromkeys(option_to_match.values()))  # preserves order, removes dups
-    match_ids_with_scorecards: set[str] = set()
-
-    for mid in candidate_match_ids:
-        # One DB call per match_id (still fast, avoids extra cached function layer)
-        if len(list_scorecards(mid)) > 0:
-            match_ids_with_scorecards.add(mid)
+    match_ids_with_scorecards = set(list_scorecard_match_ids())
 
     filtered_options = [label for label in options if option_to_match[label] in match_ids_with_scorecards]
 
