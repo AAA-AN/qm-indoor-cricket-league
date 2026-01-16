@@ -1281,7 +1281,6 @@ if selected_tab == "Scorecards":
             image_rows.append(row)
 
     if image_rows:
-        st.markdown("#### Scorecard")
         st.caption("Mobile (iPhone): press and hold the image to ‘Save to Photos’.")
 
         # Persistent index per match
