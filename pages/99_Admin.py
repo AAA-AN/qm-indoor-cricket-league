@@ -261,6 +261,49 @@ with tab_scorecards:
     match_id = option_to_match_id[selected_label]
 
     st.caption(f"Dropbox scorecard folder: {posixpath.join(scorecards_root, match_id)}")
+    
+    st.markdown("---")
+    st.markdown("### Danger zone: Delete all files for this MatchID")
+
+    st.warning(
+        "This will permanently delete ALL uploaded scorecard files for this MatchID from Dropbox "
+        "and remove their records from the database. This cannot be undone."
+    )
+
+    confirm_del_all = st.checkbox(
+        "I understand and want to delete ALL scorecard files for this MatchID",
+        key=f"scorecard_delete_all_confirm_{match_id}",
+    )
+
+    if st.button(
+        "Delete ALL files for this MatchID",
+        type="primary",
+        use_container_width=True,
+        disabled=not confirm_del_all,
+        key=f"scorecard_delete_all_btn_{match_id}",
+    ):
+        try:
+            access_token = get_access_token(app_key, app_secret, refresh_token)
+
+            # 1) Delete all SQLite rows for this match
+            existing_rows = list_scorecards(match_id)
+            for row in existing_rows:
+                p = str(row.get("dropbox_path", "") or "")
+                if p:
+                    delete_scorecard_by_path(p)
+
+            # 2) Delete the entire Dropbox folder for this match (removes all files inside)
+            match_folder = posixpath.join(scorecards_root, match_id)
+            try:
+                delete_path(access_token, match_folder)
+            except Exception:
+                # If the folder doesn't exist (or was already deleted), we still consider DB cleanup successful.
+                pass
+
+            st.success("All scorecard files and database records for this MatchID have been deleted.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Delete-all failed: {e}")
 
     st.markdown("### Upload files")
     uploaded_files = st.file_uploader(
