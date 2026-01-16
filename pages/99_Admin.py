@@ -92,7 +92,7 @@ def _format_time_ampm(series: pd.Series) -> pd.Series:
 
 st.title("Admin")
 
-tab_users, tab_scorecards = st.tabs(["User Management", "Scorecard Upload"])
+tab_users, tab_scorecards = st.tabs(["User Management", "Scorecard Management"])
 
 # =========================================================
 # TAB 1: USER MANAGEMENT (existing functionality, unchanged)
@@ -211,7 +211,7 @@ with tab_users:
 
 
 # =========================================================
-# TAB 2: SCORECARD UPLOAD
+# TAB 2: SCORECARD MANAGEMENT
 # =========================================================
 with tab_scorecards:
     st.subheader("Scorecard Management")
