@@ -2,7 +2,12 @@ import json
 import posixpath
 import streamlit as st
 
-from src.db import init_db, count_users, export_users_backup_payload, restore_users_from_backup_payload
+from src.db import (
+    init_db,
+    count_users,
+    export_users_backup_payload,
+    restore_users_from_backup_payload,
+)
 from src.auth import create_user, authenticate_user, change_password, hash_password
 from src.guard import APP_TITLE, hide_sidebar
 from src.dropbox_api import get_access_token, download_file, ensure_folder, upload_file
@@ -19,8 +24,10 @@ def _get_secret(name: str) -> str:
 
 def _dropbox_users_backup_path() -> str:
     """
-    Stores backups next to your league workbook, under /app_data/users_backup.json
-    (same “app folder” approach you use elsewhere).
+    Stores the backup next to your league workbook folder in Dropbox, under:
+      <app_folder>/app_data/users_backup.json
+
+    This follows the same "derive app_folder from DROPBOX_FILE_PATH" approach you use elsewhere.
     """
     dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")
     app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
@@ -29,6 +36,9 @@ def _dropbox_users_backup_path() -> str:
 
 
 def backup_users_to_dropbox() -> None:
+    """
+    Upload users backup (WITHOUT passwords) to Dropbox, overwriting the single backup file.
+    """
     app_key = _get_secret("DROPBOX_APP_KEY")
     app_secret = _get_secret("DROPBOX_APP_SECRET")
     refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
@@ -43,15 +53,20 @@ def backup_users_to_dropbox() -> None:
     payload = export_users_backup_payload()
     content = json.dumps(payload, indent=2).encode("utf-8")
 
-    # Overwrite the single backup file each time
     upload_file(access_token, backup_path, content, mode="overwrite", autorename=False)
 
 
 def restore_users_from_dropbox_if_needed() -> None:
-    # Only restore into an empty DB
+    """
+    If users table is empty, try to restore from Dropbox backup.
+    Restored users:
+      - get DEFAULT_RESET_PASSWORD
+      - are forced to reset password on first login
+    """
     if count_users() != 0:
         return
 
+    # If secrets aren't set or file doesn't exist yet, do nothing (normal first-run behaviour).
     try:
         app_key = _get_secret("DROPBOX_APP_KEY")
         app_secret = _get_secret("DROPBOX_APP_SECRET")
@@ -72,11 +87,9 @@ def restore_users_from_dropbox_if_needed() -> None:
         )
 
         if restored > 0:
-            # Optional: surface a single warning so you know a restore occurred
             st.session_state["restored_users_count"] = restored
 
     except Exception:
-        # If no backup exists yet (or Dropbox is unreachable), just continue normally.
         return
 
 
@@ -87,23 +100,23 @@ def ensure_session_state():
         st.session_state["home_view"] = "welcome"
     if "pending_reset_username" not in st.session_state:
         st.session_state["pending_reset_username"] = ""
+    if "restored_users_count" not in st.session_state:
+        st.session_state["restored_users_count"] = 0
 
 
 def home_welcome():
     st.title(APP_TITLE)
-
-    # Optional informational banner if a restore happened this boot
-    restored_n = int(st.session_state.get("restored_users_count") or 0)
-    if restored_n:
-        st.warning(
-            f"User accounts were restored from Dropbox ({restored_n} user(s)). "
-            "All restored accounts must reset their password on next login."
-        )
-
     st.write(
         "Welcome to the QM Indoor Cricket League app.\n\n"
         "Log in to view fixtures, results, league tables, and player statistics."
     )
+
+    restored_n = int(st.session_state.get("restored_users_count") or 0)
+    if restored_n:
+        st.warning(
+            f"User accounts were restored from Dropbox ({restored_n} user(s)). "
+            "All restored users must reset their password on next login."
+        )
 
     st.markdown("---")
     st.subheader("Login")
@@ -116,7 +129,7 @@ def home_welcome():
     if submitted:
         user = authenticate_user(username, password)
         if user:
-            # If restored (or admin-forced), require password change before continuing
+            # If this user must reset password, force the reset flow before continuing.
             if int(user.get("must_reset_password") or 0) == 1:
                 st.session_state["pending_reset_username"] = user["username"]
                 st.session_state["home_view"] = "force_reset"
@@ -135,6 +148,7 @@ def home_welcome():
 
 def home_force_reset():
     st.title("Password reset required")
+
     u = (st.session_state.get("pending_reset_username") or "").strip()
     if not u:
         st.session_state["home_view"] = "welcome"
@@ -157,10 +171,15 @@ def home_force_reset():
 
         try:
             change_password(u, pw1)
-            # Back up immediately so we don’t lose the cleared reset flag
-            backup_users_to_dropbox()
 
-            # Re-authenticate the user into session and continue
+            # Back up immediately so we persist the cleared must_reset_password flag
+            try:
+                backup_users_to_dropbox()
+            except Exception:
+                # Non-blocking; user can still proceed
+                pass
+
+            # Authenticate into session and proceed
             user = authenticate_user(u, pw1)
             st.session_state["user"] = user
             st.session_state["pending_reset_username"] = ""
@@ -193,8 +212,12 @@ def home_signup():
         else:
             try:
                 create_user(first, last, username, password)
+
                 # Back up after every successful signup
-                backup_users_to_dropbox()
+                try:
+                    backup_users_to_dropbox()
+                except Exception:
+                    pass
 
                 st.success("Account created. You can now log in.")
                 st.session_state["home_view"] = "welcome"
@@ -211,7 +234,7 @@ def main():
     init_db()
     ensure_session_state()
 
-    # Restore users from Dropbox if this is a fresh boot (empty DB)
+    # Restore users from Dropbox if this is a fresh boot (empty users table)
     restore_users_from_dropbox_if_needed()
 
     if st.session_state.get("user") is None:

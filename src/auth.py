@@ -5,7 +5,12 @@ from typing import Optional, Dict, Any
 
 import bcrypt
 
-from src.db import get_conn, count_users, update_password_hash, set_must_reset_password
+from src.db import (
+    get_conn,
+    count_users,
+    update_password_hash,
+    set_must_reset_password,
+)
 
 
 def _now_iso() -> str:
@@ -27,6 +32,10 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def create_user(first_name: str, last_name: str, username: str, password: str) -> Dict[str, Any]:
+    """
+    Creates a user.
+    First user becomes admin; subsequent users become player.
+    """
     first_name = (first_name or "").strip()
     last_name = (last_name or "").strip()
     username = (username or "").strip()
@@ -93,6 +102,10 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
 
 
 def change_password(username: str, new_password: str) -> None:
+    """
+    Used for the forced reset flow (and can be reused for a future "change password" page).
+    Clears must_reset_password.
+    """
     username = (username or "").strip()
     if not username or not new_password:
         raise ValueError("Username and new password are required.")
@@ -103,12 +116,16 @@ def change_password(username: str, new_password: str) -> None:
 
 
 def admin_reset_password(username: str, new_password: str) -> None:
+    """
+    Admin-only: reset a user's password.
+    The Admin page is responsible for ensuring the caller is an admin.
+
+    Recommended behaviour: if an admin resets a password, force the user to change it on next login.
+    """
     username = (username or "").strip()
     if not username or not new_password:
         raise ValueError("Username and new password are required.")
 
     pw_hash = hash_password(new_password)
     update_password_hash(username, pw_hash)
-
-    # Optional (recommended): if an admin resets someone, force them to change it on next login
     set_must_reset_password(username, True)
