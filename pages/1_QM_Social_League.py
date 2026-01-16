@@ -168,7 +168,7 @@ else:
 # ----------------------------
 selected_tab = st.radio(
     label="",
-    options=["Fixtures & Results", "League Table", "Teams", "Player Stats"],
+    options=["Fixtures & Results", "League Table", "Teams", "Player Stats", "Scorecards"],
     horizontal=True,
     key="main_tab",
     label_visibility="collapsed",
