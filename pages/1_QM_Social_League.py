@@ -1273,38 +1273,66 @@ if selected_tab == "Scorecards":
     st.caption(f"{len(available)} file(s) available")
 
     # -----------------------------
-    # Image previews (press & hold on mobile)
-    # -----------------------------
-    image_rows = []
-    for row in available:
-        fname = (row.get("file_name") or "").strip()
-        if fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-            image_rows.append(row)
+# Image viewer (press & hold on mobile)
+# -----------------------------
+image_rows = []
+for row in available:
+    fname = (row.get("file_name") or "").strip()
+    if fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        image_rows.append(row)
 
-    if image_rows:
-        st.markdown("#### Scorecard previews (images only)")
-        st.caption("Mobile (iPhone): press and hold an image to ‘Save to Photos’.")
+if image_rows:
+    st.markdown("#### Image viewer")
+    st.caption("Mobile (iPhone): press and hold the image to ‘Save to Photos’.")
 
-        for i, row in enumerate(image_rows):
-            fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
-            dbx_path = row.get("dropbox_path")
-            if not dbx_path:
-                continue
+    # Build labels for selection
+    img_labels = []
+    for idx, row in enumerate(image_rows, start=1):
+        fname = (row.get("file_name") or f"image_{idx}").strip()
+        img_labels.append(f"{idx}. {fname}")
 
-            try:
-                img_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
-                st.write(f"**{fname}**")
-                # (1) Give image widget a stable unique key via caption/write separation
-                st.image(img_bytes, use_container_width=True)
+    # Persistent selection per match
+    state_key = f"scorecard_img_idx_{selected_match_id}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = 0  # default first image
 
-                # (4) Reduce clutter: divider every 2 images instead of every image
-                if (i + 1) % 2 == 0 and (i + 1) != len(image_rows):
-                    _divider()
+    # Dropdown selector (quick jump)
+    selected_label = st.selectbox(
+        "Select an image",
+        img_labels,
+        index=int(st.session_state[state_key]),
+        key=f"scorecard_img_select_{selected_match_id}",
+    )
+    selected_idx = img_labels.index(selected_label)
+    st.session_state[state_key] = selected_idx
 
-            except Exception as e:
-                st.warning(f"Could not load image '{fname}': {e}")
+    # Nav buttons
+    c_prev, c_mid, c_next = st.columns([1, 2, 1])
+    with c_prev:
+        if st.button("◀ Previous", use_container_width=True, disabled=(selected_idx == 0), key=f"img_prev_{selected_match_id}"):
+            st.session_state[state_key] = max(0, selected_idx - 1)
+            st.rerun()
 
-        _divider()
+    with c_mid:
+        st.caption(f"Image {selected_idx + 1} of {len(image_rows)}")
+
+    with c_next:
+        if st.button("Next ▶", use_container_width=True, disabled=(selected_idx >= len(image_rows) - 1), key=f"img_next_{selected_match_id}"):
+            st.session_state[state_key] = min(len(image_rows) - 1, selected_idx + 1)
+            st.rerun()
+
+    # Render selected image (large)
+    current_row = image_rows[int(st.session_state[state_key])]
+    current_name = (current_row.get("file_name") or f"image_{int(st.session_state[state_key]) + 1}").strip()
+    current_path = current_row.get("dropbox_path")
+
+    if current_path:
+        try:
+            img_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, current_path)
+            st.markdown(f"**{current_name}**")
+            st.image(img_bytes, use_container_width=True)
+        except Exception as e:
+            st.warning(f"Could not load image '{current_name}': {e}")
 
     # -----------------------------
     # PDFs (open in a new tab via Dropbox temporary link)
