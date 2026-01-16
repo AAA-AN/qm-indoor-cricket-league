@@ -1326,18 +1326,16 @@ if selected_tab == "Scorecards":
     # -----------------------------
     # Image previews (press & hold on mobile)
     # -----------------------------
-    st.markdown("#### Scorecard previews (images only)")
-
     image_rows = []
     for row in available:
         fname = (row.get("file_name") or "").strip()
         if fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
             image_rows.append(row)
 
-    if not image_rows:
-        st.info("No image previews available for this fixture.")
-    else:
+    if image_rows:
+        st.markdown("#### Scorecard previews (images only)")
         st.caption("Mobile (iPhone): press and hold an image to ‘Save to Photos’.")
+
         for i, row in enumerate(image_rows):
             fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
             dbx_path = row.get("dropbox_path")
