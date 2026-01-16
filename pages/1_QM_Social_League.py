@@ -136,7 +136,7 @@ else:
 # Tabs
 # ----------------------------
 selected_tab = st.radio(
-    label="",
+    label="Navigation Tabs",
     options=["Fixtures & Results", "League Table", "Teams", "Player Stats", "Scorecards"],
     horizontal=True,
     key="main_tab",
