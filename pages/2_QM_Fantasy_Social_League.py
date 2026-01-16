@@ -17,4 +17,4 @@ render_sidebar_header()
 render_logout_button()
 
 st.title("QM Fantasy Social League")
-st.info("Fantasy will be added after the league section is stable.")
+st.info("Fantasy teams will be added after the league section is complete.")
