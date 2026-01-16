@@ -1285,7 +1285,7 @@ if selected_tab == "Scorecards":
         st.markdown("#### Image viewer")
         st.caption("Mobile (iPhone): press and hold the image to ‘Save to Photos’.")
 
-        # Labels for selection
+        # Build labels
         img_labels = []
         label_to_row = {}
         for idx, row in enumerate(image_rows, start=1):
@@ -1294,28 +1294,40 @@ if selected_tab == "Scorecards":
             img_labels.append(label)
             label_to_row[label] = row
 
-        # Use the selectbox state as the single source of truth
+        # Separate state: store current index (safe to modify anytime)
+        idx_key = f"scorecard_img_idx_{selected_match_id}"
+        if idx_key not in st.session_state:
+            st.session_state[idx_key] = 0
+
+        # Clamp index in case list size changed
+        st.session_state[idx_key] = max(0, min(int(st.session_state[idx_key]), len(img_labels) - 1))
+        current_idx = int(st.session_state[idx_key])
+
+        # Selectbox (jump) uses a DIFFERENT key, but we only set its default BEFORE creation
         select_key = f"scorecard_img_select_{selected_match_id}"
+        default_label = img_labels[current_idx]
 
-        # Initialise default selection once per match
+        # Set default for selectbox before it is instantiated this run
         if select_key not in st.session_state:
-            st.session_state[select_key] = img_labels[0]
+            st.session_state[select_key] = default_label
 
-        # Ensure current value is valid
-        current_label = st.session_state[select_key]
-        if current_label not in img_labels:
-            current_label = img_labels[0]
-            st.session_state[select_key] = current_label
-
-        # Selectbox (jump to an image)
+        # If user changed dropdown, sync idx_key from it (read-only access is fine)
         selected_label = st.selectbox(
             "Select an image",
             img_labels,
             key=select_key,
         )
 
+        # Sync index from dropdown selection (allowed: we are modifying idx_key, not the widget key)
+        if selected_label in img_labels:
+            st.session_state[idx_key] = img_labels.index(selected_label)
+
+        # Use updated index
+        current_idx = int(st.session_state[idx_key])
+        current_label = img_labels[current_idx]
+        current_row = label_to_row.get(current_label)
+
         # Render selected image
-        current_row = label_to_row.get(selected_label)
         if current_row:
             current_name = (current_row.get("file_name") or "image").strip()
             current_path = current_row.get("dropbox_path")
@@ -1328,18 +1340,25 @@ if selected_tab == "Scorecards":
                 except Exception as e:
                     st.warning(f"Could not load image '{current_name}': {e}")
 
-        # Navigation buttons BELOW the image
-        current_idx = img_labels.index(st.session_state[select_key])
+        # Buttons BELOW image: update idx_key only, then update selectbox state NEXT RUN by rerun
         c_prev, c_mid, c_next = st.columns([1, 2, 1])
 
         with c_prev:
-            if st.button("◀ Previous", width="stretch", disabled=(current_idx == 0)):
-                st.session_state[select_key] = img_labels[max(0, current_idx - 1)]
+            if st.button("◀ Previous", width="stretch", disabled=(current_idx == 0), key=f"img_prev_{selected_match_id}"):
+                st.session_state[idx_key] = max(0, current_idx - 1)
+                # Update selectbox value on next run
+                st.session_state[select_key] = img_labels[int(st.session_state[idx_key])]
+                st.rerun()
+
         with c_mid:
             st.caption(f"Image {current_idx + 1} of {len(img_labels)}")
+
         with c_next:
-            if st.button("Next ▶", width="stretch", disabled=(current_idx >= len(img_labels) - 1)):
-                st.session_state[select_key] = img_labels[min(len(img_labels) - 1, current_idx + 1)]
+            if st.button("Next ▶", width="stretch", disabled=(current_idx >= len(img_labels) - 1), key=f"img_next_{selected_match_id}"):
+                st.session_state[idx_key] = min(len(img_labels) - 1, current_idx + 1)
+                # Update selectbox value on next run
+                st.session_state[select_key] = img_labels[int(st.session_state[idx_key])]
+                st.rerun()
 
     # -----------------------------
     # PDFs (open in a new tab via Dropbox temporary link)
