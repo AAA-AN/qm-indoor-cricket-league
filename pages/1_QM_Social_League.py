@@ -89,21 +89,10 @@ def _build_scorecards_zip(
     mem.seek(0)
     return mem.getvalue()
 
-def _render_pdf_inline(pdf_bytes: bytes, height: int = 700) -> None:
-    """
-    Render a PDF inline using an <iframe>. Works in most desktop browsers.
-    On iOS, behavior depends on browser settings; if it can't embed, user may be prompted to open it.
-    """
+def _pdf_new_tab_link(pdf_bytes: bytes, link_text: str = "Open PDF in a new tab") -> str:
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    html = f"""
-    <iframe
-        src="data:application/pdf;base64,{b64}"
-        width="100%"
-        height="{height}"
-        style="border: none;"
-    ></iframe>
-    """
-    components.html(html, height=height, scrolling=True)
+    # data URL opened in a new tab
+    return f'<a href="data:application/pdf;base64,{b64}" target="_blank" rel="noopener noreferrer">{link_text}</a>'
 
 def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
     dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
@@ -1366,9 +1355,9 @@ if selected_tab == "Scorecards":
                                 st.warning(f"Could not load image '{fname}': {e}")
 
                     # -----------------------------
-                    # PDF viewer (inline)
+                    # PDFs (open in a new tab)
                     # -----------------------------
-                    st.markdown("#### PDF viewer")
+                    st.markdown("#### PDFs")
 
                     pdf_rows = []
                     for row in available:
@@ -1379,10 +1368,7 @@ if selected_tab == "Scorecards":
                     if not pdf_rows:
                         st.info("No PDFs uploaded for this fixture.")
                     else:
-                        st.caption(
-                            "If your device cannot display PDFs inline, use the "
-                            "“Download all scorecards (ZIP)” button above."
-                        )
+                        st.caption("Tap/click a PDF to open it in a new tab. If your browser blocks it, use the ZIP download button above.")
 
                         for i, row in enumerate(pdf_rows):
                             fname = (row.get("file_name") or f"scorecard_{i+1}.pdf").strip()
@@ -1390,14 +1376,13 @@ if selected_tab == "Scorecards":
                             if not dbx_path:
                                 continue
 
-                            with st.expander(f"View PDF: {fname}", expanded=False):
-                                try:
-                                    pdf_bytes = _download_scorecard_bytes(
-                                        app_key,
-                                        app_secret,
-                                        refresh_token,
-                                        dbx_path,
-                                    )
-                                    _render_pdf_inline(pdf_bytes, height=750)
-                                except Exception as e:
-                                    st.warning(f"Could not load PDF '{fname}': {e}")
+                            try:
+                                pdf_bytes = _download_scorecard_bytes(
+                                    app_key,
+                                    app_secret,
+                                    refresh_token,
+                                    dbx_path,
+                                )
+                                st.markdown(_pdf_new_tab_link(pdf_bytes, link_text=f"Open: {fname}"), unsafe_allow_html=True)
+                            except Exception as e:
+                                st.warning(f"Could not load PDF '{fname}': {e}")
