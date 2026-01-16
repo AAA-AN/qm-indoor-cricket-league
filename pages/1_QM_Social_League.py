@@ -1329,10 +1329,9 @@ if selected_tab == "Scorecards":
                 url = _get_temp_link(app_key, app_secret, refresh_token, dbx_path)
                 # (1) Explicit key to prevent duplicate widget ID issues
                 st.link_button(
-                    f"Open: {fname}",
+                    f"{fname} ({i+1})",
                     url,
                     use_container_width=True,
-                    key=f"pdf_link_{selected_match_id}_{i}",
                 )
             except Exception as e:
                 st.warning(f"Could not create link for '{fname}': {e}")
