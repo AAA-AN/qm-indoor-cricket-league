@@ -156,6 +156,10 @@ with tab_users:
         t = pd.to_datetime(df_display["last_login_at"], errors="coerce", utc=True)
         df_display["last_login_at"] = t.dt.strftime("%d %b %Y %H:%M").fillna("Never")
 
+    if "created_at" in df_display.columns:
+        t = pd.to_datetime(df_display["created_at"], errors="coerce", utc=True)
+        df_display["created_at"] = t.dt.strftime("%d %b %Y %H:%M").fillna("Never")
+
     st.markdown("### All users")
     st.dataframe(
         df_display[
