@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import io
 import zipfile
+import base64
+import streamlit.components.v1 as components
 
 from src.guard import (
     APP_TITLE,
@@ -86,6 +88,22 @@ def _build_scorecards_zip(
 
     mem.seek(0)
     return mem.getvalue()
+
+def _render_pdf_inline(pdf_bytes: bytes, height: int = 700) -> None:
+    """
+    Render a PDF inline using an <iframe>. Works in most desktop browsers.
+    On iOS, behavior depends on browser settings; if it can't embed, user may be prompted to open it.
+    """
+    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    html = f"""
+    <iframe
+        src="data:application/pdf;base64,{b64}"
+        width="100%"
+        height="{height}"
+        style="border: none;"
+    ></iframe>
+    """
+    components.html(html, height=height, scrolling=True)
 
 def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
     dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
@@ -1244,99 +1262,142 @@ if selected_tab == "Scorecards":
                 return ""
             return str(v).strip()
 
-    options = []
-    option_to_match = {}
+        options = []
+        option_to_match = {}
 
-    # Build all options first
-    for _, r in fsel.iterrows():
-        mid = _safe(r.get("MatchID"))
-        if not mid:
-            continue
+        # Build all fixture options
+        for _, r in fsel.iterrows():
+            mid = _safe(r.get("MatchID"))
+            if not mid:
+                continue
 
-        parts = [mid]
-        if "Date" in fsel.columns:
-            parts.append(_safe(r.get("Date")))
-        if "Time" in fsel.columns:
-            parts.append(_safe(r.get("Time")))
-        if "Home Team" in fsel.columns and "Away Team" in fsel.columns:
-            parts.append(f"{_safe(r.get('Home Team'))} vs {_safe(r.get('Away Team'))}")
+            parts = [mid]
+            if "Date" in fsel.columns:
+                parts.append(_safe(r.get("Date")))
+            if "Time" in fsel.columns:
+                parts.append(_safe(r.get("Time")))
+            if "Home Team" in fsel.columns and "Away Team" in fsel.columns:
+                parts.append(f"{_safe(r.get('Home Team'))} vs {_safe(r.get('Away Team'))}")
 
-        label = " — ".join([p for p in parts if p])
-        options.append(label)
-        option_to_match[label] = mid
+            label = " — ".join([p for p in parts if p])
+            options.append(label)
+            option_to_match[label] = mid
 
-    if not options:
-        st.info("No fixtures with a valid MatchID were found.")
-    else:
-        # Filter the selector to only fixtures that have scorecards
-        filtered_options = []
-        for label in options:
-            mid = option_to_match[label]
-            if _match_has_scorecards(mid):
-                filtered_options.append(label)
-
-        if not filtered_options:
-            st.info("No scorecards have been uploaded for any fixtures yet.")
+        if not options:
+            st.info("No fixtures with a valid MatchID were found.")
         else:
-            selected_fixture = st.selectbox(
-                "Select a fixture to view available scorecards",
-                filtered_options,
-                key="fixtures_scorecard_select",
-            )
-            selected_match_id = option_to_match[selected_fixture]
+            # Only show fixtures that actually have scorecards
+            filtered_options = []
+            for label in options:
+                mid = option_to_match[label]
+                if _match_has_scorecards(mid):
+                    filtered_options.append(label)
 
-            available = list_scorecards(selected_match_id)
-
-            if not available:
-                st.info("No scorecards have been uploaded for this fixture yet.")
+            if not filtered_options:
+                st.info("No scorecards have been uploaded for any fixtures yet.")
             else:
-                st.caption(f"{len(available)} file(s) available")
+                selected_fixture = st.selectbox(
+                    "Select a fixture to view available scorecards",
+                    filtered_options,
+                    key="fixtures_scorecard_select",
+                )
+                selected_match_id = option_to_match[selected_fixture]
 
-                # Download-all ZIP
-                try:
-                    zip_bytes = _build_scorecards_zip(app_key, app_secret, refresh_token, selected_match_id, available)
-                    st.download_button(
-                        label="Download all scorecards (ZIP)",
-                        data=zip_bytes,
-                        file_name=f"Match_{selected_match_id}_Scorecards.zip",
-                        use_container_width=True,
-                        key=f"dl_scorecards_zip_{selected_match_id}",
-                    )
-                except Exception as e:
-                    st.warning(f"Could not build ZIP download: {e}")
+                available = list_scorecards(selected_match_id)
 
-                st.markdown("#### Scorecard previews (images only)")
-
-                image_rows = []
-                for row in available:
-                    fname = (row.get("file_name") or "").strip()
-                    if not fname:
-                        continue
-                    lower = fname.lower()
-                    if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
-                        image_rows.append(row)
-
-                if not image_rows:
-                    st.info("No image previews available for this fixture (only PDFs were uploaded).")
+                if not available:
+                    st.info("No scorecards have been uploaded for this fixture yet.")
                 else:
-                    st.caption("Mobile (iPhone): press and hold an image to ‘Save to Photos’.")
-                    for i, row in enumerate(image_rows):
-                        fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
-                        dbx_path = row.get("dropbox_path")
-                        if not dbx_path:
-                            continue
+                    st.caption(f"{len(available)} file(s) available")
 
-                        try:
-                            file_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
-                            st.write(f"**{fname}**")
-                            st.image(file_bytes, use_container_width=True)
-                            st.markdown("---")
-                        except Exception as e:
-                            st.warning(f"Could not load image '{fname}': {e}")
+                    # -----------------------------
+                    # Download all (ZIP)
+                    # -----------------------------
+                    try:
+                        zip_bytes = _build_scorecards_zip(
+                            app_key,
+                            app_secret,
+                            refresh_token,
+                            selected_match_id,
+                            available,
+                        )
+                        st.download_button(
+                            label="Download all scorecards (ZIP)",
+                            data=zip_bytes,
+                            file_name=f"Match_{selected_match_id}_Scorecards.zip",
+                            use_container_width=True,
+                            key=f"dl_scorecards_zip_{selected_match_id}",
+                        )
+                    except Exception as e:
+                        st.warning(f"Could not build ZIP download: {e}")
 
+                    # -----------------------------
+                    # Image previews (press & hold on mobile)
+                    # -----------------------------
+                    st.markdown("#### Scorecard previews (images only)")
 
-                        except Exception as e:
-                            st.warning(f"Could not load '{fname}': {e}")
+                    image_rows = []
+                    for row in available:
+                        fname = (row.get("file_name") or "").strip()
+                        if fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                            image_rows.append(row)
 
-                        except Exception as e:
-                            st.warning(f"Could not download '{fname}': {e}")
+                    if not image_rows:
+                        st.info("No image previews available for this fixture.")
+                    else:
+                        st.caption("Mobile (iPhone): press and hold an image to ‘Save to Photos’.")
+                        for i, row in enumerate(image_rows):
+                            fname = (row.get("file_name") or f"scorecard_{i+1}").strip()
+                            dbx_path = row.get("dropbox_path")
+                            if not dbx_path:
+                                continue
+
+                            try:
+                                img_bytes = _download_scorecard_bytes(
+                                    app_key,
+                                    app_secret,
+                                    refresh_token,
+                                    dbx_path,
+                                )
+                                st.write(f"**{fname}**")
+                                st.image(img_bytes, use_container_width=True)
+                                st.markdown("---")
+                            except Exception as e:
+                                st.warning(f"Could not load image '{fname}': {e}")
+
+                    # -----------------------------
+                    # PDF viewer (inline)
+                    # -----------------------------
+                    st.markdown("#### PDF viewer")
+
+                    pdf_rows = []
+                    for row in available:
+                        fname = (row.get("file_name") or "").strip()
+                        if fname.lower().endswith(".pdf"):
+                            pdf_rows.append(row)
+
+                    if not pdf_rows:
+                        st.info("No PDFs uploaded for this fixture.")
+                    else:
+                        st.caption(
+                            "If your device cannot display PDFs inline, use the "
+                            "“Download all scorecards (ZIP)” button above."
+                        )
+
+                        for i, row in enumerate(pdf_rows):
+                            fname = (row.get("file_name") or f"scorecard_{i+1}.pdf").strip()
+                            dbx_path = row.get("dropbox_path")
+                            if not dbx_path:
+                                continue
+
+                            with st.expander(f"View PDF: {fname}", expanded=False):
+                                try:
+                                    pdf_bytes = _download_scorecard_bytes(
+                                        app_key,
+                                        app_secret,
+                                        refresh_token,
+                                        dbx_path,
+                                    )
+                                    _render_pdf_inline(pdf_bytes, height=750)
+                                except Exception as e:
+                                    st.warning(f"Could not load PDF '{fname}': {e}")
