@@ -638,6 +638,14 @@ if selected_tab == "Teams":
 
         # Compute form per team
         team_totals["Form (Last 5)"] = team_totals["Team"].apply(lambda t: _team_form_last_n(t, 5))
+        
+        # ---- Sort All Teams to match league_table order (as sorted in Excel) ----
+        # Requires league_table to contain a Team column with the same labels as team_totals["Team"]
+        if "Team" in league_table.columns and not league_table.empty:
+            _order_df = league_table[["Team"]].copy()
+            _order_df["__order"] = range(len(_order_df))
+            team_totals = team_totals.merge(_order_df, on="Team", how="left")
+            team_totals = team_totals.sort_values("__order", ascending=True, na_position="last").drop(columns=["__order"])
 
         # ---- selectors (Batting / Bowling / Fielding) ----
         TEAM_BATTING_STATS = [
