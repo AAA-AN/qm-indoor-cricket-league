@@ -638,7 +638,7 @@ if selected_tab == "Teams":
 
         # Compute form per team
         team_totals["Form (Last 5)"] = team_totals["Team"].apply(lambda t: _team_form_last_n(t, 5))
-        
+
         # ---- Sort All Teams to match league_table order (as sorted in Excel) ----
         # Requires league_table to contain a Team column with the same labels as team_totals["Team"]
         if "Team" in league_table.columns and not league_table.empty:
@@ -694,10 +694,11 @@ if selected_tab == "Teams":
 
         selected_columns = selected_batting + selected_bowling + selected_fielding
 
-        # Build columns: Team + meta + selected + Fantasy Points (Fantasy Points last)
+        # Build columns: Team + Form + meta + selected + Fantasy Points (Fantasy Points last)
         display_cols = ["Team"]
         if "Form (Last 5)" in team_totals.columns:
             display_cols.append("Form (Last 5)")
+
         for mc in meta_cols:
             if mc in team_totals.columns and mc not in display_cols:
                 display_cols.append(mc)
@@ -710,17 +711,6 @@ if selected_tab == "Teams":
             display_cols.append("Fantasy Points")
 
         view = team_totals[display_cols].copy() if all(c in team_totals.columns for c in display_cols) else team_totals.copy()
-
-        if "Fantasy Points" in view.columns:
-            try:
-                view = view.sort_values(by="Fantasy Points", ascending=False)
-            except Exception:
-                pass
-        elif "Runs Scored" in view.columns:
-            try:
-                view = view.sort_values(by="Runs Scored", ascending=False)
-            except Exception:
-                pass
 
         col_config = {"Team": st.column_config.TextColumn(pinned=True)}
         for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
@@ -742,7 +732,6 @@ if selected_tab == "Teams":
         st.markdown("---")
         st.caption("Select a team above to view team details.")
         st.stop()
-
     # ---------------------------------------------------------
     # SINGLE TEAM VIEW
     # ---------------------------------------------------------
