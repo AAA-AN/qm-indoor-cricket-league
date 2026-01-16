@@ -1294,32 +1294,20 @@ if selected_tab == "Scorecards":
             img_labels.append(label)
             label_to_row[label] = row
 
-        # Use the SELECTBOX state as the single source of truth
+        # Use the selectbox state as the single source of truth
         select_key = f"scorecard_img_select_{selected_match_id}"
 
-        # Initialise default selection (first image) only once per match
+        # Initialise default selection once per match
         if select_key not in st.session_state:
             st.session_state[select_key] = img_labels[0]
 
-        # Navigation buttons update the selectbox value directly
+        # Ensure current value is valid
         current_label = st.session_state[select_key]
         if current_label not in img_labels:
             current_label = img_labels[0]
             st.session_state[select_key] = current_label
 
-        current_idx = img_labels.index(current_label)
-
-        c_prev, c_mid, c_next = st.columns([1, 2, 1])
-        with c_prev:
-            if st.button("◀ Previous", width="stretch", disabled=(current_idx == 0)):
-                st.session_state[select_key] = img_labels[max(0, current_idx - 1)]
-        with c_mid:
-            st.caption(f"Image {current_idx + 1} of {len(img_labels)}")
-        with c_next:
-            if st.button("Next ▶", width="stretch", disabled=(current_idx >= len(img_labels) - 1)):
-                st.session_state[select_key] = img_labels[min(len(img_labels) - 1, current_idx + 1)]
-
-        # Selectbox reflects the current state (and allows jumping)
+        # Selectbox (jump to an image)
         selected_label = st.selectbox(
             "Select an image",
             img_labels,
@@ -1339,6 +1327,19 @@ if selected_tab == "Scorecards":
                     st.image(img_bytes, use_container_width=True)
                 except Exception as e:
                     st.warning(f"Could not load image '{current_name}': {e}")
+
+        # Navigation buttons BELOW the image
+        current_idx = img_labels.index(st.session_state[select_key])
+        c_prev, c_mid, c_next = st.columns([1, 2, 1])
+
+        with c_prev:
+            if st.button("◀ Previous", width="stretch", disabled=(current_idx == 0)):
+                st.session_state[select_key] = img_labels[max(0, current_idx - 1)]
+        with c_mid:
+            st.caption(f"Image {current_idx + 1} of {len(img_labels)}")
+        with c_next:
+            if st.button("Next ▶", width="stretch", disabled=(current_idx >= len(img_labels) - 1)):
+                st.session_state[select_key] = img_labels[min(len(img_labels) - 1, current_idx + 1)]
 
     # -----------------------------
     # PDFs (open in a new tab via Dropbox temporary link)
