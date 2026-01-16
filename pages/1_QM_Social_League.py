@@ -1307,7 +1307,10 @@ if selected_tab == "Scorecards":
 
         # Render current image
         row = image_rows[idx]
-        fname = (row.get("file_name") or f"scorecard_{idx+1}").strip()
+        raw_fname = (row.get("file_name") or f"scorecard_{idx+1}").strip()
+
+        # Remove file extension for display only
+        fname = raw_fname.rsplit(".", 1)[0] if "." in raw_fname else raw_fname
         dbx_path = row.get("dropbox_path")
 
         if dbx_path:
