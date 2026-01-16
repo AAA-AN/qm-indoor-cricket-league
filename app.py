@@ -7,10 +7,13 @@ from src.db import (
     count_users,
     export_users_backup_payload,
     restore_users_from_backup_payload,
+    count_scorecards,
+    upsert_scorecard,
 )
+
 from src.auth import create_user, authenticate_user, change_password, hash_password
 from src.guard import APP_TITLE, hide_sidebar
-from src.dropbox_api import get_access_token, download_file, ensure_folder, upload_file
+from src.dropbox_api import get_access_token, download_file, ensure_folder, upload_file, list_folder
 
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
@@ -91,7 +94,73 @@ def restore_users_from_dropbox_if_needed() -> None:
 
     except Exception:
         return
+    
+def restore_scorecards_from_dropbox_if_needed() -> None:
+    """
+    If scorecards table is empty, rebuild it by scanning Dropbox:
+      <app_folder>/scorecards/<MatchID>/*
+    """
+    if count_scorecards() != 0:
+        return
 
+    try:
+        app_key = _get_secret("DROPBOX_APP_KEY")
+        app_secret = _get_secret("DROPBOX_APP_SECRET")
+        refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
+        dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")
+
+        access_token = get_access_token(app_key, app_secret, refresh_token)
+
+        # Derive app folder from the workbook path (same approach as Admin)
+        app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
+        scorecards_root = posixpath.join(app_folder, "scorecards")
+
+        # List match folders
+        entries = list_folder(access_token, scorecards_root) or []
+        match_folders = [e for e in entries if str(e.get(".tag", "")).lower() == "folder"]
+
+        restored = 0
+
+        for fld in match_folders:
+            match_id = str(fld.get("name", "")).strip()
+            if not match_id:
+                continue
+
+            match_folder_path = fld.get("path_display") or fld.get("path_lower")
+            if not match_folder_path:
+                match_folder_path = posixpath.join(scorecards_root, match_id)
+
+            files = list_folder(access_token, match_folder_path) or []
+            for f in files:
+                if str(f.get(".tag", "")).lower() != "file":
+                    continue
+
+                dbx_path = f.get("path_display") or f.get("path_lower")
+                if not dbx_path:
+                    continue
+
+                file_name = str(f.get("name") or "").strip() or "scorecard"
+                uploaded_at = str(f.get("server_modified") or f.get("client_modified") or "").strip()
+
+                # If Dropbox did not include timestamps, set a stable-ish default
+                if not uploaded_at:
+                    uploaded_at = "2000-01-01T00:00:00Z"
+
+                upsert_scorecard(
+                    match_id=match_id,
+                    file_name=file_name,
+                    dropbox_path=dbx_path,
+                    uploaded_at=uploaded_at,
+                    uploaded_by=None,
+                )
+                restored += 1
+
+        if restored:
+            st.session_state["restored_scorecards_count"] = restored
+
+    except Exception:
+        # Non-blocking: if Dropbox unavailable or folder missing, just continue
+        return
 
 def ensure_session_state():
     if "user" not in st.session_state:
@@ -236,6 +305,7 @@ def main():
 
     # Restore users from Dropbox if this is a fresh boot (empty users table)
     restore_users_from_dropbox_if_needed()
+    restore_scorecards_from_dropbox_if_needed()
 
     if st.session_state.get("user") is None:
         hide_sidebar()

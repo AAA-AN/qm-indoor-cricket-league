@@ -83,6 +83,48 @@ def count_users() -> int:
     finally:
         conn.close()
 
+def count_scorecards() -> int:
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT COUNT(*) AS n FROM scorecards;").fetchone()
+        return int(row["n"])
+    finally:
+        conn.close()
+
+
+def upsert_scorecard(
+    match_id: str,
+    file_name: str,
+    dropbox_path: str,
+    uploaded_at: str,
+    uploaded_by: str | None = None,
+) -> None:
+    """
+    Insert scorecard row if it doesn't exist (dropbox_path is UNIQUE).
+    If it already exists, update file_name/uploaded_at/uploaded_by.
+    """
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO scorecards (match_id, file_name, dropbox_path, uploaded_by, uploaded_at)
+            VALUES (?, ?, ?, ?, ?);
+            """,
+            (match_id, file_name, dropbox_path, uploaded_by, uploaded_at),
+        )
+
+        conn.execute(
+            """
+            UPDATE scorecards
+            SET match_id = ?, file_name = ?, uploaded_by = ?, uploaded_at = ?
+            WHERE dropbox_path = ?;
+            """,
+            (match_id, file_name, uploaded_by, uploaded_at, dropbox_path),
+        )
+
+        conn.commit()
+    finally:
+        conn.close()
 
 # -----------------------------
 # Admin/user management helpers
