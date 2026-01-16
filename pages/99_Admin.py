@@ -480,6 +480,11 @@ with tab_scorecards:
 
         existing = list_scorecards(match_id)
 
+        # Show in upload order (oldest first)
+        existing = sorted(
+            existing,
+            key=lambda r: (str(r.get("uploaded_at") or ""), int(r.get("scorecard_id") or 0)),
+        )
         # --- Reconcile SQLite records with what actually exists in Dropbox ---
         # If a file was deleted directly in Dropbox, remove the stale DB record
         # so the UI does not show phantom uploads.
@@ -518,6 +523,11 @@ with tab_scorecards:
                 # Re-load now-clean list for display
                 existing = list_scorecards(match_id)
 
+                # Show in upload order (oldest first)
+                existing = sorted(
+                    existing,
+                    key=lambda r: (str(r.get("uploaded_at") or ""), int(r.get("scorecard_id") or 0)),
+                )
                 st.warning(
                     f"Cleaned up {len(stale)} stale scorecard record(s) (they were deleted directly in Dropbox)."
                 )
