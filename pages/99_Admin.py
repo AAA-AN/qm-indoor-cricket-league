@@ -69,6 +69,25 @@ def _load_workbook_fixture_results(app_key: str, app_secret: str, refresh_token:
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
+def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
+    dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
+    return dt.dt.strftime("%d-%b").fillna(series.astype(str))
+
+
+def _format_time_ampm(series: pd.Series) -> pd.Series:
+    t = pd.to_datetime(series.astype(str), errors="coerce")
+    t2 = pd.to_datetime("2000-01-01 " + series.astype(str), errors="coerce")
+    out = t.fillna(t2)
+
+    formatted = out.dt.strftime("%-I %p")
+    formatted = formatted.where(formatted.notna(), out.dt.strftime("%I %p").str.lstrip("0"))
+
+    mins = out.dt.minute
+    with_mins = out.dt.strftime("%-I:%M %p")
+    with_mins = with_mins.where(with_mins.notna(), out.dt.strftime("%I:%M %p").str.lstrip("0"))
+
+    formatted = formatted.where((mins == 0) | (mins.isna()), with_mins)
+    return formatted.fillna(series.astype(str))
 
 st.title("Admin")
 
@@ -225,10 +244,17 @@ with tab_scorecards:
     # Build a friendly label if columns exist
     cols = fixtures_df.columns.tolist()
     has_date = "Date" in cols
+    has_time = "Time" in cols
     has_home = "Home Team" in cols
     has_away = "Away Team" in cols
 
     fixture_rows = fixtures_df.copy()
+
+    # Format Admin fixture selector display to match main app
+    if has_date:
+        fixture_rows["Date"] = _format_date_dd_mmm(fixture_rows["Date"])
+    if has_time:
+        fixture_rows["Time"] = _format_time_ampm(fixture_rows["Time"])
 
     def _safe_str(v) -> str:
         if pd.isna(v):
@@ -246,6 +272,8 @@ with tab_scorecards:
         parts = [mid]
         if has_date:
             parts.append(_safe_str(r.get("Date")))
+        if has_time:
+            parts.append(_safe_str(r.get("Time")))
         if has_home and has_away:
             parts.append(f"{_safe_str(r.get('Home Team'))} vs {_safe_str(r.get('Away Team'))}")
         label = " — ".join([p for p in parts if p])
