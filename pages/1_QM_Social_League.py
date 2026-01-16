@@ -576,6 +576,66 @@ if selected_tab == "Teams":
         tmeta = teams_named[["Team"] + meta_cols].drop_duplicates() if meta_cols else teams_named[["Team"]].drop_duplicates()
         team_totals = team_totals.merge(tmeta, on="Team", how="left")
 
+        # ---- Form (Last 5) from Fixture_Results_Table ----
+        # Uses: fixtures (already loaded at top), columns: Date, Time, Home Team, Away Team, Status, Won By
+        def _team_form_last_n(team_name: str, n: int = 5) -> str:
+            if fixtures is None or fixtures.empty:
+                return ""
+
+            f = fixtures.copy()
+            f.columns = [str(c).strip() for c in f.columns]
+
+            required = ["Date", "Time", "Home Team", "Away Team", "Status", "Won By"]
+            if not all(c in f.columns for c in required):
+                return ""
+
+            # Only matches involving this team
+            f = f[
+                (f["Home Team"].astype(str).str.strip() == str(team_name).strip())
+                | (f["Away Team"].astype(str).str.strip() == str(team_name).strip())
+            ].copy()
+
+            if f.empty:
+                return ""
+
+            # Sort by Date+Time (most recent first)
+            dt = pd.to_datetime(f["Date"], errors="coerce")
+            tm = pd.to_datetime("2000-01-01 " + f["Time"].astype(str), errors="coerce").dt.time
+            f["_dt"] = pd.to_datetime(dt.dt.date.astype(str) + " " + tm.astype(str), errors="coerce")
+            f = f.sort_values("_dt", ascending=False)
+
+            # Take last N (most recent N)
+            f = f.head(n)
+
+            out = []
+            team_s = str(team_name).strip().lower()
+
+            for _, r in f.iterrows():
+                status = str(r.get("Status", "")).strip()
+                won_by = str(r.get("Won By", "")).strip().lower()
+
+                # Completed match?
+                if status != "Played":
+                    out.append("➖")
+                    continue
+
+                # Winner known?
+                if won_by and team_s in won_by:
+                    out.append("✅")
+                elif won_by:
+                    out.append("❌")
+                else:
+                    out.append("➖")
+
+            # If fewer than N matches exist, pad with dashes on the right
+            while len(out) < n:
+                out.append("➖")
+
+            return " ".join(out)
+
+        # Compute form per team
+        team_totals["Form (Last 5)"] = team_totals["Team"].apply(lambda t: _team_form_last_n(t, 5))
+
         # ---- selectors (Batting / Bowling / Fielding) ----
         TEAM_BATTING_STATS = [
             "Runs Scored",
@@ -625,6 +685,8 @@ if selected_tab == "Teams":
 
         # Build columns: Team + meta + selected + Fantasy Points (Fantasy Points last)
         display_cols = ["Team"]
+        if "Form (Last 5)" in team_totals.columns:
+            display_cols.append("Form (Last 5)")
         for mc in meta_cols:
             if mc in team_totals.columns and mc not in display_cols:
                 display_cols.append(mc)
