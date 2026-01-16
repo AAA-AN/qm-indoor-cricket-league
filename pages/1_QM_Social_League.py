@@ -94,6 +94,35 @@ def _pdf_data_link(pdf_bytes: bytes, link_text: str = "Open PDF") -> str:
     # IMPORTANT: no target="_blank"
     return f'<a href="data:application/pdf;base64,{b64}">{link_text}</a>'
 
+def _render_pdf_open_button_same_tab(pdf_bytes: bytes, label: str = "Open PDF") -> None:
+    """
+    Renders a button that opens a data: PDF in the SAME tab by using JS navigation.
+    This avoids Streamlit link handling that may open a new tab.
+    """
+    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    data_url = f"data:application/pdf;base64,{b64}"
+
+    # Use a tiny HTML form/button + JS to force same-tab navigation
+    html = f"""
+    <button
+      style="
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+        border: 1px solid rgba(49, 51, 63, 0.2);
+        background: rgba(240, 242, 246, 1);
+        cursor: pointer;
+        text-align: left;
+      "
+      onclick="window.location.href='{data_url}';"
+      type="button"
+    >
+      {label}
+    </button>
+    """
+
+    components.html(html, height=60)
+
 def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
     dt = pd.to_datetime(series, errors="coerce", dayfirst=True)
     return dt.dt.strftime("%d-%b").fillna(series.astype(str))
@@ -1383,6 +1412,6 @@ if selected_tab == "Scorecards":
                                     refresh_token,
                                     dbx_path,
                                 )
-                                st.markdown(_pdf_data_link(pdf_bytes, link_text=f"Open: {fname}"), unsafe_allow_html=True)
+                                _render_pdf_open_button_same_tab(pdf_bytes, label=f"Open: {fname}")
                             except Exception as e:
                                 st.warning(f"Could not load PDF '{fname}': {e}")
