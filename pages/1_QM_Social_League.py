@@ -1321,12 +1321,12 @@ if selected_tab == "Scorecards":
             except Exception as e:
                 st.warning(f"Could not load image '{fname}': {e}")
 
-        # Navigation buttons BELOW the image
-        c_prev, c_mid, c_next = st.columns([1, 2, 1])
+        # Image position indicator directly under the image
+        st.caption(f"Image {idx + 1} of {n}")
 
-        with c_mid:
-            st.caption(f"Image {idx + 1} of {n}")
-                    
+        # Navigation buttons BELOW the caption
+        c_prev, c_next = st.columns([1, 1])
+
         with c_prev:
             if st.button(
                 "◀ Previous",
