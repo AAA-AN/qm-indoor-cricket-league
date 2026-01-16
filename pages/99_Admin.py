@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import posixpath
+import re
 from datetime import datetime, timezone
 
 from src.guard import (
@@ -260,7 +261,63 @@ with tab_scorecards:
         if pd.isna(v):
             return ""
         return str(v).strip()
+    
+    def _clean_name_for_path(s: str) -> str:
+        """
+        Make a safe-ish filename component for Dropbox:
+        - remove slashes
+        - collapse whitespace
+        - strip
+        """
+        s = (s or "").replace("/", "-").replace("\\", "-")
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
 
+    def _next_named_filename(existing_names: set[str], base: str, ext: str) -> str:
+        """
+        For PDFs: base + ext (first), then base + ' 2' + ext, base + ' 3' + ext...
+        For images (or any base that already includes a number placeholder in the base),
+        you can pass base like '... Image' and it will find the next integer suffix.
+        """
+        base = base.strip()
+        ext = ext if ext.startswith(".") else f".{ext}"
+
+        # PDF-style: "Base.ext" then "Base 2.ext" ...
+        # We will treat "Base.ext" as number 1.
+        pattern = re.compile(rf"^{re.escape(base)}(?: (\d+))?{re.escape(ext)}$", re.IGNORECASE)
+
+        max_n = 0
+        for name in existing_names:
+            m = pattern.match(name)
+            if not m:
+                continue
+            n_txt = m.group(1)
+            n = 1 if n_txt is None else int(n_txt)
+            max_n = max(max_n, n)
+
+        next_n = max_n + 1
+        if next_n == 1:
+            return f"{base}{ext}"
+        return f"{base} {next_n}{ext}"
+
+    def _next_image_filename(existing_names: set[str], base_prefix: str, ext: str) -> str:
+        """
+        Images: "BasePrefix 1.ext", "BasePrefix 2.ext"...
+        """
+        base_prefix = base_prefix.strip()
+        ext = ext if ext.startswith(".") else f".{ext}"
+
+        pattern = re.compile(rf"^{re.escape(base_prefix)} (\d+){re.escape(ext)}$", re.IGNORECASE)
+
+        max_n = 0
+        for name in existing_names:
+            m = pattern.match(name)
+            if not m:
+                continue
+            max_n = max(max_n, int(m.group(1)))
+
+        return f"{base_prefix} {max_n + 1}{ext}"
+    
     options = []
     option_to_match_id = {}
 
@@ -321,23 +378,83 @@ with tab_scorecards:
 
             uploader_username = (st.session_state.get("user") or {}).get("username", "")
 
+            # Pull Home/Away names for this MatchID (for renaming)
+            fx = fixtures_df.copy()
+            fx["MatchID"] = fx["MatchID"].astype(str).str.strip()
+            fx_row = fx[fx["MatchID"] == str(match_id).strip()]
+
+            home = ""
+            away = ""
+            if not fx_row.empty:
+                r0 = fx_row.iloc[0]
+                home = _safe_str(r0.get("Home Team"))
+                away = _safe_str(r0.get("Away Team"))
+
+            match_desc = _clean_name_for_path(f"{home} vs {away}".strip(" vs "))
+
+            # Read existing Dropbox filenames in this match folder to pick next numbers consistently
+            existing_entries = []
+            try:
+                existing_entries = list_folder(access_token, match_folder) or []
+            except Exception:
+                existing_entries = []
+
+            existing_names = set()
+            for e in existing_entries:
+                nm = e.get("name")
+                if nm:
+                    existing_names.add(str(nm))
+
             for f in uploaded_files:
                 original_name = f.name
                 content = f.getvalue()
 
-                dropbox_target_path = posixpath.join(match_folder, original_name)
+                # Extension handling
+                ext = ""
+                if "." in original_name:
+                    ext = "." + original_name.split(".")[-1].lower().strip(".")
+                else:
+                    ext = ""
+
+                is_pdf = ext == ".pdf"
+                is_image = ext in [".png", ".jpg", ".jpeg", ".webp"]
+
+                # Default fallback if we can't determine teams
+                if not match_desc:
+                    match_desc = _clean_name_for_path(f"Match {match_id}")
+
+                # Build the new filename
+                if is_pdf:
+                    base = f"{match_desc} Scorecard"
+                    new_name = _next_named_filename(existing_names, base=base, ext=ext)
+                elif is_image:
+                    # Normalise jpeg extension style to .jpeg if desired; keep original if you prefer.
+                    if ext == ".jpg":
+                        ext_use = ".jpeg"
+                    else:
+                        ext_use = ext
+
+                    base_prefix = f"{match_desc} Scorecard Image"
+                    new_name = _next_image_filename(existing_names, base_prefix=base_prefix, ext=ext_use)
+                else:
+                    # Unknown type: keep original name but still avoid collisions via Dropbox autorename
+                    new_name = original_name
+
+                # Ensure our set updates so multiple uploads in one click increment properly
+                existing_names.add(new_name)
+
+                dropbox_target_path = posixpath.join(match_folder, new_name)
 
                 meta = upload_file(
                     access_token,
                     dropbox_target_path,
                     content,
-                    mode="add",          # append behaviour
-                    autorename=True,     # avoid collisions
+                    mode="add",
+                    autorename=True,  # still keep as a final backstop
                 )
 
-                # Prefer display path if provided; otherwise use our target
                 dbx_path = meta.get("path_display") or meta.get("path_lower") or dropbox_target_path
-                stored_name = meta.get("name") or original_name
+                stored_name = meta.get("name") or new_name
 
                 add_scorecard(
                     match_id=match_id,
