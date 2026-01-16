@@ -330,7 +330,7 @@ if selected_tab == "Fixtures & Results":
                 return ""
             return str(v).strip()
 
-            options = []
+    options = []
     option_to_match = {}
 
     # Build all options first
