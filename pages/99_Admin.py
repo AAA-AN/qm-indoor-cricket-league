@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import posixpath
 import re
+import streamlit.components.v1 as components
 from datetime import datetime, timezone
 
 from src.guard import (
@@ -99,6 +100,30 @@ tab_users, tab_scorecards = st.tabs(["User Management", "Scorecard Management"])
 # =========================================================
 with tab_users:
     st.subheader("User Management")
+
+    # Anchor placed above the user table (target for scroll)
+    st.markdown('<div id="users_table_top"></div>', unsafe_allow_html=True)
+
+    # One-time popup message after admin actions
+    if st.session_state.get("admin_user_action_msg"):
+        msg = st.session_state.pop("admin_user_action_msg")
+        try:
+            st.toast(msg, icon="✅")
+        except Exception:
+            st.success(msg)
+
+    # One-time scroll back to the table/top
+    if st.session_state.pop("admin_scroll_to_users", False):
+        components.html(
+            """
+            <script>
+            const el = window.parent.document.getElementById("users_table_top");
+            if (el) { el.scrollIntoView({behavior: "smooth", block: "start"}); }
+            else { window.parent.scrollTo({top: 0, behavior: "smooth"}); }
+            </script>
+            """,
+            height=0,
+        )
     
     # One-time popup message after admin actions
     if st.session_state.get("admin_user_action_msg"):
@@ -173,7 +198,7 @@ with tab_users:
 
                 status_txt = "Active" if make_active else "Disabled"
                 st.session_state["admin_user_action_msg"] = f"Updated '{selected_username}' status to {status_txt}."
-
+                st.session_state["admin_scroll_to_users"] = True
                 # Return to table (rerun goes back to top)
                 st.rerun()
 
@@ -192,6 +217,7 @@ with tab_users:
                     st.session_state["admin_user_action_msg"] = (
                         f"Password reset for '{selected_username}'. User will be prompted to change it on next login."
                     )
+                    st.session_state["admin_scroll_to_users"] = True
 
                     # Return to table
                     st.rerun()
@@ -219,7 +245,7 @@ with tab_users:
                     st.session_state["admin_user_action_msg"] = (
                         f"Updated '{selected_username}' role to {desired_role}."
                     )
-
+                    st.session_state["admin_scroll_to_users"] = True
                     # Return to table
                     st.rerun()
 
@@ -234,7 +260,7 @@ with tab_users:
                 delete_user(selected_username)
 
                 st.session_state["admin_user_action_msg"] = f"Deleted user '{selected_username}'."
-
+                st.session_state["admin_scroll_to_users"] = True
                 # Return to table
                 st.rerun()
 
