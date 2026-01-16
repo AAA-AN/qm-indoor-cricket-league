@@ -99,6 +99,16 @@ tab_users, tab_scorecards = st.tabs(["User Management", "Scorecard Management"])
 # =========================================================
 with tab_users:
     st.subheader("User Management")
+    
+    # One-time popup message after admin actions
+    if st.session_state.get("admin_user_action_msg"):
+        msg = st.session_state.pop("admin_user_action_msg")
+
+        # Prefer toast if available; fall back to success
+        try:
+            st.toast(msg, icon="✅")
+        except Exception:
+            st.success(msg)
 
     users = list_users()
     if not users:
@@ -160,7 +170,11 @@ with tab_users:
                 st.error("Blocked: You cannot disable the last remaining admin.")
             else:
                 set_user_active(selected_username, make_active)
-                st.success("User status updated.")
+
+                status_txt = "Active" if make_active else "Disabled"
+                st.session_state["admin_user_action_msg"] = f"Updated '{selected_username}' status to {status_txt}."
+
+                # Return to table (rerun goes back to top)
                 st.rerun()
 
     with st.expander("Reset password", expanded=False):
@@ -174,7 +188,14 @@ with tab_users:
             else:
                 try:
                     admin_reset_password(selected_username, new_pw)
-                    st.success("Password reset successfully.")
+
+                    st.session_state["admin_user_action_msg"] = (
+                        f"Password reset for '{selected_username}'. User will be prompted to change it on next login."
+                    )
+
+                    # Return to table
+                    st.rerun()
+
                 except Exception as e:
                     st.error(str(e))
 
@@ -194,7 +215,12 @@ with tab_users:
                     st.error("Blocked: You cannot demote the last remaining admin.")
                 else:
                     set_user_role(selected_username, desired_role)
-                    st.success("Role updated.")
+
+                    st.session_state["admin_user_action_msg"] = (
+                        f"Updated '{selected_username}' role to {desired_role}."
+                    )
+
+                    # Return to table
                     st.rerun()
 
     with st.expander("Delete user", expanded=False):
@@ -206,7 +232,10 @@ with tab_users:
                 st.error("Blocked: You cannot delete the last remaining admin.")
             else:
                 delete_user(selected_username)
-                st.success("User deleted.")
+
+                st.session_state["admin_user_action_msg"] = f"Deleted user '{selected_username}'."
+
+                # Return to table
                 st.rerun()
 
 
