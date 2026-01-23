@@ -138,6 +138,56 @@ def ensure_fantasy_block_tables_exist() -> None:
         conn.close()
 
 
+def ensure_fantasy_team_tables_exist() -> None:
+    """
+    Create fantasy team tables if they do not exist (and run light migrations).
+    """
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fantasy_prices (
+                block_number INTEGER NOT NULL,
+                player_id TEXT NOT NULL,
+                price REAL NOT NULL,
+                PRIMARY KEY (block_number, player_id),
+                FOREIGN KEY (block_number) REFERENCES fantasy_blocks(block_number)
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fantasy_entries (
+                block_number INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                submitted_at TEXT NOT NULL,
+                budget_used REAL NOT NULL,
+                PRIMARY KEY (block_number, user_id),
+                FOREIGN KEY (block_number) REFERENCES fantasy_blocks(block_number),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fantasy_entry_players (
+                block_number INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                player_id TEXT NOT NULL,
+                is_starting INTEGER NOT NULL CHECK(is_starting IN (0,1)),
+                bench_order INTEGER NULL CHECK(bench_order IN (1,2)),
+                is_captain INTEGER NOT NULL CHECK(is_captain IN (0,1)),
+                is_vice_captain INTEGER NOT NULL CHECK(is_vice_captain IN (0,1)),
+                PRIMARY KEY (block_number, user_id, player_id),
+                FOREIGN KEY (block_number, user_id) REFERENCES fantasy_entries(block_number, user_id)
+            );
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _parse_fixture_date(date_val: Any) -> Optional[date]:
     if date_val is None:
         return None
@@ -474,6 +524,236 @@ def get_current_block_number() -> Optional[int]:
             """
         ).fetchone()
         return int(row["block_number"]) if row else None
+    finally:
+        conn.close()
+
+
+def get_block_fixtures(block_number: int) -> List[Dict[str, Any]]:
+    ensure_fantasy_block_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT block_number, fixture_order, match_id, start_at
+            FROM fantasy_block_fixtures
+            WHERE block_number = ?
+            ORDER BY fixture_order ASC;
+            """,
+            (int(block_number),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def upsert_block_prices(block_number: int, prices: Dict[str, float]) -> None:
+    ensure_fantasy_team_tables_exist()
+    if not prices:
+        return
+    conn = get_conn()
+    try:
+        rows = [
+            (int(block_number), str(pid), float(price))
+            for pid, price in prices.items()
+        ]
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO fantasy_prices (block_number, player_id, price)
+            VALUES (?, ?, ?);
+            """,
+            rows,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_block_prices(block_number: int) -> Dict[str, float]:
+    ensure_fantasy_team_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT player_id, price
+            FROM fantasy_prices
+            WHERE block_number = ?
+            ORDER BY player_id ASC;
+            """,
+            (int(block_number),),
+        ).fetchall()
+        return {str(r["player_id"]): float(r["price"]) for r in rows}
+    finally:
+        conn.close()
+
+
+def ensure_block_prices_default(
+    block_number: int,
+    player_ids: List[str],
+    default_price: float = 7.5,
+) -> None:
+    ensure_fantasy_team_tables_exist()
+    if not player_ids:
+        return
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            """
+            SELECT COUNT(*) AS n
+            FROM fantasy_prices
+            WHERE block_number = ?;
+            """,
+            (int(block_number),),
+        ).fetchone()
+        if int(existing["n"]) > 0:
+            return
+
+        rows = [
+            (int(block_number), str(pid), float(default_price))
+            for pid in player_ids
+            if str(pid).strip()
+        ]
+        if rows:
+            conn.executemany(
+                """
+                INSERT INTO fantasy_prices (block_number, player_id, price)
+                VALUES (?, ?, ?);
+                """,
+                rows,
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def save_fantasy_entry(
+    block_number: int,
+    user_id: int,
+    squad_player_ids: List[str],
+    starting_player_ids: List[str],
+    bench1: str,
+    bench2: str,
+    captain_id: str,
+    vice_captain_id: str,
+    budget_used: float,
+    submitted_at_iso: str,
+) -> None:
+    ensure_fantasy_team_tables_exist()
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO fantasy_entries
+                (block_number, user_id, submitted_at, budget_used)
+            VALUES (?, ?, ?, ?);
+            """,
+            (int(block_number), int(user_id), str(submitted_at_iso), float(budget_used)),
+        )
+
+        conn.execute(
+            """
+            DELETE FROM fantasy_entry_players
+            WHERE block_number = ? AND user_id = ?;
+            """,
+            (int(block_number), int(user_id)),
+        )
+
+        starting_set = {str(pid) for pid in (starting_player_ids or [])}
+        bench1_id = str(bench1 or "").strip()
+        bench2_id = str(bench2 or "").strip()
+        captain_id = str(captain_id or "").strip()
+        vice_captain_id = str(vice_captain_id or "").strip()
+
+        rows = []
+        for pid in squad_player_ids or []:
+            pid_str = str(pid).strip()
+            if not pid_str:
+                continue
+            bench_order = None
+            if pid_str == bench1_id:
+                bench_order = 1
+            elif pid_str == bench2_id:
+                bench_order = 2
+            rows.append(
+                (
+                    int(block_number),
+                    int(user_id),
+                    pid_str,
+                    1 if pid_str in starting_set else 0,
+                    bench_order,
+                    1 if pid_str == captain_id else 0,
+                    1 if pid_str == vice_captain_id else 0,
+                )
+            )
+
+        if rows:
+            conn.executemany(
+                """
+                INSERT INTO fantasy_entry_players
+                    (block_number, user_id, player_id, is_starting, bench_order, is_captain, is_vice_captain)
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+                """,
+                rows,
+            )
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_fantasy_entry(block_number: int, user_id: int) -> Optional[Dict[str, Any]]:
+    ensure_fantasy_team_tables_exist()
+    conn = get_conn()
+    try:
+        entry = conn.execute(
+            """
+            SELECT block_number, user_id, submitted_at, budget_used
+            FROM fantasy_entries
+            WHERE block_number = ? AND user_id = ?;
+            """,
+            (int(block_number), int(user_id)),
+        ).fetchone()
+        if not entry:
+            return None
+
+        rows = conn.execute(
+            """
+            SELECT player_id, is_starting, bench_order, is_captain, is_vice_captain
+            FROM fantasy_entry_players
+            WHERE block_number = ? AND user_id = ?
+            ORDER BY player_id ASC;
+            """,
+            (int(block_number), int(user_id)),
+        ).fetchall()
+
+        squad = [str(r["player_id"]) for r in rows]
+        starting = [str(r["player_id"]) for r in rows if int(r["is_starting"]) == 1]
+        bench1 = ""
+        bench2 = ""
+        captain = ""
+        vice_captain = ""
+        for r in rows:
+            pid = str(r["player_id"])
+            if r["bench_order"] == 1:
+                bench1 = pid
+            elif r["bench_order"] == 2:
+                bench2 = pid
+            if int(r["is_captain"]) == 1:
+                captain = pid
+            if int(r["is_vice_captain"]) == 1:
+                vice_captain = pid
+
+        return {
+            "block_number": int(entry["block_number"]),
+            "user_id": int(entry["user_id"]),
+            "submitted_at": entry["submitted_at"],
+            "budget_used": float(entry["budget_used"]),
+            "squad_player_ids": squad,
+            "starting_player_ids": starting,
+            "bench1": bench1 or None,
+            "bench2": bench2 or None,
+            "captain_id": captain or None,
+            "vice_captain_id": vice_captain or None,
+        }
     finally:
         conn.close()
 
