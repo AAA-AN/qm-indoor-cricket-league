@@ -4,6 +4,7 @@ import posixpath
 import re
 import streamlit.components.v1 as components
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from src.guard import (
     APP_TITLE,
@@ -24,6 +25,13 @@ from src.db import (
     add_scorecard,
     list_scorecards,
     delete_scorecard_by_path,
+    rebuild_blocks_from_fixtures_if_missing,
+    list_blocks_with_fixtures,
+    get_effective_block_state,
+    get_current_block_number,
+    set_block_override,
+    clear_block_override,
+    mark_block_scored,
 )
 from src.auth import admin_reset_password
 
@@ -100,7 +108,9 @@ def _format_time_ampm(series: pd.Series) -> pd.Series:
 
 st.title("Admin")
 
-tab_users, tab_scorecards = st.tabs(["User Management", "Scorecard Management"])
+tab_users, tab_scorecards, tab_fantasy_blocks = st.tabs(
+    ["User Management", "Scorecard Management", "Fantasy Blocks"]
+)
 
 # =========================================================
 # TAB 1: USER MANAGEMENT (existing functionality, unchanged)
@@ -686,3 +696,126 @@ with tab_scorecards:
                 st.rerun()
             except Exception as e:
                 st.error(f"Delete-all failed: {e}")
+
+
+# =========================================================
+# TAB 3: FANTASY BLOCKS
+# =========================================================
+with tab_fantasy_blocks:
+    st.subheader("Fantasy Blocks")
+
+    if st.session_state.get("admin_fantasy_msg"):
+        msg = st.session_state.pop("admin_fantasy_msg")
+        try:
+            st.toast(msg, icon="✅")
+        except Exception:
+            st.success(msg)
+
+    blocks = list_blocks_with_fixtures()
+    if not blocks:
+        # ---- Read Dropbox secrets (same as other pages) ----
+        try:
+            app_key = _get_secret("DROPBOX_APP_KEY")
+            app_secret = _get_secret("DROPBOX_APP_SECRET")
+            refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
+            dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")  # Excel workbook path
+        except Exception as e:
+            st.error(str(e))
+            st.stop()
+
+        with st.spinner("Loading fixtures from Dropbox..."):
+            try:
+                fixtures_df = _load_workbook_fixture_results(app_key, app_secret, refresh_token, dropbox_file_path)
+            except Exception as e:
+                st.error(f"Failed to load fixtures from Dropbox: {e}")
+                st.stop()
+
+        created_blocks = rebuild_blocks_from_fixtures_if_missing(fixtures_df)
+        if created_blocks:
+            st.success(f"Created {created_blocks} fantasy block(s) from fixtures.")
+
+        blocks = list_blocks_with_fixtures()
+
+    london_now = datetime.now(ZoneInfo("Europe/London"))
+    london_now_iso = london_now.isoformat()
+    if not blocks:
+        st.info("No fantasy blocks found.")
+    else:
+        rows = []
+        for b in blocks:
+            fixtures_list = []
+            for fx in b.get("fixtures", []):
+                match_id = fx.get("match_id", "")
+                start_at = fx.get("start_at", "")
+                fixtures_list.append(f"{match_id} ({start_at})")
+
+            rows.append(
+                {
+                    "block_number": b.get("block_number"),
+                    "first_start_at": b.get("first_start_at"),
+                    "lock_at": b.get("lock_at"),
+                    "scored_at": b.get("scored_at"),
+                    "override_state": b.get("override_state"),
+                    "override_until": b.get("override_until"),
+                    "effective_state": get_effective_block_state(b.get("block_number"), london_now),
+                    "fixtures": ", ".join(fixtures_list),
+                }
+            )
+
+        st.dataframe(
+            pd.DataFrame(rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.markdown("---")
+    st.markdown("### Current Block Controls")
+
+    current_block = get_current_block_number()
+    if current_block is None:
+        st.info("All blocks are scored.")
+    else:
+        current_state = get_effective_block_state(current_block, london_now)
+        st.write(f"**Current block:** {current_block} (state: {current_state})")
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            if st.button(
+                "Lock now",
+                use_container_width=True,
+                key="fantasy_block_lock_now",
+                disabled=current_state == "SCORED",
+            ):
+                set_block_override(current_block, "LOCKED", override_until=None)
+                st.session_state["admin_fantasy_msg"] = f"Block {current_block} locked."
+                st.rerun()
+        with col2:
+            if st.button(
+                "Unlock now",
+                use_container_width=True,
+                key="fantasy_block_unlock_now",
+                disabled=current_state == "SCORED",
+            ):
+                set_block_override(current_block, "OPEN", override_until=None)
+                st.session_state["admin_fantasy_msg"] = f"Block {current_block} unlocked."
+                st.rerun()
+        with col3:
+            if st.button(
+                "Clear override",
+                use_container_width=True,
+                key="fantasy_block_clear_override",
+                disabled=current_state == "SCORED",
+            ):
+                clear_block_override(current_block)
+                st.session_state["admin_fantasy_msg"] = f"Block {current_block} override cleared."
+                st.rerun()
+        with col4:
+            if st.button(
+                "Score block (stats entered)",
+                use_container_width=True,
+                key="fantasy_block_score_now",
+                disabled=current_state == "SCORED",
+            ):
+                mark_block_scored(current_block, london_now_iso)
+                st.session_state["admin_fantasy_msg"] = f"Block {current_block} marked as scored."
+                st.rerun()

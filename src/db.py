@@ -1,7 +1,8 @@
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, time, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+from zoneinfo import ZoneInfo
 
 DB_PATH = Path("data") / "app.db"
 
@@ -74,9 +75,428 @@ def init_db() -> None:
             """
         )
 
+        ensure_fantasy_block_tables_exist()
+
         conn.commit()
     finally:
         conn.close()
+
+
+def ensure_fantasy_block_tables_exist() -> None:
+    """
+    Create fantasy block tables if they do not exist (and run light migrations).
+    """
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fantasy_blocks (
+                block_number INTEGER PRIMARY KEY,
+                first_start_at TEXT NOT NULL,
+                lock_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                scored_at TEXT,
+                override_state TEXT CHECK(override_state IN ('OPEN','LOCKED')),
+                override_until TEXT
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fantasy_block_fixtures (
+                block_number INTEGER NOT NULL,
+                fixture_order INTEGER NOT NULL,
+                match_id TEXT NOT NULL,
+                start_at TEXT NOT NULL,
+                PRIMARY KEY (block_number, fixture_order),
+                UNIQUE (match_id),
+                FOREIGN KEY (block_number) REFERENCES fantasy_blocks(block_number)
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_fantasy_block_fixtures_block
+            ON fantasy_block_fixtures(block_number);
+            """
+        )
+
+        cols = conn.execute("PRAGMA table_info(fantasy_blocks);").fetchall()
+        col_names = {str(c["name"]) for c in cols}
+
+        if "scored_at" not in col_names:
+            conn.execute("ALTER TABLE fantasy_blocks ADD COLUMN scored_at TEXT;")
+        if "override_state" not in col_names:
+            conn.execute(
+                "ALTER TABLE fantasy_blocks ADD COLUMN override_state TEXT CHECK(override_state IN ('OPEN','LOCKED'));"
+            )
+        if "override_until" not in col_names:
+            conn.execute("ALTER TABLE fantasy_blocks ADD COLUMN override_until TEXT;")
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _parse_fixture_date(date_val: Any) -> Optional[date]:
+    if date_val is None:
+        return None
+    if isinstance(date_val, datetime):
+        return date_val.date()
+    if isinstance(date_val, date):
+        return date_val
+    s = str(date_val).strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(s).date()
+    except ValueError:
+        return None
+
+
+def _parse_fixture_time(time_val: Any) -> Optional[time]:
+    if time_val is None:
+        return None
+    if isinstance(time_val, datetime):
+        return time_val.time()
+    if isinstance(time_val, time):
+        return time_val
+    if isinstance(time_val, (int, float)) and 0 <= float(time_val) < 1:
+        seconds = int(round(float(time_val) * 86400))
+        return (datetime.min + timedelta(seconds=seconds)).time()
+    s = str(time_val).strip()
+    if not s:
+        return None
+    for fmt in ("%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M%p", "%I %p"):
+        try:
+            return datetime.strptime(s, fmt).time()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(s).time()
+    except ValueError:
+        return None
+
+
+def _fixture_start_at_london(date_val: Any, time_val: Any) -> Optional[datetime]:
+    d = _parse_fixture_date(date_val)
+    t = _parse_fixture_time(time_val)
+    if d is None or t is None:
+        return None
+    naive = datetime.combine(d, t)
+    return naive.replace(tzinfo=ZoneInfo("Europe/London"))
+
+
+def _normalize_datetime_for_storage(dt_val: Any) -> Optional[str]:
+    if dt_val is None:
+        return None
+    if isinstance(dt_val, str):
+        s = dt_val.strip()
+        return s or None
+    if isinstance(dt_val, datetime):
+        if dt_val.tzinfo is None:
+            dt_val = dt_val.replace(tzinfo=ZoneInfo("Europe/London"))
+        return dt_val.isoformat()
+    raise ValueError("Expected datetime, ISO string, or None.")
+
+
+def _parse_iso_datetime(dt_str: Optional[str]) -> Optional[datetime]:
+    if not dt_str:
+        return None
+    s = str(dt_str).strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("Europe/London"))
+    return dt
+
+
+def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
+    """
+    Build fantasy blocks (groups of 3 fixtures) if no blocks exist yet.
+    Returns the number of blocks created.
+    """
+    ensure_fantasy_block_tables_exist()
+
+    rows = []
+    if fixtures is None:
+        return 0
+    if hasattr(fixtures, "to_dict"):
+        rows = fixtures.to_dict("records")
+    elif isinstance(fixtures, list):
+        rows = fixtures
+    else:
+        raise ValueError("Fixtures must be a list of dicts or a DataFrame-like object.")
+
+    fixtures_with_dt = []
+    for idx, r in enumerate(rows):
+        if not isinstance(r, dict):
+            continue
+        start_at = _fixture_start_at_london(r.get("Date"), r.get("Time"))
+        if not start_at:
+            continue
+        match_id = str(r.get("MatchID") or r.get("Match Id") or "").strip()
+        if not match_id:
+            match_id = f"fixture_{idx + 1}"
+        fixtures_with_dt.append(
+            {
+                "match_id": match_id,
+                "start_at": start_at,
+            }
+        )
+
+    fixtures_with_dt.sort(key=lambda x: x["start_at"])
+
+    total = len(fixtures_with_dt)
+    if total < 3:
+        return 0
+
+    conn = get_conn()
+    try:
+        existing = conn.execute("SELECT COUNT(*) AS n FROM fantasy_blocks;").fetchone()
+        if int(existing["n"]) > 0:
+            return 0
+
+        created = 0
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        for i in range(0, total - (total % 3), 3):
+            group = fixtures_with_dt[i : i + 3]
+            block_number = (i // 3) + 1
+            first_start_at = min(fx["start_at"] for fx in group)
+            lock_at = first_start_at - timedelta(hours=1)
+
+            conn.execute(
+                """
+                INSERT INTO fantasy_blocks
+                    (block_number, first_start_at, lock_at, created_at, scored_at, override_state, override_until)
+                VALUES (?, ?, ?, ?, NULL, NULL, NULL);
+                """,
+                (
+                    block_number,
+                    first_start_at.isoformat(),
+                    lock_at.isoformat(),
+                    now_iso,
+                ),
+            )
+
+            for j, fx in enumerate(group, start=1):
+                conn.execute(
+                    """
+                    INSERT INTO fantasy_block_fixtures
+                        (block_number, fixture_order, match_id, start_at)
+                    VALUES (?, ?, ?, ?);
+                    """,
+                    (
+                        block_number,
+                        j,
+                        fx["match_id"],
+                        fx["start_at"].isoformat(),
+                    ),
+                )
+            created += 1
+
+        conn.commit()
+        return created
+    finally:
+        conn.close()
+
+
+def list_blocks_with_fixtures() -> List[Dict[str, Any]]:
+    ensure_fantasy_block_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                b.block_number,
+                b.first_start_at,
+                b.lock_at,
+                b.created_at,
+                b.scored_at,
+                b.override_state,
+                b.override_until,
+                f.fixture_order,
+                f.match_id,
+                f.start_at AS fixture_start_at
+            FROM fantasy_blocks b
+            LEFT JOIN fantasy_block_fixtures f
+                ON b.block_number = f.block_number
+            ORDER BY b.block_number ASC, f.fixture_order ASC;
+            """
+        ).fetchall()
+
+        blocks: Dict[int, Dict[str, Any]] = {}
+        for r in rows:
+            bn = int(r["block_number"])
+            if bn not in blocks:
+                blocks[bn] = {
+                    "block_number": bn,
+                    "first_start_at": r["first_start_at"],
+                    "lock_at": r["lock_at"],
+                    "created_at": r["created_at"],
+                    "scored_at": r["scored_at"],
+                    "override_state": r["override_state"],
+                    "override_until": r["override_until"],
+                    "fixtures": [],
+                }
+            if r["match_id"] is not None:
+                blocks[bn]["fixtures"].append(
+                    {
+                        "fixture_order": int(r["fixture_order"]),
+                        "match_id": r["match_id"],
+                        "start_at": r["fixture_start_at"],
+                    }
+                )
+        return [blocks[k] for k in sorted(blocks.keys())]
+    finally:
+        conn.close()
+
+
+def set_block_override(
+    block_number: int,
+    override_state: Optional[str],
+    override_until: Any = None,
+) -> None:
+    ensure_fantasy_block_tables_exist()
+    if override_state is not None and override_state not in ("OPEN", "LOCKED"):
+        raise ValueError("override_state must be 'OPEN', 'LOCKED', or None.")
+    until_iso = _normalize_datetime_for_storage(override_until)
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            UPDATE fantasy_blocks
+            SET override_state = ?, override_until = ?
+            WHERE block_number = ?;
+            """,
+            (override_state, until_iso, int(block_number)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def clear_block_override(block_number: int) -> None:
+    ensure_fantasy_block_tables_exist()
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            UPDATE fantasy_blocks
+            SET override_state = NULL, override_until = NULL
+            WHERE block_number = ?;
+            """,
+            (int(block_number),),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_block_scored(block_number: int, scored_at: Any) -> None:
+    ensure_fantasy_block_tables_exist()
+    scored_iso = _normalize_datetime_for_storage(scored_at)
+    if not scored_iso:
+        raise ValueError("scored_at is required.")
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            UPDATE fantasy_blocks
+            SET scored_at = ?
+            WHERE block_number = ?;
+            """,
+            (scored_iso, int(block_number)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_effective_block_state(block_number: int, now_dt: datetime) -> str:
+    ensure_fantasy_block_tables_exist()
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=ZoneInfo("Europe/London"))
+
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT lock_at, scored_at, override_state, override_until
+            FROM fantasy_blocks
+            WHERE block_number = ?;
+            """,
+            (int(block_number),),
+        ).fetchone()
+        if not row:
+            raise ValueError(f"Block {block_number} not found.")
+
+        if row["scored_at"]:
+            return "SCORED"
+
+        override_state = row["override_state"]
+        override_until = _parse_iso_datetime(row["override_until"])
+        if override_state in ("OPEN", "LOCKED"):
+            if override_until is None or now_dt < override_until:
+                return override_state
+
+        lock_at = _parse_iso_datetime(row["lock_at"])
+        if lock_at and now_dt >= lock_at:
+            return "LOCKED"
+        return "OPEN"
+    finally:
+        conn.close()
+
+
+def get_current_block_number() -> Optional[int]:
+    ensure_fantasy_block_tables_exist()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT block_number
+            FROM fantasy_blocks
+            WHERE scored_at IS NULL
+            ORDER BY block_number ASC
+            LIMIT 1;
+            """
+        ).fetchone()
+        return int(row["block_number"]) if row else None
+    finally:
+        conn.close()
+
+
+def _fantasy_block_self_test() -> None:
+    """
+    Manual test helper (not executed automatically).
+    """
+    fixtures = [
+        {"MatchID": "M1", "Date": "2026-01-24", "Time": "18:00"},
+        {"MatchID": "M2", "Date": "2026-01-24", "Time": "19:30"},
+        {"MatchID": "M3", "Date": "2026-01-24", "Time": "21:00"},
+        {"MatchID": "M4", "Date": "2026-01-25", "Time": "18:00"},
+        {"MatchID": "M5", "Date": "2026-01-25", "Time": "19:30"},
+        {"MatchID": "M6", "Date": "2026-01-25", "Time": "21:00"},
+    ]
+
+    created = rebuild_blocks_from_fixtures_if_missing(fixtures)
+    print(f"Created blocks: {created}")
+
+    now_local = datetime(2026, 1, 24, 16, 30, tzinfo=ZoneInfo("Europe/London"))
+    state = get_effective_block_state(1, now_local)
+    print(f"Block 1 state at {now_local.isoformat()}: {state}")
 
 
 def count_users() -> int:
