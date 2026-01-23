@@ -70,7 +70,6 @@ def restore_users_from_dropbox_if_needed() -> None:
     If users table is empty, try to restore from Dropbox backup.
     Restored users:
       - keep stored password hashes when present in the backup
-      - are forced to reset only when the backup is missing hashes
     """
     if count_users() != 0:
         return
@@ -80,14 +79,17 @@ def restore_users_from_dropbox_if_needed() -> None:
         app_key = _get_secret("DROPBOX_APP_KEY")
         app_secret = _get_secret("DROPBOX_APP_SECRET")
         refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
-        default_pw = str(st.secrets.get("DEFAULT_RESET_PASSWORD", "ResetMe123!"))
-
         access_token = get_access_token(app_key, app_secret, refresh_token)
         backup_path = _dropbox_users_backup_path()
 
         raw = download_file(access_token, backup_path)
         payload = json.loads(raw.decode("utf-8"))
 
+        users = payload.get("users") or []
+        missing_hashes = any(
+            not str(u.get("password_hash", "")).strip() for u in users
+        )
+        default_pw = str(st.secrets.get("DEFAULT_RESET_PASSWORD", "ResetMe123!"))
         default_hash = hash_password(default_pw)
         restored = restore_users_from_backup_payload(
             payload,
@@ -97,11 +99,7 @@ def restore_users_from_dropbox_if_needed() -> None:
 
         if restored > 0:
             st.session_state["restored_users_count"] = restored
-            users = payload.get("users") or []
-            missing_hashes = any(
-                not str(u.get("password_hash", "")).strip() for u in users
-            )
-            any_reset = missing_hashes or any(
+            any_reset = any(
                 int(u.get("must_reset_password", 0) or 0) == 1 for u in users
             )
             st.session_state["restored_users_require_reset"] = any_reset
