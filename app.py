@@ -218,7 +218,6 @@ def home_welcome():
         if st.session_state.get("restored_users_require_reset"):
             st.warning(
                 f"User accounts were restored. "
-                "Some users must reset their password on next login."
             )
         else:
             st.success(
