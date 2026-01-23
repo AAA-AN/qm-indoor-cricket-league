@@ -106,6 +106,20 @@ def _format_time_ampm(series: pd.Series) -> pd.Series:
     formatted = formatted.where((mins == 0) | (mins.isna()), with_mins)
     return formatted.fillna(series.astype(str))
 
+def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
+    if dt_val is None:
+        return None
+    s = str(dt_val).strip()
+    if not s:
+        return s
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+        return dt.strftime("%d-%b %H:%M")
+    except Exception:
+        return str(dt_val)
+
 st.title("Admin")
 
 tab_users, tab_scorecards, tab_fantasy_blocks = st.tabs(
@@ -747,16 +761,16 @@ with tab_fantasy_blocks:
             for fx in b.get("fixtures", []):
                 match_id = fx.get("match_id", "")
                 start_at = fx.get("start_at", "")
-                fixtures_list.append(f"{match_id} ({start_at})")
+                fixtures_list.append(f"{match_id} ({_format_dt_dd_mmm_hhmm(start_at)})")
 
             rows.append(
                 {
                     "block_number": b.get("block_number"),
-                    "first_start_at": b.get("first_start_at"),
-                    "lock_at": b.get("lock_at"),
-                    "scored_at": b.get("scored_at"),
+                    "first_start_at": _format_dt_dd_mmm_hhmm(b.get("first_start_at")),
+                    "lock_at": _format_dt_dd_mmm_hhmm(b.get("lock_at")),
+                    "scored_at": _format_dt_dd_mmm_hhmm(b.get("scored_at")),
                     "override_state": b.get("override_state"),
-                    "override_until": b.get("override_until"),
+                    "override_until": _format_dt_dd_mmm_hhmm(b.get("override_until")),
                     "effective_state": get_effective_block_state(b.get("block_number"), london_now),
                     "fixtures": ", ".join(fixtures_list),
                 }
