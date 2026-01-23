@@ -46,7 +46,7 @@ def _dropbox_users_backup_path() -> str:
 
 def backup_users_to_dropbox() -> None:
     """
-    Upload users backup (WITHOUT passwords) to Dropbox, overwriting the single backup file.
+    Upload users backup (WITH password hashes) to Dropbox, overwriting the single backup file.
     """
     app_key = _get_secret("DROPBOX_APP_KEY")
     app_secret = _get_secret("DROPBOX_APP_SECRET")
@@ -69,8 +69,8 @@ def restore_users_from_dropbox_if_needed() -> None:
     """
     If users table is empty, try to restore from Dropbox backup.
     Restored users:
-      - get DEFAULT_RESET_PASSWORD
-      - are forced to reset password on first login
+      - keep stored password hashes when present in the backup
+      - are forced to reset only when the backup is missing hashes
     """
     if count_users() != 0:
         return
@@ -92,11 +92,19 @@ def restore_users_from_dropbox_if_needed() -> None:
         restored = restore_users_from_backup_payload(
             payload,
             default_password_hash=default_hash,
-            force_reset=True,
+            force_reset=False,
         )
 
         if restored > 0:
             st.session_state["restored_users_count"] = restored
+            users = payload.get("users") or []
+            missing_hashes = any(
+                not str(u.get("password_hash", "")).strip() for u in users
+            )
+            any_reset = missing_hashes or any(
+                int(u.get("must_reset_password", 0) or 0) == 1 for u in users
+            )
+            st.session_state["restored_users_require_reset"] = any_reset
 
     except Exception:
         return
@@ -183,6 +191,8 @@ def ensure_session_state():
         st.session_state["pending_reset_username"] = ""
     if "restored_users_count" not in st.session_state:
         st.session_state["restored_users_count"] = 0
+    if "restored_users_require_reset" not in st.session_state:
+        st.session_state["restored_users_require_reset"] = False
 
     # Prefill username on login after signup (and keep it after failed logins)
     if "prefill_login_username" not in st.session_state:
@@ -207,10 +217,15 @@ def home_welcome():
 
     restored_n = int(st.session_state.get("restored_users_count") or 0)
     if restored_n:
-        st.warning(
-            f"User accounts were restored from Dropbox ({restored_n} user(s)). "
-            "All restored users must reset their password on next login."
-        )
+        if st.session_state.get("restored_users_require_reset"):
+            st.warning(
+                f"User accounts were restored from Dropbox ({restored_n} user(s)). "
+                "Some users must reset their password on next login."
+            )
+        else:
+            st.success(
+                f"User accounts were restored from Dropbox ({restored_n} user(s))."
+            )
 
     st.markdown("---")
     st.subheader("Login")

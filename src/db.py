@@ -243,19 +243,19 @@ def delete_user(username: str) -> None:
 # -----------------------------
 def export_users_backup_payload() -> Dict[str, Any]:
     """
-    Export user records WITHOUT password hashes.
+    Export user records WITH password hashes.
     """
     conn = get_conn()
     try:
         rows = conn.execute(
             """
-            SELECT first_name, last_name, username, role, is_active, created_at
+            SELECT first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password, last_login_at
             FROM users
             ORDER BY created_at ASC, user_id ASC;
             """
         ).fetchall()
         users = [dict(r) for r in rows]
-        return {"version": 1, "users": users}
+        return {"version": 2, "users": users}
     finally:
         conn.close()
 
@@ -269,8 +269,8 @@ def restore_users_from_backup_payload(
     """
     Restore users into an EMPTY users table.
 
-    Passwords are NOT restored; all users get default_password_hash and
-    must_reset_password is set to 1 if force_reset=True.
+    Passwords are restored when present in the payload. If a password hash is
+    missing, default_password_hash is used and the user is forced to reset.
 
     Returns number of users inserted.
     """
@@ -290,9 +290,12 @@ def restore_users_from_backup_payload(
             first_name = str(u.get("first_name", "")).strip()
             last_name = str(u.get("last_name", "")).strip()
             username = str(u.get("username", "")).strip()
+            password_hash = str(u.get("password_hash", "")).strip()
             role = str(u.get("role", "player")).strip() or "player"
             is_active = int(u.get("is_active", 1))
             created_at = str(u.get("created_at", "")).strip() or now_iso
+            must_reset_password = int(u.get("must_reset_password", 0))
+            last_login_at = str(u.get("last_login_at", "")).strip() or None
 
             if not username:
                 continue
@@ -300,6 +303,15 @@ def restore_users_from_backup_payload(
                 role = "player"
             if is_active not in (0, 1):
                 is_active = 1
+            if must_reset_password not in (0, 1):
+                must_reset_password = 0
+
+            missing_hash = not password_hash
+            if missing_hash:
+                password_hash = default_password_hash
+                must_reset_password = 1
+            elif force_reset:
+                must_reset_password = 1
 
             conn.execute(
                 """
@@ -311,12 +323,12 @@ def restore_users_from_backup_payload(
                     first_name or " ",
                     last_name or " ",
                     username,
-                    default_password_hash,
+                    password_hash,
                     role,
                     is_active,
                     created_at,
-                    1 if force_reset else 0,
-                    None,  # last_login_at reset on restore
+                    must_reset_password,
+                    last_login_at,
                 ),
             )
             inserted += 1
