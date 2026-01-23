@@ -221,27 +221,25 @@ with tab_users:
                 st.rerun()
 
     with st.expander("Reset password", expanded=False):
-        new_pw = st.text_input("New password", type="password", key="admin_new_pw")
-        new_pw2 = st.text_input("Confirm new password", type="password", key="admin_new_pw2")
-        if st.button("Reset password", use_container_width=True, key="admin_reset_pw_btn"):
-            if not new_pw or not new_pw2:
-                st.error("Please enter and confirm the new password.")
-            elif new_pw != new_pw2:
-                st.error("Passwords do not match.")
-            else:
-                try:
-                    admin_reset_password(selected_username, new_pw)
+        default_pw = str(st.secrets.get("DEFAULT_RESET_PASSWORD", "ResetMe123!"))
+        st.write("Reset the selected user's password to the default reset password.")
+        st.code(default_pw, language=None)
+        if st.button(
+            "Reset to default password", use_container_width=True, key="admin_reset_pw_btn"
+        ):
+            try:
+                admin_reset_password(selected_username, default_pw)
 
-                    st.session_state["admin_user_action_msg"] = (
-                        f"Password reset for '{selected_username}'. User will be prompted to change it on next login."
-                    )
-                    st.session_state["admin_scroll_to_users"] = True
+                st.session_state["admin_user_action_msg"] = (
+                    f"Password reset for '{selected_username}'. User will be prompted to change it on next login."
+                )
+                st.session_state["admin_scroll_to_users"] = True
 
-                    # Return to table
-                    st.rerun()
+                # Return to table
+                st.rerun()
 
-                except Exception as e:
-                    st.error(str(e))
+            except Exception as e:
+                st.error(str(e))
 
     with st.expander("Change role", expanded=False):
         desired_role = st.selectbox(
