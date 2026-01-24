@@ -254,347 +254,351 @@ else:
 editing = bool(st.session_state.get(editing_key))
 
 st.markdown("---")
-st.subheader("Team selector")
+tab_team, tab_results, tab_leaderboard = st.tabs(["Team selector", "Results", "Leaderboard"])
+with tab_team:
+    st.subheader("Team selector")
 
-def _player_label(pid: str) -> str:
-    return player_label_by_id.get(pid, pid)
+    def _player_label(pid: str) -> str:
+        return player_label_by_id.get(pid, pid)
 
-if not editing:
-    if entry:
-        st.markdown(f"### Selected Team (Block: {state})")
-        squad_ids = entry.get("squad_player_ids", [])
-        starting_ids = entry.get("starting_player_ids", [])
-        bench1_id = entry.get("bench1")
-        bench2_id = entry.get("bench2")
-        captain_id = entry.get("captain_id")
-        vice_id = entry.get("vice_captain_id")
-
-        rows = []
-        for pid in starting_ids:
-            rows.append(
-                {
-                    "Role": "Starting",
-                    "Multiplier": "Captain (x2)" if pid == captain_id else "Vice (x1.5)" if pid == vice_id else "",
-                    "Player": _player_label(pid),
-                }
-            )
-        if bench1_id:
-            rows.append(
-                {
-                    "Role": "Bench 1",
-                    "Multiplier": "Captain (x2)" if bench1_id == captain_id else "Vice (x1.5)" if bench1_id == vice_id else "",
-                    "Player": _player_label(bench1_id),
-                }
-            )
-        if bench2_id:
-            rows.append(
-                {
-                    "Role": "Bench 2",
-                    "Multiplier": "Captain (x2)" if bench2_id == captain_id else "Vice (x1.5)" if bench2_id == vice_id else "",
-                    "Player": _player_label(bench2_id),
-                }
-            )
-
-        df_selected = pd.DataFrame(rows, columns=["Role", "Player", "Multiplier"])
-        st.dataframe(df_selected, use_container_width=True, hide_index=True)
-
-        budget_used = sum(player_price_by_id.get(pid, 0.0) for pid in squad_ids)
-        budget_remaining = 60.0 - budget_used
-        st.markdown(f"**Budget used:** {budget_used:.1f} / 60.0")
-        st.markdown(f"**Budget remaining:** {budget_remaining:.1f}")
-
-        if not controls_disabled:
-            if st.button("Edit team", use_container_width=True):
-                st.session_state[editing_key] = True
-                st.rerun()
-    else:
-        st.info(
-            "Selections are locked and you have not submitted a team for this block."
-            if controls_disabled
-            else "No team submitted yet."
-        )
-else:
-    budget_placeholder = st.empty()
-
-    squad_labels = st.multiselect(
-        "Squad (pick 8)",
-        options=player_labels,
-        default=default_squad_labels,
-        max_selections=8,
-        key=f"fantasy_squad_{current_block}",
-        disabled=controls_disabled,
-    )
-
-    squad_ids = [player_id_by_label.get(lbl) for lbl in squad_labels if lbl in player_id_by_label]
-    squad_ids = [pid for pid in squad_ids if pid]
-
-    starting_labels = st.multiselect(
-        "Starting XI (pick 6)",
-        options=squad_labels,
-        default=[lbl for lbl in default_starting_labels if lbl in squad_labels],
-        max_selections=6,
-        key=f"fantasy_starting_{current_block}",
-        disabled=controls_disabled,
-    )
-
-    starting_ids = [player_id_by_label.get(lbl) for lbl in starting_labels if lbl in player_id_by_label]
-    starting_ids = [pid for pid in starting_ids if pid]
-
-    remaining_labels = [lbl for lbl in squad_labels if lbl not in starting_labels]
-    bench_options = remaining_labels if remaining_labels else ["(select)"]
-
-    bench1_label = st.selectbox(
-        "Bench 1",
-        options=bench_options,
-        index=bench_options.index(player_label_by_id.get(default_bench1)) if default_bench1 in player_label_by_id and player_label_by_id.get(default_bench1) in bench_options else 0,
-        key=f"fantasy_bench1_{current_block}",
-        disabled=controls_disabled,
-    )
-
-    bench2_label = st.selectbox(
-        "Bench 2",
-        options=bench_options,
-        index=bench_options.index(player_label_by_id.get(default_bench2)) if default_bench2 in player_label_by_id and player_label_by_id.get(default_bench2) in bench_options else 0,
-        key=f"fantasy_bench2_{current_block}",
-        disabled=controls_disabled,
-    )
-
-    bench1_id = player_id_by_label.get(bench1_label) if bench1_label in player_id_by_label else ""
-    bench2_id = player_id_by_label.get(bench2_label) if bench2_label in player_id_by_label else ""
-
-    captain_options = starting_labels if starting_labels else ["(select)"]
-    captain_label = st.selectbox(
-        "Captain (x2)",
-        options=captain_options,
-        index=captain_options.index(player_label_by_id.get(default_captain)) if default_captain in player_label_by_id and player_label_by_id.get(default_captain) in captain_options else 0,
-        key=f"fantasy_captain_{current_block}",
-        disabled=controls_disabled,
-    )
-
-    vice_options = [lbl for lbl in captain_options if lbl != captain_label] or ["(select)"]
-    vice_label = st.selectbox(
-        "Vice-captain (x1.5)",
-        options=vice_options,
-        index=vice_options.index(player_label_by_id.get(default_vice)) if default_vice in player_label_by_id and player_label_by_id.get(default_vice) in vice_options else 0,
-        key=f"fantasy_vice_{current_block}",
-        disabled=controls_disabled,
-    )
-
-    captain_id = player_id_by_label.get(captain_label) if captain_label in player_id_by_label else ""
-    vice_id = player_id_by_label.get(vice_label) if vice_label in player_id_by_label else ""
-
-    budget_used = sum(player_price_by_id.get(pid, 0.0) for pid in squad_ids)
-    budget_remaining = 60.0 - budget_used
-
-    budget_placeholder.markdown(f"**Budget used:** {budget_used:.1f} / 60.0")
-    budget_placeholder.markdown(f"**Budget remaining:** {budget_remaining:.1f}")
-
-    errors = []
-    if len(squad_ids) != 8:
-        errors.append("Squad must include exactly 8 players.")
-
-    if len(starting_ids) != 6 or not set(starting_ids).issubset(set(squad_ids)):
-        errors.append("Starting lineup must include exactly 6 players from the squad.")
-
-    remaining_ids = [pid for pid in squad_ids if pid not in starting_ids]
-    if len(remaining_ids) == 2:
-        if set([bench1_id, bench2_id]) != set(remaining_ids) or bench1_id == bench2_id:
-            errors.append("Bench 1 and Bench 2 must be the two remaining squad players.")
-    else:
-        errors.append("Bench selections require exactly 2 remaining squad players.")
-
-    if not captain_id or captain_id not in starting_ids:
-        errors.append("Captain must be selected from the starting lineup.")
-    if not vice_id or vice_id not in starting_ids:
-        errors.append("Vice-captain must be selected from the starting lineup.")
-    if captain_id and vice_id and captain_id == vice_id:
-        errors.append("Captain and Vice-captain must be different players.")
-
-    if budget_used > 60.0:
-        errors.append("Total budget exceeds 60.0.")
-
-    team_counts: dict[str, int] = {}
-    for pid in squad_ids:
-        team = player_team_by_id.get(pid, "Unknown") or "Unknown"
-        team_counts[team] = team_counts.get(team, 0) + 1
-    if any(n > 4 for n in team_counts.values()):
-        errors.append("No more than 4 players can be selected from the same team.")
-
-    if errors:
-        for msg in errors:
-            st.warning(msg)
-
-    if not controls_disabled:
-        if st.button("Submit Team", use_container_width=True):
-            if errors:
-                st.error("Please fix the issues above before submitting.")
-            else:
-                submitted_at_iso = now_london.isoformat()
-                save_fantasy_entry(
-                    block_number=current_block,
-                    user_id=int(user_id),
-                    squad_player_ids=squad_ids,
-                    starting_player_ids=starting_ids,
-                    bench1=bench1_id,
-                    bench2=bench2_id,
-                    captain_id=captain_id,
-                    vice_captain_id=vice_id,
-                    budget_used=budget_used,
-                    submitted_at_iso=submitted_at_iso,
-                )
-                st.session_state[editing_key] = False
-                st.success("Fantasy team submitted.")
-                st.rerun()
-
-st.markdown("---")
-st.subheader("Results")
-
-latest_block = get_latest_scored_block_number()
-if latest_block is None:
-    st.info("No results yet.")
-else:
-    st.markdown(f"### Latest Results (Block {latest_block})")
-    user_points = get_user_block_points(latest_block, int(user_id))
-    if user_points is None:
-        st.info("You did not submit a team for this block.")
-    else:
-        st.markdown(f"**Your total:** {user_points:.1f}")
-
-        entry_latest = get_fantasy_entry(latest_block, int(user_id))
-        if not entry_latest:
-            st.info("You did not submit a team for this block.")
-        else:
-            points_by_player = get_block_player_points(latest_block)
-            prices_latest = get_block_prices(latest_block)
-
-            def _label_for_block(pid: str) -> str:
-                price = float(prices_latest.get(pid, 7.5))
-                name = player_name_by_id.get(pid, pid)
-                team = player_team_by_id.get(pid, "Unknown") or "Unknown"
-                return f"{price:.1f} – {name} – {team}"
-
-            starting_ids = entry_latest.get("starting_player_ids", [])
-            bench1_id = entry_latest.get("bench1")
-            bench2_id = entry_latest.get("bench2")
-            captain_id = entry_latest.get("captain_id")
-            vice_id = entry_latest.get("vice_captain_id")
-            squad_ids_latest = entry_latest.get("squad_player_ids", [])
-
-            bench_queue = []
-            for bid in [bench1_id, bench2_id]:
-                if bid and bid in points_by_player:
-                    bench_queue.append(bid)
-
-            final_on_field = []
-            subbed_in = set()
-            auto_subs_applied = False
-
-            for sid in starting_ids:
-                if sid in points_by_player:
-                    final_on_field.append(sid)
-                else:
-                    if bench_queue:
-                        sub = bench_queue.pop(0)
-                        final_on_field.append(sub)
-                        subbed_in.add(sub)
-                        auto_subs_applied = True
-                    else:
-                        final_on_field.append(None)
+    if not editing:
+        if entry:
+            st.markdown(f"### Selected Team (Block: {state})")
+            squad_ids = entry.get("squad_player_ids", [])
+            starting_ids = entry.get("starting_player_ids", [])
+            bench1_id = entry.get("bench1")
+            bench2_id = entry.get("bench2")
+            captain_id = entry.get("captain_id")
+            vice_id = entry.get("vice_captain_id")
 
             rows = []
-            for sid in starting_ids:
+            for pid in starting_ids:
                 rows.append(
                     {
                         "Role": "Starting",
-                        "Multiplier": "C" if sid == captain_id else "VC" if sid == vice_id else "",
-                        "Player": _label_for_block(sid),
-                        "Points": float(points_by_player.get(sid, 0.0)),
+                        "Multiplier": "Captain (x2)" if pid == captain_id else "Vice (x1.5)" if pid == vice_id else "",
+                        "Player": _player_label(pid),
                     }
                 )
-
             if bench1_id:
                 rows.append(
                     {
-                        "Role": "Subbed In" if bench1_id in subbed_in else "Bench",
-                        "Multiplier": "C" if bench1_id == captain_id else "VC" if bench1_id == vice_id else "",
-                        "Player": _label_for_block(bench1_id),
-                        "Points": float(points_by_player.get(bench1_id, 0.0)),
+                        "Role": "Bench 1",
+                        "Multiplier": "Captain (x2)" if bench1_id == captain_id else "Vice (x1.5)" if bench1_id == vice_id else "",
+                        "Player": _player_label(bench1_id),
                     }
                 )
             if bench2_id:
                 rows.append(
                     {
-                        "Role": "Subbed In" if bench2_id in subbed_in else "Bench",
-                        "Multiplier": "C" if bench2_id == captain_id else "VC" if bench2_id == vice_id else "",
-                        "Player": _label_for_block(bench2_id),
-                        "Points": float(points_by_player.get(bench2_id, 0.0)),
+                        "Role": "Bench 2",
+                        "Multiplier": "Captain (x2)" if bench2_id == captain_id else "Vice (x1.5)" if bench2_id == vice_id else "",
+                        "Player": _player_label(bench2_id),
                     }
                 )
 
-            df_results = pd.DataFrame(rows, columns=["Role", "Multiplier", "Player", "Points"])
-            st.dataframe(df_results, use_container_width=True, hide_index=True)
+            df_selected = pd.DataFrame(rows, columns=["Role", "Player", "Multiplier"])
+            st.dataframe(df_selected, use_container_width=True, hide_index=True)
 
-            budget_used_latest = sum(float(prices_latest.get(pid, 7.5)) for pid in squad_ids_latest)
-            budget_remaining_latest = 60.0 - budget_used_latest
-            st.markdown(f"**Budget used:** {budget_used_latest:.1f} / 60.0")
-            st.markdown(f"**Budget remaining:** {budget_remaining_latest:.1f}")
+            budget_used = sum(player_price_by_id.get(pid, 0.0) for pid in squad_ids)
+            budget_remaining = 60.0 - budget_used
+            st.markdown(f"**Budget used:** {budget_used:.1f} / 60.0")
+            st.markdown(f"**Budget remaining:** {budget_remaining:.1f}")
 
-            if auto_subs_applied:
-                st.caption("Auto-subs were applied based on DNP starters.")
-
-st.markdown("---")
-st.subheader("Leaderboard")
-
-latest_block_for_lb = get_latest_scored_block_number()
-if latest_block_for_lb is None:
-    st.info("No results yet.")
-else:
-    scored_blocks = []
-    all_blocks = list_blocks_with_fixtures()
-    for b in all_blocks:
-        if b.get("scored_at"):
-            scored_blocks.append(int(b.get("block_number")))
-    scored_blocks = sorted(set(scored_blocks), reverse=True)
-
-    if not scored_blocks:
-        st.info("No results yet.")
+            if not controls_disabled:
+                if st.button("Edit team", use_container_width=True):
+                    st.session_state[editing_key] = True
+                    st.rerun()
+        else:
+            st.info(
+                "Selections are locked and you have not submitted a team for this block."
+                if controls_disabled
+                else "No team submitted yet."
+            )
     else:
-        default_index = 0
-        if latest_block_for_lb in scored_blocks:
-            default_index = scored_blocks.index(latest_block_for_lb)
+        budget_placeholder = st.empty()
 
-        selected_block = st.selectbox(
-            "Select block",
-            options=scored_blocks,
-            index=default_index,
-            key="fantasy_leaderboard_block_select",
+        squad_labels = st.multiselect(
+            "Squad (pick 8)",
+            options=player_labels,
+            default=default_squad_labels,
+            max_selections=8,
+            key=f"fantasy_squad_{current_block}",
+            disabled=controls_disabled,
         )
 
-        rows = list_block_user_points(int(selected_block))
-        if not rows:
-            st.info("No user points recorded for this block yet.")
-        else:
-            display_rows = []
-            rank = 1
-            for r in rows:
-                first_name = str(r.get("first_name") or "").strip()
-                last_name = str(r.get("last_name") or "").strip()
-                username = str(r.get("username") or "").strip()
-                if first_name or last_name:
-                    name = f"{first_name} {last_name}".strip()
-                else:
-                    name = username
-                display_rows.append(
-                    {
-                        "Rank": rank,
-                        "Name": name,
-                        "Points": float(r.get("points_total") or 0.0),
-                    }
-                )
-                rank += 1
+        squad_ids = [player_id_by_label.get(lbl) for lbl in squad_labels if lbl in player_id_by_label]
+        squad_ids = [pid for pid in squad_ids if pid]
 
-            st.dataframe(
-                pd.DataFrame(display_rows),
-                use_container_width=True,
-                hide_index=True,
+        starting_labels = st.multiselect(
+            "Starting XI (pick 6)",
+            options=squad_labels,
+            default=[lbl for lbl in default_starting_labels if lbl in squad_labels],
+            max_selections=6,
+            key=f"fantasy_starting_{current_block}",
+            disabled=controls_disabled,
+        )
+
+        starting_ids = [player_id_by_label.get(lbl) for lbl in starting_labels if lbl in player_id_by_label]
+        starting_ids = [pid for pid in starting_ids if pid]
+
+        remaining_labels = [lbl for lbl in squad_labels if lbl not in starting_labels]
+        bench_options = remaining_labels if remaining_labels else ["(select)"]
+
+        bench1_label = st.selectbox(
+            "Bench 1",
+            options=bench_options,
+            index=bench_options.index(player_label_by_id.get(default_bench1)) if default_bench1 in player_label_by_id and player_label_by_id.get(default_bench1) in bench_options else 0,
+            key=f"fantasy_bench1_{current_block}",
+            disabled=controls_disabled,
+        )
+
+        bench2_label = st.selectbox(
+            "Bench 2",
+            options=bench_options,
+            index=bench_options.index(player_label_by_id.get(default_bench2)) if default_bench2 in player_label_by_id and player_label_by_id.get(default_bench2) in bench_options else 0,
+            key=f"fantasy_bench2_{current_block}",
+            disabled=controls_disabled,
+        )
+
+        bench1_id = player_id_by_label.get(bench1_label) if bench1_label in player_id_by_label else ""
+        bench2_id = player_id_by_label.get(bench2_label) if bench2_label in player_id_by_label else ""
+
+        captain_options = starting_labels if starting_labels else ["(select)"]
+        captain_label = st.selectbox(
+            "Captain (x2)",
+            options=captain_options,
+            index=captain_options.index(player_label_by_id.get(default_captain)) if default_captain in player_label_by_id and player_label_by_id.get(default_captain) in captain_options else 0,
+            key=f"fantasy_captain_{current_block}",
+            disabled=controls_disabled,
+        )
+
+        vice_options = [lbl for lbl in captain_options if lbl != captain_label] or ["(select)"]
+        vice_label = st.selectbox(
+            "Vice-captain (x1.5)",
+            options=vice_options,
+            index=vice_options.index(player_label_by_id.get(default_vice)) if default_vice in player_label_by_id and player_label_by_id.get(default_vice) in vice_options else 0,
+            key=f"fantasy_vice_{current_block}",
+            disabled=controls_disabled,
+        )
+
+        captain_id = player_id_by_label.get(captain_label) if captain_label in player_id_by_label else ""
+        vice_id = player_id_by_label.get(vice_label) if vice_label in player_id_by_label else ""
+
+        budget_used = sum(player_price_by_id.get(pid, 0.0) for pid in squad_ids)
+        budget_remaining = 60.0 - budget_used
+
+        budget_placeholder.markdown(f"**Budget used:** {budget_used:.1f} / 60.0")
+        budget_placeholder.markdown(f"**Budget remaining:** {budget_remaining:.1f}")
+
+        errors = []
+        if len(squad_ids) != 8:
+            errors.append("Squad must include exactly 8 players.")
+
+        if len(starting_ids) != 6 or not set(starting_ids).issubset(set(squad_ids)):
+            errors.append("Starting lineup must include exactly 6 players from the squad.")
+
+        remaining_ids = [pid for pid in squad_ids if pid not in starting_ids]
+        if len(remaining_ids) == 2:
+            if set([bench1_id, bench2_id]) != set(remaining_ids) or bench1_id == bench2_id:
+                errors.append("Bench 1 and Bench 2 must be the two remaining squad players.")
+        else:
+            errors.append("Bench selections require exactly 2 remaining squad players.")
+
+        if not captain_id or captain_id not in starting_ids:
+            errors.append("Captain must be selected from the starting lineup.")
+        if not vice_id or vice_id not in starting_ids:
+            errors.append("Vice-captain must be selected from the starting lineup.")
+        if captain_id and vice_id and captain_id == vice_id:
+            errors.append("Captain and Vice-captain must be different players.")
+
+        if budget_used > 60.0:
+            errors.append("Total budget exceeds 60.0.")
+
+        team_counts: dict[str, int] = {}
+        for pid in squad_ids:
+            team = player_team_by_id.get(pid, "Unknown") or "Unknown"
+            team_counts[team] = team_counts.get(team, 0) + 1
+        if any(n > 4 for n in team_counts.values()):
+            errors.append("No more than 4 players can be selected from the same team.")
+
+        if errors:
+            for msg in errors:
+                st.warning(msg)
+
+        if not controls_disabled:
+            if st.button("Submit Team", use_container_width=True):
+                if errors:
+                    st.error("Please fix the issues above before submitting.")
+                else:
+                    submitted_at_iso = now_london.isoformat()
+                    save_fantasy_entry(
+                        block_number=current_block,
+                        user_id=int(user_id),
+                        squad_player_ids=squad_ids,
+                        starting_player_ids=starting_ids,
+                        bench1=bench1_id,
+                        bench2=bench2_id,
+                        captain_id=captain_id,
+                        vice_captain_id=vice_id,
+                        budget_used=budget_used,
+                        submitted_at_iso=submitted_at_iso,
+                    )
+                    st.session_state[editing_key] = False
+                    st.success("Fantasy team submitted.")
+                    st.rerun()
+
+with tab_results:
+    st.markdown("---")
+    st.subheader("Results")
+
+    latest_block = get_latest_scored_block_number()
+    if latest_block is None:
+        st.info("No results yet.")
+    else:
+        st.markdown(f"### Latest Results (Block {latest_block})")
+        user_points = get_user_block_points(latest_block, int(user_id))
+        if user_points is None:
+            st.info("You did not submit a team for this block.")
+        else:
+            st.markdown(f"**Your total:** {user_points:.1f}")
+
+            entry_latest = get_fantasy_entry(latest_block, int(user_id))
+            if not entry_latest:
+                st.info("You did not submit a team for this block.")
+            else:
+                points_by_player = get_block_player_points(latest_block)
+                prices_latest = get_block_prices(latest_block)
+
+                def _label_for_block(pid: str) -> str:
+                    price = float(prices_latest.get(pid, 7.5))
+                    name = player_name_by_id.get(pid, pid)
+                    team = player_team_by_id.get(pid, "Unknown") or "Unknown"
+                    return f"{price:.1f} – {name} – {team}"
+
+                starting_ids = entry_latest.get("starting_player_ids", [])
+                bench1_id = entry_latest.get("bench1")
+                bench2_id = entry_latest.get("bench2")
+                captain_id = entry_latest.get("captain_id")
+                vice_id = entry_latest.get("vice_captain_id")
+                squad_ids_latest = entry_latest.get("squad_player_ids", [])
+
+                bench_queue = []
+                for bid in [bench1_id, bench2_id]:
+                    if bid and bid in points_by_player:
+                        bench_queue.append(bid)
+
+                final_on_field = []
+                subbed_in = set()
+                auto_subs_applied = False
+
+                for sid in starting_ids:
+                    if sid in points_by_player:
+                        final_on_field.append(sid)
+                    else:
+                        if bench_queue:
+                            sub = bench_queue.pop(0)
+                            final_on_field.append(sub)
+                            subbed_in.add(sub)
+                            auto_subs_applied = True
+                        else:
+                            final_on_field.append(None)
+
+                rows = []
+                for sid in starting_ids:
+                    rows.append(
+                        {
+                            "Role": "Starting",
+                            "Multiplier": "C" if sid == captain_id else "VC" if sid == vice_id else "",
+                            "Player": _label_for_block(sid),
+                            "Points": float(points_by_player.get(sid, 0.0)),
+                        }
+                    )
+
+                if bench1_id:
+                    rows.append(
+                        {
+                            "Role": "Subbed In" if bench1_id in subbed_in else "Bench",
+                            "Multiplier": "C" if bench1_id == captain_id else "VC" if bench1_id == vice_id else "",
+                            "Player": _label_for_block(bench1_id),
+                            "Points": float(points_by_player.get(bench1_id, 0.0)),
+                        }
+                    )
+                if bench2_id:
+                    rows.append(
+                        {
+                            "Role": "Subbed In" if bench2_id in subbed_in else "Bench",
+                            "Multiplier": "C" if bench2_id == captain_id else "VC" if bench2_id == vice_id else "",
+                            "Player": _label_for_block(bench2_id),
+                            "Points": float(points_by_player.get(bench2_id, 0.0)),
+                        }
+                    )
+
+                df_results = pd.DataFrame(rows, columns=["Role", "Multiplier", "Player", "Points"])
+                st.dataframe(df_results, use_container_width=True, hide_index=True)
+
+                budget_used_latest = sum(float(prices_latest.get(pid, 7.5)) for pid in squad_ids_latest)
+                budget_remaining_latest = 60.0 - budget_used_latest
+                st.markdown(f"**Budget used:** {budget_used_latest:.1f} / 60.0")
+                st.markdown(f"**Budget remaining:** {budget_remaining_latest:.1f}")
+
+                if auto_subs_applied:
+                    st.caption("Auto-subs were applied based on DNP starters.")
+
+with tab_leaderboard:
+    st.markdown("---")
+    st.subheader("Leaderboard")
+
+    latest_block_for_lb = get_latest_scored_block_number()
+    if latest_block_for_lb is None:
+        st.info("No results yet.")
+    else:
+        scored_blocks = []
+        all_blocks = list_blocks_with_fixtures()
+        for b in all_blocks:
+            if b.get("scored_at"):
+                scored_blocks.append(int(b.get("block_number")))
+        scored_blocks = sorted(set(scored_blocks), reverse=True)
+
+        if not scored_blocks:
+            st.info("No results yet.")
+        else:
+            default_index = 0
+            if latest_block_for_lb in scored_blocks:
+                default_index = scored_blocks.index(latest_block_for_lb)
+
+            selected_block = st.selectbox(
+                "Select block",
+                options=scored_blocks,
+                index=default_index,
+                key="fantasy_leaderboard_block_select",
             )
+
+            rows = list_block_user_points(int(selected_block))
+            if not rows:
+                st.info("No user points recorded for this block yet.")
+            else:
+                display_rows = []
+                rank = 1
+                for r in rows:
+                    first_name = str(r.get("first_name") or "").strip()
+                    last_name = str(r.get("last_name") or "").strip()
+                    username = str(r.get("username") or "").strip()
+                    if first_name or last_name:
+                        name = f"{first_name} {last_name}".strip()
+                    else:
+                        name = username
+                    display_rows.append(
+                        {
+                            "Rank": rank,
+                            "Name": name,
+                            "Points": float(r.get("points_total") or 0.0),
+                        }
+                    )
+                    rank += 1
+
+                st.dataframe(
+                    pd.DataFrame(display_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
