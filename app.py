@@ -6,6 +6,7 @@ from src.db import (
     init_db,
     count_users,
     export_users_backup_payload,
+    export_fantasy_backup_payload,
     restore_users_from_backup_payload,
     count_scorecards,
     upsert_scorecard,
@@ -43,6 +44,16 @@ def _dropbox_users_backup_path() -> str:
     data_folder = posixpath.join(app_folder, "app_data")
     return posixpath.join(data_folder, "users_backup.json")
 
+def _dropbox_fantasy_backup_path() -> str:
+    """
+    Stores the fantasy backup next to your league workbook folder in Dropbox, under:
+      <app_folder>/app_data/fantasy_backup.json
+    """
+    dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")
+    app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
+    data_folder = posixpath.join(app_folder, "app_data")
+    return posixpath.join(data_folder, "fantasy_backup.json")
+
 
 def backup_users_to_dropbox() -> None:
     """
@@ -60,6 +71,26 @@ def backup_users_to_dropbox() -> None:
     ensure_folder(access_token, backup_folder)
 
     payload = export_users_backup_payload()
+    content = json.dumps(payload, indent=2).encode("utf-8")
+
+    upload_file(access_token, backup_path, content, mode="overwrite", autorename=False)
+
+def backup_fantasy_to_dropbox() -> None:
+    """
+    Upload fantasy backup to Dropbox, overwriting the single backup file.
+    """
+    app_key = _get_secret("DROPBOX_APP_KEY")
+    app_secret = _get_secret("DROPBOX_APP_SECRET")
+    refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
+
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+
+    backup_path = _dropbox_fantasy_backup_path()
+    backup_folder = posixpath.dirname(backup_path)
+
+    ensure_folder(access_token, backup_folder)
+
+    payload = export_fantasy_backup_payload()
     content = json.dumps(payload, indent=2).encode("utf-8")
 
     upload_file(access_token, backup_path, content, mode="overwrite", autorename=False)
@@ -289,6 +320,7 @@ def home_force_reset():
             # Back up immediately so we persist the cleared must_reset_password flag
             try:
                 backup_users_to_dropbox()
+                backup_fantasy_to_dropbox()
             except Exception:
                 # Non-blocking; user can still proceed
                 pass
@@ -330,6 +362,7 @@ def home_signup():
                 # Back up after every successful signup
                 try:
                     backup_users_to_dropbox()
+                    backup_fantasy_to_dropbox()
                 except Exception:
                     pass
 

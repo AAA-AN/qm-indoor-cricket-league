@@ -1328,6 +1328,34 @@ def export_users_backup_payload() -> Dict[str, Any]:
         conn.close()
 
 
+def export_fantasy_backup_payload() -> Dict[str, Any]:
+    """
+    Export fantasy tables (blocks, entries, prices, scoring).
+    """
+    ensure_fantasy_block_tables_exist()
+    ensure_fantasy_team_tables_exist()
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        def _fetch(table: str) -> List[Dict[str, Any]]:
+            rows = conn.execute(f"SELECT * FROM {table};").fetchall()
+            return [dict(r) for r in rows]
+
+        payload = {
+            "version": 1,
+            "fantasy_blocks": _fetch("fantasy_blocks"),
+            "fantasy_block_fixtures": _fetch("fantasy_block_fixtures"),
+            "fantasy_prices": _fetch("fantasy_prices"),
+            "fantasy_entries": _fetch("fantasy_entries"),
+            "fantasy_entry_players": _fetch("fantasy_entry_players"),
+            "fantasy_block_player_points": _fetch("fantasy_block_player_points"),
+            "fantasy_block_user_points": _fetch("fantasy_block_user_points"),
+        }
+        return payload
+    finally:
+        conn.close()
+
+
 def restore_users_from_backup_payload(
     payload: Dict[str, Any],
     *,
