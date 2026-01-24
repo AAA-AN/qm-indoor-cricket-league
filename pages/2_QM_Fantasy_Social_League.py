@@ -362,20 +362,7 @@ with tab_team:
         squad_ids = [player_id_by_label.get(lbl) for lbl in squad_labels if lbl in player_id_by_label]
         squad_ids = [pid for pid in squad_ids if pid]
 
-        starting_labels = st.multiselect(
-            "Starting XI (pick 6)",
-            options=squad_labels,
-            default=[lbl for lbl in default_starting_labels if lbl in squad_labels],
-            max_selections=6,
-            key=f"fantasy_starting_{current_block}",
-            disabled=controls_disabled,
-        )
-
-        starting_ids = [player_id_by_label.get(lbl) for lbl in starting_labels if lbl in player_id_by_label]
-        starting_ids = [pid for pid in starting_ids if pid]
-
-        remaining_labels = [lbl for lbl in squad_labels if lbl not in starting_labels]
-        bench_options = remaining_labels if remaining_labels else ["(select)"]
+        bench_options = squad_labels if squad_labels else ["(select)"]
 
         bench1_label = st.selectbox(
             "Bench 1",
@@ -385,16 +372,21 @@ with tab_team:
             disabled=controls_disabled,
         )
 
+        bench2_options = [lbl for lbl in bench_options if lbl != bench1_label] or ["(select)"]
         bench2_label = st.selectbox(
             "Bench 2",
-            options=bench_options,
-            index=bench_options.index(player_label_by_id.get(default_bench2)) if default_bench2 in player_label_by_id and player_label_by_id.get(default_bench2) in bench_options else 0,
+            options=bench2_options,
+            index=bench2_options.index(player_label_by_id.get(default_bench2)) if default_bench2 in player_label_by_id and player_label_by_id.get(default_bench2) in bench2_options else 0,
             key=f"fantasy_bench2_{current_block}",
             disabled=controls_disabled,
         )
 
         bench1_id = player_id_by_label.get(bench1_label) if bench1_label in player_id_by_label else ""
         bench2_id = player_id_by_label.get(bench2_label) if bench2_label in player_id_by_label else ""
+
+        starting_labels = [lbl for lbl in squad_labels if lbl not in [bench1_label, bench2_label]]
+        starting_ids = [player_id_by_label.get(lbl) for lbl in starting_labels if lbl in player_id_by_label]
+        starting_ids = [pid for pid in starting_ids if pid]
 
         captain_options = starting_labels if starting_labels else ["(select)"]
         captain_label = st.selectbox(
