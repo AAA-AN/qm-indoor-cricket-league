@@ -268,7 +268,7 @@ if not editing:
             rows.append(
                 {
                     "Role": "Starting",
-                    "Multiplier": "Captain" if pid == captain_id else "Vice" if pid == vice_id else "",
+                    "Multiplier": "Captain (x2)" if pid == captain_id else "Vice (x1.5)" if pid == vice_id else "",
                     "Player": _player_label(pid),
                 }
             )
@@ -276,7 +276,7 @@ if not editing:
             rows.append(
                 {
                     "Role": "Bench 1",
-                    "Multiplier": "Captain" if bench1_id == captain_id else "Vice" if bench1_id == vice_id else "",
+                    "Multiplier": "Captain (x2)" if bench1_id == captain_id else "Vice (x1.5)" if bench1_id == vice_id else "",
                     "Player": _player_label(bench1_id),
                 }
             )
@@ -284,7 +284,7 @@ if not editing:
             rows.append(
                 {
                     "Role": "Bench 2",
-                    "Multiplier": "Captain" if bench2_id == captain_id else "Vice" if bench2_id == vice_id else "",
+                    "Multiplier": "Captain (x2)" if bench2_id == captain_id else "Vice (x1.5)" if bench2_id == vice_id else "",
                     "Player": _player_label(bench2_id),
                 }
             )
