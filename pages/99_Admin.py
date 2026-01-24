@@ -1022,8 +1022,15 @@ with tab_fantasy_blocks:
 
     if st.session_state.get("admin_fantasy_leaderboard"):
         st.markdown("### Block Leaderboard")
+        lb_rows = st.session_state["admin_fantasy_leaderboard"]
+        display_rows = []
+        for r in lb_rows:
+            row = dict(r)
+            if "calculated_at" in row:
+                row["calculated_at"] = _format_dt_dd_mmm_hhmm(row.get("calculated_at"))
+            display_rows.append(row)
         st.dataframe(
-            pd.DataFrame(st.session_state["admin_fantasy_leaderboard"]),
+            pd.DataFrame(display_rows),
             use_container_width=True,
             hide_index=True,
         )
