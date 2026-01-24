@@ -690,11 +690,11 @@ with tab_leaderboard:
                     )
                     rank += 1
 
-            st.dataframe(
-                pd.DataFrame(display_rows),
-                use_container_width=True,
-                hide_index=True,
-            )
+                st.dataframe(
+                    pd.DataFrame(display_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
     st.markdown("---")
     st.subheader("Season")

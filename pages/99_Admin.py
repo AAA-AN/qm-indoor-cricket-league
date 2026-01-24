@@ -911,16 +911,24 @@ with tab_fantasy_blocks:
 
                     pts = week_df[["PlayerID", "Fantasy Points"]].copy()
                     pts["PlayerID"] = pts["PlayerID"].astype(str).str.strip()
-                    pts["Fantasy Points"] = pd.to_numeric(pts["Fantasy Points"], errors="coerce").fillna(0.0)
-                    pts = pts[pts["PlayerID"] != ""]
+                    pts["Fantasy Points"] = pd.to_numeric(pts["Fantasy Points"], errors="coerce")
+                    pts = pts[(pts["PlayerID"] != "") & (pts["Fantasy Points"].notna())]
                     points_by_player = (
                         pts.groupby("PlayerID")["Fantasy Points"].sum().to_dict()
                         if not pts.empty
                         else {}
                     )
 
+                    if not points_by_player:
+                        st.error(
+                            f"Week{current_block}Stats contains no usable stats (PlayerID/Fantasy Points). Block was NOT scored."
+                        )
+                        st.stop()
+
                     entries = get_all_entries_for_block(current_block)
                     user_points: dict[int, float] = {}
+                    if not entries:
+                        st.info("No teams submitted for this block.")
 
                     for entry in entries:
                         entry_players = entry.get("entry_players", [])
