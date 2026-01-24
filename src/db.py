@@ -722,10 +722,14 @@ def upsert_block_prices(block_number: int, prices: Dict[str, float]) -> None:
         return
     conn = get_conn()
     try:
-        rows = [
-            (int(block_number), str(pid), float(price))
-            for pid, price in prices.items()
-        ]
+        rows = []
+        for pid, price in prices.items():
+            try:
+                val = float(price)
+            except Exception as e:
+                raise ValueError("Price values must be numeric.") from e
+            val = max(5.0, min(10.0, round(val * 2) / 2))
+            rows.append((int(block_number), str(pid), val))
         conn.executemany(
             """
             INSERT OR REPLACE INTO fantasy_prices (block_number, player_id, price)
@@ -808,6 +812,30 @@ def save_fantasy_entry(
     submitted_at_iso: str,
 ) -> None:
     ensure_fantasy_team_tables_exist()
+    squad_ids = [str(pid).strip() for pid in (squad_player_ids or []) if str(pid).strip()]
+    starting_ids = [str(pid).strip() for pid in (starting_player_ids or []) if str(pid).strip()]
+    bench1_id = str(bench1 or "").strip()
+    bench2_id = str(bench2 or "").strip()
+    captain_id = str(captain_id or "").strip()
+    vice_captain_id = str(vice_captain_id or "").strip()
+
+    if len(squad_ids) != 8 or len(set(squad_ids)) != 8:
+        raise ValueError("Squad must include exactly 8 unique players.")
+    if len(starting_ids) != 6 or len(set(starting_ids)) != 6 or not set(starting_ids).issubset(set(squad_ids)):
+        raise ValueError("Starting lineup must include exactly 6 unique players from the squad.")
+    if not bench1_id or not bench2_id or bench1_id == bench2_id:
+        raise ValueError("Bench 1 and Bench 2 must be different players.")
+    if bench1_id not in squad_ids or bench2_id not in squad_ids:
+        raise ValueError("Bench players must be part of the squad.")
+    if bench1_id in starting_ids or bench2_id in starting_ids:
+        raise ValueError("Bench players must not be in the starting lineup.")
+    if not captain_id or not vice_captain_id or captain_id == vice_captain_id:
+        raise ValueError("Captain and vice-captain must be different players.")
+    if captain_id not in starting_ids or vice_captain_id not in starting_ids:
+        raise ValueError("Captain and vice-captain must be in the starting lineup.")
+    if float(budget_used) > 60.0 + 1e-6:
+        raise ValueError("Total budget exceeds 60.0.")
+
     conn = get_conn()
     try:
         conn.execute(
@@ -827,17 +855,10 @@ def save_fantasy_entry(
             (int(block_number), int(user_id)),
         )
 
-        starting_set = {str(pid) for pid in (starting_player_ids or [])}
-        bench1_id = str(bench1 or "").strip()
-        bench2_id = str(bench2 or "").strip()
-        captain_id = str(captain_id or "").strip()
-        vice_captain_id = str(vice_captain_id or "").strip()
+        starting_set = set(starting_ids)
 
         rows = []
-        for pid in squad_player_ids or []:
-            pid_str = str(pid).strip()
-            if not pid_str:
-                continue
+        for pid_str in squad_ids:
             bench_order = None
             if pid_str == bench1_id:
                 bench_order = 1
@@ -1084,12 +1105,17 @@ def set_price(block_number: int, player_id: str, price: float) -> None:
     ensure_fantasy_team_tables_exist()
     conn = get_conn()
     try:
+        try:
+            val = float(price)
+        except Exception as e:
+            raise ValueError("Price values must be numeric.") from e
+        val = max(5.0, min(10.0, round(val * 2) / 2))
         conn.execute(
             """
             INSERT OR REPLACE INTO fantasy_prices (block_number, player_id, price)
             VALUES (?, ?, ?);
             """,
-            (int(block_number), str(player_id), float(price)),
+            (int(block_number), str(player_id), val),
         )
         conn.commit()
     finally:

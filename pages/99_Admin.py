@@ -129,7 +129,7 @@ def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
         return str(dt_val)
 
 
-def _load_named_table_from_xlsm_bytes(xbytes: bytes, table_name: str) -> pd.DataFrame:
+def _load_named_table_from_xlsm_bytes(xbytes: bytes, table_name: str) -> tuple[pd.DataFrame, bool]:
     wb = load_workbook(BytesIO(xbytes), data_only=True)
     for ws in wb.worksheets:
         if table_name in ws.tables:
@@ -138,15 +138,15 @@ def _load_named_table_from_xlsm_bytes(xbytes: bytes, table_name: str) -> pd.Data
             cells = ws[ref]
             data = [[c.value for c in row] for row in cells]
             if not data or len(data) < 2:
-                return pd.DataFrame()
+                return pd.DataFrame(), True
             headers = [str(h).strip() if h is not None else "" for h in data[0]]
             rows = data[1:]
             df = pd.DataFrame(rows, columns=headers)
             blank_header_cols = [c for c in df.columns if str(c).strip() == ""]
             if blank_header_cols:
                 df = df.drop(columns=blank_header_cols)
-            return df
-    return pd.DataFrame()
+            return df, True
+    return pd.DataFrame(), False
 
 
 def _round_to_0_5(x: float) -> float:
@@ -826,6 +826,11 @@ with tab_fantasy_blocks:
         st.info("All blocks are scored.")
     else:
         current_state = get_effective_block_state(current_block, london_now)
+        current_scored_at = None
+        for b in blocks:
+            if int(b.get("block_number") or 0) == int(current_block):
+                current_scored_at = b.get("scored_at")
+                break
         st.write(f"**Current block:** {current_block} (state: {current_state})")
 
         col1, col2, col3, col4 = st.columns(4)
@@ -860,13 +865,24 @@ with tab_fantasy_blocks:
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} override cleared."
                 st.rerun()
         with col4:
+            confirm_key = f"fantasy_block_confirm_week_{current_block}"
+            confirm_text = f"I confirm Week{current_block}Stats is complete"
+            confirm_ok = st.checkbox(
+                confirm_text,
+                value=False,
+                key=confirm_key,
+                disabled=current_state == "SCORED",
+            )
             if st.button(
                 "Score block (stats entered)",
                 use_container_width=True,
                 key="fantasy_block_score_now",
-                disabled=current_state == "SCORED",
+                disabled=(current_state == "SCORED" or not confirm_ok),
             ):
                 try:
+                    if current_scored_at:
+                        st.warning(f"Block {current_block} is already scored.")
+                        st.stop()
                     app_key = _get_secret("DROPBOX_APP_KEY")
                     app_secret = _get_secret("DROPBOX_APP_SECRET")
                     refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
@@ -879,10 +895,13 @@ with tab_fantasy_blocks:
                     access_token = get_access_token(app_key, app_secret, refresh_token)
                     xbytes = download_file(access_token, dropbox_file_path)
                     table_name = f"Week{current_block}Stats"
-                    week_df = _load_named_table_from_xlsm_bytes(xbytes, table_name)
+                    week_df, table_found = _load_named_table_from_xlsm_bytes(xbytes, table_name)
 
+                    if not table_found:
+                        st.error(f"Missing table '{table_name}' in the workbook.")
+                        st.stop()
                     if week_df is None or week_df.empty:
-                        st.error(f"Could not load table '{table_name}' from the workbook.")
+                        st.error(f"Table '{table_name}' is empty.")
                         st.stop()
 
                     week_df.columns = [str(c).strip() for c in week_df.columns]

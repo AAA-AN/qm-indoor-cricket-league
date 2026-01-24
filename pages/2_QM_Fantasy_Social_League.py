@@ -247,13 +247,26 @@ default_starting_labels = [player_label_by_id.get(pid) for pid in default_starti
 
 controls_disabled = is_locked or is_scored
 editing_key = f"fantasy_editing_block_{current_block}"
-if controls_disabled:
-    st.session_state[editing_key] = False
+last_block_key = "fantasy_last_block_number"
+last_block = st.session_state.get(last_block_key)
+block_changed = last_block is None or int(last_block) != int(current_block)
+
+if block_changed:
+    if controls_disabled:
+        st.session_state[editing_key] = False
+    elif entry is None:
+        st.session_state[editing_key] = True
+    else:
+        st.session_state[editing_key] = False
 else:
-    if entry is None:
+    if controls_disabled:
+        st.session_state[editing_key] = False
+    elif entry is None:
         st.session_state[editing_key] = True
     elif editing_key not in st.session_state:
         st.session_state[editing_key] = False
+
+st.session_state[last_block_key] = int(current_block)
 editing = bool(st.session_state.get(editing_key))
 
 st.markdown("---")
@@ -435,21 +448,24 @@ with tab_team:
                     st.error("Please fix the issues above before submitting.")
                 else:
                     submitted_at_iso = now_london.isoformat()
-                    save_fantasy_entry(
-                        block_number=current_block,
-                        user_id=int(user_id),
-                        squad_player_ids=squad_ids,
-                        starting_player_ids=starting_ids,
-                        bench1=bench1_id,
-                        bench2=bench2_id,
-                        captain_id=captain_id,
-                        vice_captain_id=vice_id,
-                        budget_used=budget_used,
-                        submitted_at_iso=submitted_at_iso,
-                    )
-                    st.session_state[editing_key] = False
-                    st.success("Fantasy team submitted.")
-                    st.rerun()
+                    try:
+                        save_fantasy_entry(
+                            block_number=current_block,
+                            user_id=int(user_id),
+                            squad_player_ids=squad_ids,
+                            starting_player_ids=starting_ids,
+                            bench1=bench1_id,
+                            bench2=bench2_id,
+                            captain_id=captain_id,
+                            vice_captain_id=vice_id,
+                            budget_used=budget_used,
+                            submitted_at_iso=submitted_at_iso,
+                        )
+                        st.session_state[editing_key] = False
+                        st.success("Fantasy team submitted.")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(str(e))
 
 with tab_results:
     st.markdown("---")
