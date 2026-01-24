@@ -95,8 +95,7 @@ def _is_active_value(v) -> bool:
 
 
 def _fantasy_backup_path(dropbox_file_path: str) -> str:
-    app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
-    return posixpath.join(app_folder, "fantasy_backup.json")
+    return posixpath.join(posixpath.dirname(dropbox_file_path.rstrip("/")), "fantasy_backup.json")
 
 
 def _fantasy_backup_to_dropbox(
@@ -521,8 +520,8 @@ with tab_team:
                             _fantasy_backup_to_dropbox(
                                 app_key, app_secret, refresh_token, backup_path
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            st.error(f"Fantasy backup failed: {e}")
                         st.session_state[editing_key] = False
                         st.success("Fantasy team submitted.")
                         st.rerun()

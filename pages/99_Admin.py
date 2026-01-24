@@ -163,8 +163,7 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 
 
 def _fantasy_backup_path(dropbox_file_path: str) -> str:
-    app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
-    return posixpath.join(app_folder, "fantasy_backup.json")
+    return posixpath.join(posixpath.dirname(dropbox_file_path.rstrip("/")), "fantasy_backup.json")
 
 
 def _fantasy_backup_to_dropbox(
@@ -892,6 +891,8 @@ with tab_fantasy_blocks:
                 current_scored_at = b.get("scored_at")
                 break
         st.write(f"**Current block:** {current_block} (state: {current_state})")
+        if backup_path:
+            st.caption(f"Fantasy backup path: {backup_path}")
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -907,8 +908,8 @@ with tab_fantasy_blocks:
                         _fantasy_backup_to_dropbox(
                             app_key, app_secret, refresh_token, backup_path
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        st.error(f"Fantasy backup failed: {e}")
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} locked."
                 st.rerun()
         with col2:
@@ -924,8 +925,8 @@ with tab_fantasy_blocks:
                         _fantasy_backup_to_dropbox(
                             app_key, app_secret, refresh_token, backup_path
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        st.error(f"Fantasy backup failed: {e}")
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} unlocked."
                 st.rerun()
         with col3:
@@ -941,8 +942,8 @@ with tab_fantasy_blocks:
                         _fantasy_backup_to_dropbox(
                             app_key, app_secret, refresh_token, backup_path
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        st.error(f"Fantasy backup failed: {e}")
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} override cleared."
                 st.rerun()
         with col4:
@@ -954,6 +955,28 @@ with tab_fantasy_blocks:
                 key=confirm_key,
                 disabled=current_state == "SCORED",
             )
+            if st.button(
+                "Backup fantasy now",
+                use_container_width=True,
+                key="fantasy_backup_now",
+            ):
+                if backup_path and app_key and app_secret and refresh_token:
+                    try:
+                        _fantasy_backup_to_dropbox(
+                            app_key, app_secret, refresh_token, backup_path
+                        )
+                        st.success("Fantasy backup uploaded to Dropbox.")
+                        try:
+                            access_token = get_access_token(app_key, app_secret, refresh_token)
+                            raw = download_file(access_token, backup_path)
+                            json.loads(raw.decode("utf-8"))
+                            st.success("Backup verified (download + parse OK).")
+                        except Exception as e:
+                            st.warning(f"Backup verification failed: {e}")
+                    except Exception as e:
+                        st.error(f"Fantasy backup failed: {e}")
+                else:
+                    st.error("Dropbox configuration is missing.")
             if st.button(
                 "Score block (stats entered)",
                 use_container_width=True,
@@ -1103,8 +1126,8 @@ with tab_fantasy_blocks:
                             _fantasy_backup_to_dropbox(
                                 app_key, app_secret, refresh_token, backup_path
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            st.error(f"Fantasy backup failed: {e}")
 
                     st.session_state["admin_fantasy_msg"] = f"Block {current_block} scored."
                     st.rerun()
