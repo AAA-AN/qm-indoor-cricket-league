@@ -617,6 +617,87 @@ def get_block_player_points(block_number: int) -> Dict[str, float]:
         conn.close()
 
 
+def list_scored_blocks() -> List[int]:
+    ensure_fantasy_block_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT block_number
+            FROM fantasy_blocks
+            WHERE scored_at IS NOT NULL
+            ORDER BY block_number ASC;
+            """
+        ).fetchall()
+        return [int(r["block_number"]) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_season_user_totals() -> List[Dict[str, Any]]:
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                p.user_id,
+                u.username,
+                u.first_name,
+                u.last_name,
+                SUM(p.points_total) AS total_points
+            FROM fantasy_block_user_points p
+            JOIN fantasy_blocks b ON b.block_number = p.block_number
+            JOIN users u ON u.user_id = p.user_id
+            WHERE b.scored_at IS NOT NULL
+            GROUP BY p.user_id
+            ORDER BY total_points DESC, u.username ASC;
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_user_season_total(user_id: int) -> float:
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT SUM(p.points_total) AS total_points
+            FROM fantasy_block_user_points p
+            JOIN fantasy_blocks b ON b.block_number = p.block_number
+            WHERE b.scored_at IS NOT NULL AND p.user_id = ?;
+            """,
+            (int(user_id),),
+        ).fetchone()
+        if not row or row["total_points"] is None:
+            return 0.0
+        return float(row["total_points"])
+    finally:
+        conn.close()
+
+
+def get_user_block_points_history(user_id: int) -> List[Dict[str, Any]]:
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT p.block_number, p.points_total, p.calculated_at
+            FROM fantasy_block_user_points p
+            JOIN fantasy_blocks b ON b.block_number = p.block_number
+            WHERE b.scored_at IS NOT NULL AND p.user_id = ?
+            ORDER BY p.block_number ASC;
+            """,
+            (int(user_id),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def get_block_fixtures(block_number: int) -> List[Dict[str, Any]]:
     ensure_fantasy_block_tables_exist()
     conn = get_conn()

@@ -27,6 +27,9 @@ from src.db import (
     get_user_block_points,
     get_block_player_points,
     list_block_user_points,
+    get_season_user_totals,
+    get_user_block_points_history,
+    list_scored_blocks,
 )
 
 st.set_page_config(page_title=f"{APP_TITLE} - QM Fantasy Social League", layout="wide")
@@ -545,6 +548,80 @@ with tab_results:
                 if auto_subs_applied:
                     st.caption("Auto-subs were applied based on DNP starters.")
 
+    st.markdown("---")
+    st.subheader("My Past Teams")
+
+    scored_blocks = list_scored_blocks()
+    scored_blocks = sorted(scored_blocks, reverse=True)
+
+    if not scored_blocks:
+        st.info("No past teams yet.")
+    else:
+        selected_past_block = st.selectbox(
+            "Select block",
+            options=scored_blocks,
+            index=0,
+            key="fantasy_past_team_block_select",
+        )
+
+        past_entry = get_fantasy_entry(int(selected_past_block), int(user_id))
+        if not past_entry:
+            st.info("No team submitted for this block.")
+        else:
+            past_prices = get_block_prices(int(selected_past_block))
+            past_points = get_block_player_points(int(selected_past_block))
+
+            def _past_label(pid: str) -> str:
+                price = float(past_prices.get(pid, 7.5))
+                name = player_name_by_id.get(pid, pid)
+                team = player_team_by_id.get(pid, "Unknown") or "Unknown"
+                return f"{price:.1f} – {name} – {team}"
+
+            starting_ids = past_entry.get("starting_player_ids", [])
+            bench1_id = past_entry.get("bench1")
+            bench2_id = past_entry.get("bench2")
+            captain_id = past_entry.get("captain_id")
+            vice_id = past_entry.get("vice_captain_id")
+
+            rows = []
+            for pid in starting_ids:
+                row = {
+                    "Role": "Starting",
+                    "Player": _past_label(pid),
+                    "Multiplier": "Captain" if pid == captain_id else "Vice" if pid == vice_id else "",
+                }
+                if past_points:
+                    row["Points"] = float(past_points.get(pid, 0.0))
+                rows.append(row)
+
+            if bench1_id:
+                row = {
+                    "Role": "Bench 1",
+                    "Player": _past_label(bench1_id),
+                    "Multiplier": "Captain" if bench1_id == captain_id else "Vice" if bench1_id == vice_id else "",
+                }
+                if past_points:
+                    row["Points"] = float(past_points.get(bench1_id, 0.0))
+                rows.append(row)
+            if bench2_id:
+                row = {
+                    "Role": "Bench 2",
+                    "Player": _past_label(bench2_id),
+                    "Multiplier": "Captain" if bench2_id == captain_id else "Vice" if bench2_id == vice_id else "",
+                }
+                if past_points:
+                    row["Points"] = float(past_points.get(bench2_id, 0.0))
+                rows.append(row)
+
+            cols = ["Role", "Player", "Multiplier"]
+            if past_points:
+                cols.append("Points")
+            st.dataframe(
+                pd.DataFrame(rows, columns=cols),
+                use_container_width=True,
+                hide_index=True,
+            )
+
 with tab_leaderboard:
     st.markdown("---")
     st.subheader("Leaderboard")
@@ -597,8 +674,73 @@ with tab_leaderboard:
                     )
                     rank += 1
 
-                st.dataframe(
-                    pd.DataFrame(display_rows),
-                    use_container_width=True,
-                    hide_index=True,
-                )
+            st.dataframe(
+                pd.DataFrame(display_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    st.markdown("---")
+    st.subheader("Season")
+
+    season_rows = get_season_user_totals()
+    if not season_rows:
+        st.info("No season totals yet.")
+    else:
+        season_display = []
+        rank = 1
+        for r in season_rows:
+            first_name = str(r.get("first_name") or "").strip()
+            last_name = str(r.get("last_name") or "").strip()
+            username = str(r.get("username") or "").strip()
+            if first_name or last_name:
+                name = f"{first_name} {last_name}".strip()
+            else:
+                name = username
+            season_display.append(
+                {
+                    "Rank": rank,
+                    "Name": name,
+                    "Total Points": float(r.get("total_points") or 0.0),
+                }
+            )
+            rank += 1
+
+        st.markdown("### Season Leaderboard")
+        st.dataframe(
+            pd.DataFrame(season_display),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        user_rank = None
+        user_total = 0.0
+        for idx, r in enumerate(season_rows, start=1):
+            if int(r.get("user_id") or 0) == int(user_id):
+                user_rank = idx
+                user_total = float(r.get("total_points") or 0.0)
+                break
+
+        history = get_user_block_points_history(int(user_id))
+        blocks_played = len(history)
+        total_users = len(season_rows)
+
+        st.markdown("### My Season Summary")
+        st.markdown(f"**Your total:** {user_total:.1f}")
+        if user_rank is not None:
+            st.markdown(f"**Your rank:** {user_rank} of {total_users}")
+        else:
+            st.markdown(f"**Your rank:** - of {total_users}")
+        st.markdown(f"**Blocks played:** {blocks_played}")
+
+        if history:
+            hist_rows = [
+                {"Block": int(h.get("block_number")), "Points": float(h.get("points_total") or 0.0)}
+                for h in history
+            ]
+            st.markdown("### Block-by-block History")
+            st.dataframe(
+                pd.DataFrame(hist_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
