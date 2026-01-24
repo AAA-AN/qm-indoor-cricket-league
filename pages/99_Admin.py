@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import posixpath
+import json
 import re
 import streamlit.components.v1 as components
 from datetime import datetime, timezone
@@ -40,8 +41,12 @@ from src.db import (
     list_block_user_points,
     get_block_prices,
     upsert_block_prices_from_dict,
+    export_fantasy_backup_payload,
+    restore_fantasy_from_backup_payload,
+    wipe_all_fantasy_data,
+    fantasy_has_state,
 )
-from src.auth import admin_reset_password
+from src.auth import admin_reset_password, verify_password
 
 from src.dropbox_api import (
     get_access_token,
@@ -155,6 +160,40 @@ def _round_to_0_5(x: float) -> float:
 
 def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
+
+
+def _fantasy_backup_path(dropbox_file_path: str) -> str:
+    app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
+    return posixpath.join(app_folder, "fantasy_backup.json")
+
+
+def _fantasy_backup_to_dropbox(
+    app_key: str, app_secret: str, refresh_token: str, backup_path: str
+) -> None:
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+    payload = export_fantasy_backup_payload()
+    content = json.dumps(payload, indent=2).encode("utf-8")
+    backup_folder = posixpath.dirname(backup_path)
+    ensure_folder(access_token, backup_folder)
+    upload_file(access_token, backup_path, content, mode="overwrite", autorename=False)
+
+
+def _fantasy_restore_from_dropbox_if_needed(
+    app_key: str, app_secret: str, refresh_token: str, backup_path: str
+) -> tuple[bool, str | None]:
+    if fantasy_has_state():
+        return False, None
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+    try:
+        raw = download_file(access_token, backup_path)
+    except Exception:
+        return False, None
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+        restore_fantasy_from_backup_payload(payload)
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 st.title("Admin")
 
@@ -761,6 +800,27 @@ with tab_fantasy_blocks:
         except Exception:
             st.success(msg)
 
+    app_key = app_secret = refresh_token = dropbox_file_path = None
+    backup_path = None
+    try:
+        app_key = _get_secret("DROPBOX_APP_KEY")
+        app_secret = _get_secret("DROPBOX_APP_SECRET")
+        refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
+        dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")
+        backup_path = _fantasy_backup_path(dropbox_file_path)
+    except Exception:
+        pass
+
+    if backup_path and not st.session_state.get("fantasy_restore_attempted"):
+        restored, err = _fantasy_restore_from_dropbox_if_needed(
+            app_key, app_secret, refresh_token, backup_path
+        )
+        st.session_state["fantasy_restore_attempted"] = True
+        if err:
+            st.error(f"Fantasy restore failed: {err}")
+        elif restored:
+            st.info("Fantasy data restored from backup.")
+
     blocks = list_blocks_with_fixtures()
     if not blocks:
         # ---- Read Dropbox secrets (same as other pages) ----
@@ -842,6 +902,13 @@ with tab_fantasy_blocks:
                 disabled=current_state == "SCORED",
             ):
                 set_block_override(current_block, "LOCKED", override_until=None)
+                if backup_path and app_key and app_secret and refresh_token:
+                    try:
+                        _fantasy_backup_to_dropbox(
+                            app_key, app_secret, refresh_token, backup_path
+                        )
+                    except Exception:
+                        pass
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} locked."
                 st.rerun()
         with col2:
@@ -852,6 +919,13 @@ with tab_fantasy_blocks:
                 disabled=current_state == "SCORED",
             ):
                 set_block_override(current_block, "OPEN", override_until=None)
+                if backup_path and app_key and app_secret and refresh_token:
+                    try:
+                        _fantasy_backup_to_dropbox(
+                            app_key, app_secret, refresh_token, backup_path
+                        )
+                    except Exception:
+                        pass
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} unlocked."
                 st.rerun()
         with col3:
@@ -862,6 +936,13 @@ with tab_fantasy_blocks:
                 disabled=current_state == "SCORED",
             ):
                 clear_block_override(current_block)
+                if backup_path and app_key and app_secret and refresh_token:
+                    try:
+                        _fantasy_backup_to_dropbox(
+                            app_key, app_secret, refresh_token, backup_path
+                        )
+                    except Exception:
+                        pass
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} override cleared."
                 st.rerun()
         with col4:
@@ -1017,6 +1098,14 @@ with tab_fantasy_blocks:
                     if leaderboard:
                         st.session_state["admin_fantasy_leaderboard"] = leaderboard
 
+                    if backup_path and app_key and app_secret and refresh_token:
+                        try:
+                            _fantasy_backup_to_dropbox(
+                                app_key, app_secret, refresh_token, backup_path
+                            )
+                        except Exception:
+                            pass
+
                     st.session_state["admin_fantasy_msg"] = f"Block {current_block} scored."
                     st.rerun()
 
@@ -1034,3 +1123,48 @@ with tab_fantasy_blocks:
             use_container_width=True,
             hide_index=True,
         )
+
+    st.markdown("---")
+    st.subheader("Reset Fantasy League")
+    st.warning(
+        "This will permanently delete ALL fantasy data (blocks, entries, prices, and results). "
+        "This cannot be undone."
+    )
+    confirm_reset = st.checkbox(
+        "I understand this will delete all fantasy data",
+        key="fantasy_reset_confirm",
+    )
+    reset_pw = st.text_input(
+        "Re-enter your password to confirm",
+        type="password",
+        key="fantasy_reset_password",
+    )
+    if st.button("Reset Fantasy League", type="primary", use_container_width=True):
+        if not confirm_reset:
+            st.error("Please confirm you understand the reset.")
+        else:
+            current_user = st.session_state.get("user") or {}
+            username = str(current_user.get("username") or "").strip()
+            if not username:
+                st.error("Unable to identify current user.")
+            else:
+                user_row = get_user_by_username(username)
+                if not user_row or not verify_password(reset_pw, user_row.get("password_hash", "")):
+                    st.error("Password confirmation failed.")
+                else:
+                    wipe_all_fantasy_data()
+                    if backup_path and app_key and app_secret and refresh_token:
+                        try:
+                            _fantasy_backup_to_dropbox(
+                                app_key, app_secret, refresh_token, backup_path
+                            )
+                        except Exception:
+                            pass
+                    for k in list(st.session_state.keys()):
+                        if k.startswith("fantasy_editing_block_"):
+                            st.session_state.pop(k, None)
+                    st.session_state.pop("fantasy_last_block_number", None)
+                    st.session_state.pop("fantasy_restore_attempted", None)
+                    st.session_state.pop("admin_fantasy_leaderboard", None)
+                    st.success("Fantasy league reset.")
+                    st.rerun()

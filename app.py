@@ -47,12 +47,11 @@ def _dropbox_users_backup_path() -> str:
 def _dropbox_fantasy_backup_path() -> str:
     """
     Stores the fantasy backup next to your league workbook folder in Dropbox, under:
-      <app_folder>/app_data/fantasy_backup.json
+      <app_folder>/fantasy_backup.json
     """
     dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")
     app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
-    data_folder = posixpath.join(app_folder, "app_data")
-    return posixpath.join(data_folder, "fantasy_backup.json")
+    return posixpath.join(app_folder, "fantasy_backup.json")
 
 
 def backup_users_to_dropbox() -> None:

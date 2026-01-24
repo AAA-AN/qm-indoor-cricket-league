@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import json
+import posixpath
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -11,7 +13,7 @@ from src.guard import (
     render_sidebar_header,
     render_logout_button,
 )
-from src.dropbox_api import get_access_token, download_file
+from src.dropbox_api import get_access_token, download_file, upload_file, ensure_folder
 from src.excel_io import load_league_workbook_from_bytes
 from src.db import (
     rebuild_blocks_from_fixtures_if_missing,
@@ -30,6 +32,9 @@ from src.db import (
     get_season_user_totals,
     get_user_block_points_history,
     list_scored_blocks,
+    export_fantasy_backup_payload,
+    restore_fantasy_from_backup_payload,
+    fantasy_has_state,
 )
 
 st.set_page_config(page_title=f"{APP_TITLE} - QM Fantasy Social League", layout="wide")
@@ -89,6 +94,40 @@ def _is_active_value(v) -> bool:
     return True
 
 
+def _fantasy_backup_path(dropbox_file_path: str) -> str:
+    app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
+    return posixpath.join(app_folder, "fantasy_backup.json")
+
+
+def _fantasy_backup_to_dropbox(
+    app_key: str, app_secret: str, refresh_token: str, backup_path: str
+) -> None:
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+    payload = export_fantasy_backup_payload()
+    content = json.dumps(payload, indent=2).encode("utf-8")
+    backup_folder = posixpath.dirname(backup_path)
+    ensure_folder(access_token, backup_folder)
+    upload_file(access_token, backup_path, content, mode="overwrite", autorename=False)
+
+
+def _fantasy_restore_from_dropbox_if_needed(
+    app_key: str, app_secret: str, refresh_token: str, backup_path: str
+) -> bool:
+    if fantasy_has_state():
+        return False
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+    try:
+        raw = download_file(access_token, backup_path)
+    except Exception:
+        return False
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+        restore_fantasy_from_backup_payload(payload)
+        return True
+    except Exception:
+        return False
+
+
 try:
     app_key = _get_secret("DROPBOX_APP_KEY")
     app_secret = _get_secret("DROPBOX_APP_SECRET")
@@ -97,6 +136,15 @@ try:
 except Exception as e:
     st.error(str(e))
     st.stop()
+
+backup_path = _fantasy_backup_path(dropbox_path)
+if not st.session_state.get("fantasy_restore_attempted"):
+    restored = _fantasy_restore_from_dropbox_if_needed(
+        app_key, app_secret, refresh_token, backup_path
+    )
+    st.session_state["fantasy_restore_attempted"] = True
+    if restored:
+        st.info("Fantasy data restored from backup.")
 
 with st.spinner("Loading latest league workbook from Dropbox..."):
     try:
@@ -469,6 +517,12 @@ with tab_team:
                             budget_used=budget_used,
                             submitted_at_iso=submitted_at_iso,
                         )
+                        try:
+                            _fantasy_backup_to_dropbox(
+                                app_key, app_secret, refresh_token, backup_path
+                            )
+                        except Exception:
+                            pass
                         st.session_state[editing_key] = False
                         st.success("Fantasy team submitted.")
                         st.rerun()

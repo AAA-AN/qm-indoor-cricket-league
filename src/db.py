@@ -1203,6 +1203,7 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
                 first_name,
                 last_name,
                 username,
+                password_hash,
                 role,
                 is_active,
                 created_at,
@@ -1337,21 +1338,122 @@ def export_fantasy_backup_payload() -> Dict[str, Any]:
     ensure_fantasy_scoring_tables_exist()
     conn = get_conn()
     try:
-        def _fetch(table: str) -> List[Dict[str, Any]]:
-            rows = conn.execute(f"SELECT * FROM {table};").fetchall()
+        def _fetch(table: str, order_by: str) -> List[Dict[str, Any]]:
+            rows = conn.execute(f"SELECT * FROM {table} ORDER BY {order_by};").fetchall()
             return [dict(r) for r in rows]
 
         payload = {
             "version": 1,
-            "fantasy_blocks": _fetch("fantasy_blocks"),
-            "fantasy_block_fixtures": _fetch("fantasy_block_fixtures"),
-            "fantasy_prices": _fetch("fantasy_prices"),
-            "fantasy_entries": _fetch("fantasy_entries"),
-            "fantasy_entry_players": _fetch("fantasy_entry_players"),
-            "fantasy_block_player_points": _fetch("fantasy_block_player_points"),
-            "fantasy_block_user_points": _fetch("fantasy_block_user_points"),
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "tables": {
+                "fantasy_blocks": _fetch("fantasy_blocks", "block_number ASC"),
+                "fantasy_block_fixtures": _fetch(
+                    "fantasy_block_fixtures", "block_number ASC, fixture_order ASC"
+                ),
+                "fantasy_prices": _fetch("fantasy_prices", "block_number ASC, player_id ASC"),
+                "fantasy_entries": _fetch("fantasy_entries", "block_number ASC, user_id ASC"),
+                "fantasy_entry_players": _fetch(
+                    "fantasy_entry_players", "block_number ASC, user_id ASC, player_id ASC"
+                ),
+                "fantasy_block_player_points": _fetch(
+                    "fantasy_block_player_points", "block_number ASC, player_id ASC"
+                ),
+                "fantasy_block_user_points": _fetch(
+                    "fantasy_block_user_points", "block_number ASC, user_id ASC"
+                ),
+            },
         }
         return payload
+    finally:
+        conn.close()
+
+
+def restore_fantasy_from_backup_payload(payload: Dict[str, Any]) -> None:
+    """
+    Restore fantasy tables from a backup payload. Wipes existing fantasy data first.
+    """
+    if not isinstance(payload, dict) or int(payload.get("version") or 0) != 1:
+        raise ValueError("Invalid fantasy backup payload version.")
+    tables = payload.get("tables")
+    if not isinstance(tables, dict):
+        raise ValueError("Invalid fantasy backup payload: missing tables.")
+    for key in (
+        "fantasy_blocks",
+        "fantasy_block_fixtures",
+        "fantasy_prices",
+        "fantasy_entries",
+        "fantasy_entry_players",
+        "fantasy_block_player_points",
+        "fantasy_block_user_points",
+    ):
+        if key not in tables:
+            tables[key] = []
+
+    ensure_fantasy_block_tables_exist()
+    ensure_fantasy_team_tables_exist()
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        conn.execute("BEGIN;")
+        _wipe_fantasy_tables(conn)
+
+        def _insert_rows(table: str, rows: List[Dict[str, Any]]) -> None:
+            if not rows:
+                return
+            cols = list(rows[0].keys())
+            placeholders = ", ".join(["?"] * len(cols))
+            col_sql = ", ".join(cols)
+            values = [tuple(r.get(c) for c in cols) for r in rows]
+            conn.executemany(
+                f"INSERT INTO {table} ({col_sql}) VALUES ({placeholders});",
+                values,
+            )
+
+        _insert_rows("fantasy_blocks", tables.get("fantasy_blocks", []))
+        _insert_rows("fantasy_block_fixtures", tables.get("fantasy_block_fixtures", []))
+        _insert_rows("fantasy_prices", tables.get("fantasy_prices", []))
+        _insert_rows("fantasy_entries", tables.get("fantasy_entries", []))
+        _insert_rows("fantasy_entry_players", tables.get("fantasy_entry_players", []))
+        _insert_rows("fantasy_block_player_points", tables.get("fantasy_block_player_points", []))
+        _insert_rows("fantasy_block_user_points", tables.get("fantasy_block_user_points", []))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _wipe_fantasy_tables(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM fantasy_block_user_points;")
+    conn.execute("DELETE FROM fantasy_block_player_points;")
+    conn.execute("DELETE FROM fantasy_entry_players;")
+    conn.execute("DELETE FROM fantasy_entries;")
+    conn.execute("DELETE FROM fantasy_prices;")
+    conn.execute("DELETE FROM fantasy_block_fixtures;")
+    conn.execute("DELETE FROM fantasy_blocks;")
+
+
+def wipe_all_fantasy_data() -> None:
+    ensure_fantasy_block_tables_exist()
+    ensure_fantasy_team_tables_exist()
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        _wipe_fantasy_tables(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def fantasy_has_state() -> bool:
+    ensure_fantasy_block_tables_exist()
+    ensure_fantasy_team_tables_exist()
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT COUNT(*) AS n FROM fantasy_blocks;").fetchone()
+        if int(row["n"]) > 0:
+            return True
+        row2 = conn.execute("SELECT COUNT(*) AS n FROM fantasy_entries;").fetchone()
+        return int(row2["n"]) > 0
     finally:
         conn.close()
 
