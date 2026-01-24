@@ -149,7 +149,7 @@ if block_fixtures:
         match_id = fx.get("match_id", "")
         fixture_name = fixture_name_map.get(str(match_id).strip(), str(match_id))
         start_at = _format_dt_dd_mmm_hhmm(fx.get("start_at"))
-        st.write(f"- {fixture_name} — {start_at}")
+        st.write(f"- {start_at} — {fixture_name}")
 else:
     st.info("No fixtures found for this block.")
 
