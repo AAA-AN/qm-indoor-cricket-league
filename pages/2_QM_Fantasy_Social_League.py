@@ -606,10 +606,27 @@ with tab_results:
             captain_id = past_entry.get("captain_id")
             vice_id = past_entry.get("vice_captain_id")
 
+            bench_queue = []
+            for bid in [bench1_id, bench2_id]:
+                if bid and bid in past_points:
+                    bench_queue.append(bid)
+
+            subbed_in = set()
+            dnp_starters = set()
+            for sid in starting_ids:
+                if sid in past_points:
+                    continue
+                if bench_queue:
+                    subbed_in.add(bench_queue.pop(0))
+                    dnp_starters.add(sid)
+                else:
+                    dnp_starters.add(sid)
+
             rows = []
             for pid in starting_ids:
+                role = "Started" if pid in past_points and pid not in dnp_starters else "Did Not Play"
                 row = {
-                    "Role": "Starting",
+                    "Role": role,
                     "Player": _past_label(pid),
                     "Multiplier": "Captain" if pid == captain_id else "Vice" if pid == vice_id else "",
                 }
@@ -618,8 +635,9 @@ with tab_results:
                 rows.append(row)
 
             if bench1_id:
+                role = "Subbed In" if bench1_id in subbed_in else "Bench"
                 row = {
-                    "Role": "Bench 1",
+                    "Role": role,
                     "Player": _past_label(bench1_id),
                     "Multiplier": "Captain" if bench1_id == captain_id else "Vice" if bench1_id == vice_id else "",
                 }
@@ -627,8 +645,9 @@ with tab_results:
                     row["Points"] = float(past_points.get(bench1_id, 0.0))
                 rows.append(row)
             if bench2_id:
+                role = "Subbed In" if bench2_id in subbed_in else "Bench"
                 row = {
-                    "Role": "Bench 2",
+                    "Role": role,
                     "Player": _past_label(bench2_id),
                     "Multiplier": "Captain" if bench2_id == captain_id else "Vice" if bench2_id == vice_id else "",
                 }
