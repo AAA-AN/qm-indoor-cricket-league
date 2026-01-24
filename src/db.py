@@ -564,6 +564,59 @@ def get_current_block_number() -> Optional[int]:
         conn.close()
 
 
+def get_latest_scored_block_number() -> Optional[int]:
+    ensure_fantasy_block_tables_exist()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT MAX(block_number) AS max_block
+            FROM fantasy_blocks
+            WHERE scored_at IS NOT NULL;
+            """
+        ).fetchone()
+        if not row or row["max_block"] is None:
+            return None
+        return int(row["max_block"])
+    finally:
+        conn.close()
+
+
+def get_user_block_points(block_number: int, user_id: int) -> Optional[float]:
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT points_total
+            FROM fantasy_block_user_points
+            WHERE block_number = ? AND user_id = ?;
+            """,
+            (int(block_number), int(user_id)),
+        ).fetchone()
+        return float(row["points_total"]) if row else None
+    finally:
+        conn.close()
+
+
+def get_block_player_points(block_number: int) -> Dict[str, float]:
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT player_id, points
+            FROM fantasy_block_player_points
+            WHERE block_number = ?
+            ORDER BY player_id ASC;
+            """,
+            (int(block_number),),
+        ).fetchall()
+        return {str(r["player_id"]): float(r["points"]) for r in rows}
+    finally:
+        conn.close()
+
+
 def get_block_fixtures(block_number: int) -> List[Dict[str, Any]]:
     ensure_fantasy_block_tables_exist()
     conn = get_conn()

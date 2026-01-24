@@ -23,6 +23,10 @@ from src.db import (
     ensure_block_prices_default,
     save_fantasy_entry,
     get_fantasy_entry,
+    get_latest_scored_block_number,
+    get_user_block_points,
+    get_block_player_points,
+    list_block_user_points,
 )
 
 st.set_page_config(page_title=f"{APP_TITLE} - QM Fantasy Social League", layout="wide")
@@ -200,6 +204,7 @@ if not prices:
 player_rows = []
 player_label_by_id: dict[str, str] = {}
 player_team_by_id: dict[str, str] = {}
+player_name_by_id: dict[str, str] = {}
 player_price_by_id: dict[str, float] = {}
 
 for _, r in league.iterrows():
@@ -212,6 +217,7 @@ for _, r in league.iterrows():
     label = f"{price:.1f} – {name} – {team}"
     player_label_by_id[pid] = label
     player_team_by_id[pid] = team
+    player_name_by_id[pid] = name
     player_price_by_id[pid] = price
     player_rows.append({"player_id": pid, "label": label})
 
@@ -439,3 +445,156 @@ else:
                 st.session_state[editing_key] = False
                 st.success("Fantasy team submitted.")
                 st.rerun()
+
+st.markdown("---")
+st.subheader("Results")
+
+latest_block = get_latest_scored_block_number()
+if latest_block is None:
+    st.info("No results yet.")
+else:
+    st.markdown(f"### Latest Results (Block {latest_block})")
+    user_points = get_user_block_points(latest_block, int(user_id))
+    if user_points is None:
+        st.info("You did not submit a team for this block.")
+    else:
+        st.markdown(f"**Your total:** {user_points:.1f}")
+
+        entry_latest = get_fantasy_entry(latest_block, int(user_id))
+        if not entry_latest:
+            st.info("You did not submit a team for this block.")
+        else:
+            points_by_player = get_block_player_points(latest_block)
+            prices_latest = get_block_prices(latest_block)
+
+            def _label_for_block(pid: str) -> str:
+                price = float(prices_latest.get(pid, 7.5))
+                name = player_name_by_id.get(pid, pid)
+                team = player_team_by_id.get(pid, "Unknown") or "Unknown"
+                return f"{price:.1f} – {name} – {team}"
+
+            starting_ids = entry_latest.get("starting_player_ids", [])
+            bench1_id = entry_latest.get("bench1")
+            bench2_id = entry_latest.get("bench2")
+            captain_id = entry_latest.get("captain_id")
+            vice_id = entry_latest.get("vice_captain_id")
+            squad_ids_latest = entry_latest.get("squad_player_ids", [])
+
+            bench_queue = []
+            for bid in [bench1_id, bench2_id]:
+                if bid and bid in points_by_player:
+                    bench_queue.append(bid)
+
+            final_on_field = []
+            subbed_in = set()
+            auto_subs_applied = False
+
+            for sid in starting_ids:
+                if sid in points_by_player:
+                    final_on_field.append(sid)
+                else:
+                    if bench_queue:
+                        sub = bench_queue.pop(0)
+                        final_on_field.append(sub)
+                        subbed_in.add(sub)
+                        auto_subs_applied = True
+                    else:
+                        final_on_field.append(None)
+
+            rows = []
+            for sid in starting_ids:
+                rows.append(
+                    {
+                        "Role": "Starting",
+                        "Multiplier": "C" if sid == captain_id else "VC" if sid == vice_id else "",
+                        "Player": _label_for_block(sid),
+                        "Points": float(points_by_player.get(sid, 0.0)),
+                    }
+                )
+
+            if bench1_id:
+                rows.append(
+                    {
+                        "Role": "Subbed In" if bench1_id in subbed_in else "Bench",
+                        "Multiplier": "C" if bench1_id == captain_id else "VC" if bench1_id == vice_id else "",
+                        "Player": _label_for_block(bench1_id),
+                        "Points": float(points_by_player.get(bench1_id, 0.0)),
+                    }
+                )
+            if bench2_id:
+                rows.append(
+                    {
+                        "Role": "Subbed In" if bench2_id in subbed_in else "Bench",
+                        "Multiplier": "C" if bench2_id == captain_id else "VC" if bench2_id == vice_id else "",
+                        "Player": _label_for_block(bench2_id),
+                        "Points": float(points_by_player.get(bench2_id, 0.0)),
+                    }
+                )
+
+            df_results = pd.DataFrame(rows, columns=["Role", "Multiplier", "Player", "Points"])
+            st.dataframe(df_results, use_container_width=True, hide_index=True)
+
+            budget_used_latest = sum(float(prices_latest.get(pid, 7.5)) for pid in squad_ids_latest)
+            budget_remaining_latest = 60.0 - budget_used_latest
+            st.markdown(f"**Budget used:** {budget_used_latest:.1f} / 60.0")
+            st.markdown(f"**Budget remaining:** {budget_remaining_latest:.1f}")
+
+            if auto_subs_applied:
+                st.caption("Auto-subs were applied based on DNP starters.")
+
+st.markdown("---")
+st.subheader("Leaderboard")
+
+latest_block_for_lb = get_latest_scored_block_number()
+if latest_block_for_lb is None:
+    st.info("No results yet.")
+else:
+    scored_blocks = []
+    all_blocks = list_blocks_with_fixtures()
+    for b in all_blocks:
+        if b.get("scored_at"):
+            scored_blocks.append(int(b.get("block_number")))
+    scored_blocks = sorted(set(scored_blocks), reverse=True)
+
+    if not scored_blocks:
+        st.info("No results yet.")
+    else:
+        default_index = 0
+        if latest_block_for_lb in scored_blocks:
+            default_index = scored_blocks.index(latest_block_for_lb)
+
+        selected_block = st.selectbox(
+            "Select block",
+            options=scored_blocks,
+            index=default_index,
+            key="fantasy_leaderboard_block_select",
+        )
+
+        rows = list_block_user_points(int(selected_block))
+        if not rows:
+            st.info("No user points recorded for this block yet.")
+        else:
+            display_rows = []
+            rank = 1
+            for r in rows:
+                first_name = str(r.get("first_name") or "").strip()
+                last_name = str(r.get("last_name") or "").strip()
+                username = str(r.get("username") or "").strip()
+                if first_name or last_name:
+                    name = f"{first_name} {last_name}".strip()
+                else:
+                    name = username
+                display_rows.append(
+                    {
+                        "Rank": rank,
+                        "Name": name,
+                        "Points": float(r.get("points_total") or 0.0),
+                    }
+                )
+                rank += 1
+
+            st.dataframe(
+                pd.DataFrame(display_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
