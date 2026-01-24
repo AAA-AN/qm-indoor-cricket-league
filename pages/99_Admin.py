@@ -4,6 +4,8 @@ import posixpath
 import re
 import streamlit.components.v1 as components
 from datetime import datetime, timezone
+from io import BytesIO
+from openpyxl import load_workbook
 from zoneinfo import ZoneInfo
 
 from src.guard import (
@@ -32,6 +34,12 @@ from src.db import (
     set_block_override,
     clear_block_override,
     mark_block_scored,
+    get_all_entries_for_block,
+    upsert_block_player_points,
+    upsert_block_user_points,
+    list_block_user_points,
+    get_block_prices,
+    upsert_block_prices_from_dict,
 )
 from src.auth import admin_reset_password
 
@@ -119,6 +127,34 @@ def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
         return dt.strftime("%d-%b %H:%M")
     except Exception:
         return str(dt_val)
+
+
+def _load_named_table_from_xlsm_bytes(xbytes: bytes, table_name: str) -> pd.DataFrame:
+    wb = load_workbook(BytesIO(xbytes), data_only=True)
+    for ws in wb.worksheets:
+        if table_name in ws.tables:
+            table = ws.tables[table_name]
+            ref = table.ref
+            cells = ws[ref]
+            data = [[c.value for c in row] for row in cells]
+            if not data or len(data) < 2:
+                return pd.DataFrame()
+            headers = [str(h).strip() if h is not None else "" for h in data[0]]
+            rows = data[1:]
+            df = pd.DataFrame(rows, columns=headers)
+            blank_header_cols = [c for c in df.columns if str(c).strip() == ""]
+            if blank_header_cols:
+                df = df.drop(columns=blank_header_cols)
+            return df
+    return pd.DataFrame()
+
+
+def _round_to_0_5(x: float) -> float:
+    return round(x * 2) / 2
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
 
 st.title("Admin")
 
@@ -830,6 +866,137 @@ with tab_fantasy_blocks:
                 key="fantasy_block_score_now",
                 disabled=current_state == "SCORED",
             ):
-                mark_block_scored(current_block, london_now_iso)
-                st.session_state["admin_fantasy_msg"] = f"Block {current_block} marked as scored."
-                st.rerun()
+                try:
+                    app_key = _get_secret("DROPBOX_APP_KEY")
+                    app_secret = _get_secret("DROPBOX_APP_SECRET")
+                    refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
+                    dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")
+                except Exception as e:
+                    st.error(str(e))
+                    st.stop()
+
+                with st.spinner("Scoring block from Dropbox..."):
+                    access_token = get_access_token(app_key, app_secret, refresh_token)
+                    xbytes = download_file(access_token, dropbox_file_path)
+                    table_name = f"Week{current_block}Stats"
+                    week_df = _load_named_table_from_xlsm_bytes(xbytes, table_name)
+
+                    if week_df is None or week_df.empty:
+                        st.error(f"Could not load table '{table_name}' from the workbook.")
+                        st.stop()
+
+                    week_df.columns = [str(c).strip() for c in week_df.columns]
+                    if "PlayerID" not in week_df.columns or "Fantasy Points" not in week_df.columns:
+                        st.error("Week table must include 'PlayerID' and 'Fantasy Points' columns.")
+                        st.stop()
+
+                    pts = week_df[["PlayerID", "Fantasy Points"]].copy()
+                    pts["PlayerID"] = pts["PlayerID"].astype(str).str.strip()
+                    pts["Fantasy Points"] = pd.to_numeric(pts["Fantasy Points"], errors="coerce").fillna(0.0)
+                    pts = pts[pts["PlayerID"] != ""]
+                    points_by_player = (
+                        pts.groupby("PlayerID")["Fantasy Points"].sum().to_dict()
+                        if not pts.empty
+                        else {}
+                    )
+
+                    entries = get_all_entries_for_block(current_block)
+                    user_points: dict[int, float] = {}
+
+                    for entry in entries:
+                        entry_players = entry.get("entry_players", [])
+                        starting_ids = [
+                            str(r["player_id"])
+                            for r in entry_players
+                            if int(r.get("is_starting") or 0) == 1
+                        ]
+                        bench1_id = ""
+                        bench2_id = ""
+                        captain_id = ""
+                        vice_id = ""
+                        for r in entry_players:
+                            if r.get("bench_order") == 1:
+                                bench1_id = str(r["player_id"])
+                            elif r.get("bench_order") == 2:
+                                bench2_id = str(r["player_id"])
+                            if int(r.get("is_captain") or 0) == 1:
+                                captain_id = str(r["player_id"])
+                            if int(r.get("is_vice_captain") or 0) == 1:
+                                vice_id = str(r["player_id"])
+
+                        bench_queue = []
+                        for bid in [bench1_id, bench2_id]:
+                            if bid and bid in points_by_player:
+                                bench_queue.append(bid)
+
+                        final_on_field = []
+                        for sid in starting_ids:
+                            if sid in points_by_player:
+                                final_on_field.append(sid)
+                            else:
+                                if bench_queue:
+                                    final_on_field.append(bench_queue.pop(0))
+                                else:
+                                    final_on_field.append(None)
+
+                        total = 0.0
+                        for pid in final_on_field:
+                            if pid and pid in points_by_player:
+                                total += float(points_by_player.get(pid, 0.0))
+
+                        if captain_id in final_on_field and captain_id in points_by_player:
+                            total += float(points_by_player.get(captain_id, 0.0))
+                        if vice_id in final_on_field and vice_id in points_by_player and vice_id != captain_id:
+                            total += float(points_by_player.get(vice_id, 0.0)) * 0.5
+
+                        user_points[int(entry["user_id"])] = float(total)
+
+                    upsert_block_player_points(current_block, points_by_player)
+                    upsert_block_user_points(current_block, user_points, london_now_iso)
+                    mark_block_scored(current_block, london_now_iso)
+
+                    played_players = list(points_by_player.keys())
+                    current_prices = get_block_prices(current_block)
+                    if not current_prices:
+                        current_prices = {pid: 7.5 for pid in played_players}
+
+                    if played_players:
+                        pts_series = pd.Series([float(points_by_player[p]) for p in played_players])
+                        median = float(pts_series.median())
+                        q25 = float(pts_series.quantile(0.25))
+                        q75 = float(pts_series.quantile(0.75))
+                        iqr = q75 - q25
+                    else:
+                        median = 0.0
+                        iqr = 0.0
+
+                    k = 0.5
+                    next_prices: dict[str, float] = {}
+                    for pid in played_players:
+                        current_price = float(current_prices.get(pid, 7.5))
+                        delta_raw = 0.0
+                        if pid in points_by_player:
+                            denom = max(iqr, 1.0)
+                            delta_raw = k * (float(points_by_player[pid]) - median) / denom
+                        delta_capped = _clamp(delta_raw, -1.0, 1.0)
+                        delta = _round_to_0_5(delta_capped)
+                        price_next = _clamp(_round_to_0_5(current_price + delta), 5.0, 10.0)
+                        next_prices[pid] = float(price_next)
+
+                    if next_prices:
+                        upsert_block_prices_from_dict(current_block + 1, next_prices)
+
+                    leaderboard = list_block_user_points(current_block)
+                    if leaderboard:
+                        st.session_state["admin_fantasy_leaderboard"] = leaderboard
+
+                    st.session_state["admin_fantasy_msg"] = f"Block {current_block} scored."
+                    st.rerun()
+
+    if st.session_state.get("admin_fantasy_leaderboard"):
+        st.markdown("### Block Leaderboard")
+        st.dataframe(
+            pd.DataFrame(st.session_state["admin_fantasy_leaderboard"]),
+            use_container_width=True,
+            hide_index=True,
+        )
