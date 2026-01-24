@@ -130,10 +130,26 @@ st.subheader(f"Current Block: {current_block}")
 block_fixtures = get_block_fixtures(current_block)
 if block_fixtures:
     st.markdown("**Fixtures in this block:**")
+    fixture_name_map = {}
+    if "MatchID" in fixtures_df.columns:
+        fx_tmp = fixtures_df.copy()
+        fx_tmp["MatchID"] = fx_tmp["MatchID"].astype(str).str.strip()
+        if "Home Team" in fx_tmp.columns and "Away Team" in fx_tmp.columns:
+            fx_tmp["Home Team"] = fx_tmp["Home Team"].astype(str).str.strip()
+            fx_tmp["Away Team"] = fx_tmp["Away Team"].astype(str).str.strip()
+            for _, r in fx_tmp.iterrows():
+                mid = str(r.get("MatchID") or "").strip()
+                if not mid:
+                    continue
+                home = str(r.get("Home Team") or "").strip()
+                away = str(r.get("Away Team") or "").strip()
+                if home and away:
+                    fixture_name_map[mid] = f"{home} vs {away}"
     for fx in block_fixtures:
         match_id = fx.get("match_id", "")
+        fixture_name = fixture_name_map.get(str(match_id).strip(), str(match_id))
         start_at = _format_dt_dd_mmm_hhmm(fx.get("start_at"))
-        st.write(f"- {match_id} — {start_at}")
+        st.write(f"- {fixture_name} — {start_at}")
 else:
     st.info("No fixtures found for this block.")
 
