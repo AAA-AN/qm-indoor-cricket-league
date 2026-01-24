@@ -902,11 +902,6 @@ with tab_fantasy_blocks:
                 current_scored_at = b.get("scored_at")
                 break
         st.write(f"**Current block:** {current_block} (state: {current_state})")
-        if users_backup_path:
-            st.caption(f"Users backup path: {users_backup_path}")
-        if backup_path:
-            st.caption(f"Fantasy backup path: {backup_path}")
-
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             if st.button(
@@ -925,6 +920,28 @@ with tab_fantasy_blocks:
                         st.error(f"Fantasy backup failed: {e}")
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} locked."
                 st.rerun()
+            if st.button(
+                "Backup fantasy now",
+                use_container_width=True,
+                key="fantasy_backup_now",
+            ):
+                if backup_path and app_key and app_secret and refresh_token:
+                    try:
+                        _fantasy_backup_to_dropbox(
+                            app_key, app_secret, refresh_token, backup_path
+                        )
+                        st.success("Fantasy backup uploaded to Dropbox.")
+                        try:
+                            access_token = get_access_token(app_key, app_secret, refresh_token)
+                            raw = download_file(access_token, backup_path)
+                            json.loads(raw.decode("utf-8"))
+                            st.success("Backup verified (download + parse OK).")
+                        except Exception as e:
+                            st.warning(f"Backup verification failed: {e}")
+                    except Exception as e:
+                        st.error(f"Fantasy backup failed: {e}")
+                else:
+                    st.error("Dropbox configuration is missing.")
         with col2:
             if st.button(
                 "Unlock now",
@@ -968,28 +985,6 @@ with tab_fantasy_blocks:
                 key=confirm_key,
                 disabled=current_state == "SCORED",
             )
-            if st.button(
-                "Backup fantasy now",
-                use_container_width=True,
-                key="fantasy_backup_now",
-            ):
-                if backup_path and app_key and app_secret and refresh_token:
-                    try:
-                        _fantasy_backup_to_dropbox(
-                            app_key, app_secret, refresh_token, backup_path
-                        )
-                        st.success("Fantasy backup uploaded to Dropbox.")
-                        try:
-                            access_token = get_access_token(app_key, app_secret, refresh_token)
-                            raw = download_file(access_token, backup_path)
-                            json.loads(raw.decode("utf-8"))
-                            st.success("Backup verified (download + parse OK).")
-                        except Exception as e:
-                            st.warning(f"Backup verification failed: {e}")
-                    except Exception as e:
-                        st.error(f"Fantasy backup failed: {e}")
-                else:
-                    st.error("Dropbox configuration is missing.")
             if st.button(
                 "Score block (stats entered)",
                 use_container_width=True,
