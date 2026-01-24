@@ -209,7 +209,7 @@ for _, r in league.iterrows():
     name = str(r.get(name_col, "")).strip()
     team = str(r.get("Team", "")).strip() or "Unknown"
     price = float(prices.get(pid, 7.5))
-    label = f"{name} ({team}) — £{price:.1f}"
+    label = f"{price:.1f} – {name} – {team}"
     player_label_by_id[pid] = label
     player_team_by_id[pid] = team
     player_price_by_id[pid] = price
@@ -240,6 +240,7 @@ controls_disabled = is_locked or is_scored
 
 st.markdown("---")
 st.subheader("Pick Your Fantasy Team")
+budget_placeholder = st.empty()
 
 squad_labels = st.multiselect(
     "Squad (pick 8)",
@@ -311,8 +312,8 @@ vice_id = player_id_by_label.get(vice_label) if vice_label in player_id_by_label
 budget_used = sum(player_price_by_id.get(pid, 0.0) for pid in squad_ids)
 budget_remaining = 60.0 - budget_used
 
-st.markdown(f"**Budget used:** £{budget_used:.1f} / £60.0")
-st.markdown(f"**Remaining:** £{budget_remaining:.1f}")
+budget_placeholder.markdown(f"**Budget used:** {budget_used:.1f} / 60.0")
+budget_placeholder.markdown(f"**Budget remaining:** {budget_remaining:.1f}")
 
 errors = []
 if len(squad_ids) != 8:
