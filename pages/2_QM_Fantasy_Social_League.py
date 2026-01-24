@@ -702,7 +702,7 @@ with tab_leaderboard:
                 hide_index=True,
             )
     st.markdown("---")
-    st.subheader("Block Leaderboard")
+    st.subheader("Block Leaderboards")
 
     latest_block_for_lb = get_latest_scored_block_number()
     if latest_block_for_lb is None:
