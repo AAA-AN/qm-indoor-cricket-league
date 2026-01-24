@@ -635,7 +635,7 @@ with tab_results:
                 rows.append(row)
 
             if bench1_id:
-                role = "Subbed In" if bench1_id in subbed_in else "Bench"
+                role = "Started" if bench1_id in subbed_in else "Bench"
                 row = {
                     "Role": role,
                     "Player": _past_label(bench1_id),
@@ -645,7 +645,7 @@ with tab_results:
                     row["Points"] = float(past_points.get(bench1_id, 0.0))
                 rows.append(row)
             if bench2_id:
-                role = "Subbed In" if bench2_id in subbed_in else "Bench"
+                role = "Started" if bench2_id in subbed_in else "Bench"
                 row = {
                     "Role": role,
                     "Player": _past_label(bench2_id),
