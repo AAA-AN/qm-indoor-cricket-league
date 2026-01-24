@@ -638,63 +638,6 @@ with tab_results:
             )
 
 with tab_leaderboard:
-    st.subheader("Leaderboard")
-
-    latest_block_for_lb = get_latest_scored_block_number()
-    if latest_block_for_lb is None:
-        st.info("No results yet.")
-    else:
-        scored_blocks = []
-        all_blocks = list_blocks_with_fixtures()
-        for b in all_blocks:
-            if b.get("scored_at"):
-                scored_blocks.append(int(b.get("block_number")))
-        scored_blocks = sorted(set(scored_blocks), reverse=True)
-
-        if not scored_blocks:
-            st.info("No results yet.")
-        else:
-            default_index = 0
-            if latest_block_for_lb in scored_blocks:
-                default_index = scored_blocks.index(latest_block_for_lb)
-
-            selected_block = st.selectbox(
-                "Select block",
-                options=scored_blocks,
-                index=default_index,
-                key="fantasy_leaderboard_block_select",
-            )
-
-            rows = list_block_user_points(int(selected_block))
-            if not rows:
-                st.info("No user points recorded for this block yet.")
-            else:
-                display_rows = []
-                rank = 1
-                for r in rows:
-                    first_name = str(r.get("first_name") or "").strip()
-                    last_name = str(r.get("last_name") or "").strip()
-                    username = str(r.get("username") or "").strip()
-                    if first_name or last_name:
-                        name = f"{first_name} {last_name}".strip()
-                    else:
-                        name = username
-                    display_rows.append(
-                        {
-                            "Rank": rank,
-                            "Name": name,
-                            "Points": float(r.get("points_total") or 0.0),
-                        }
-                    )
-                    rank += 1
-
-                st.dataframe(
-                    pd.DataFrame(display_rows),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-    st.markdown("---")
     st.subheader("Season")
 
     season_rows = get_season_user_totals()
@@ -758,3 +701,59 @@ with tab_leaderboard:
                 use_container_width=True,
                 hide_index=True,
             )
+    st.markdown("---")
+    st.subheader("Block Leaderboard")
+
+    latest_block_for_lb = get_latest_scored_block_number()
+    if latest_block_for_lb is None:
+        st.info("No results yet.")
+    else:
+        scored_blocks = []
+        all_blocks = list_blocks_with_fixtures()
+        for b in all_blocks:
+            if b.get("scored_at"):
+                scored_blocks.append(int(b.get("block_number")))
+        scored_blocks = sorted(set(scored_blocks), reverse=True)
+
+        if not scored_blocks:
+            st.info("No results yet.")
+        else:
+            default_index = 0
+            if latest_block_for_lb in scored_blocks:
+                default_index = scored_blocks.index(latest_block_for_lb)
+
+            selected_block = st.selectbox(
+                "Select block",
+                options=scored_blocks,
+                index=default_index,
+                key="fantasy_leaderboard_block_select",
+            )
+
+            rows = list_block_user_points(int(selected_block))
+            if not rows:
+                st.info("No user points recorded for this block yet.")
+            else:
+                display_rows = []
+                rank = 1
+                for r in rows:
+                    first_name = str(r.get("first_name") or "").strip()
+                    last_name = str(r.get("last_name") or "").strip()
+                    username = str(r.get("username") or "").strip()
+                    if first_name or last_name:
+                        name = f"{first_name} {last_name}".strip()
+                    else:
+                        name = username
+                    display_rows.append(
+                        {
+                            "Rank": rank,
+                            "Name": name,
+                            "Points": float(r.get("points_total") or 0.0),
+                        }
+                    )
+                    rank += 1
+
+                st.dataframe(
+                    pd.DataFrame(display_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
