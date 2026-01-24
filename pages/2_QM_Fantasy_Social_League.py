@@ -468,7 +468,6 @@ with tab_team:
                         st.error(str(e))
 
 with tab_results:
-    st.markdown("---")
     st.subheader("Results")
 
     latest_block = get_latest_scored_block_number()
@@ -639,7 +638,6 @@ with tab_results:
             )
 
 with tab_leaderboard:
-    st.markdown("---")
     st.subheader("Leaderboard")
 
     latest_block_for_lb = get_latest_scored_block_number()
