@@ -237,12 +237,14 @@ default_squad_labels = [player_label_by_id.get(pid) for pid in default_squad_ids
 default_starting_labels = [player_label_by_id.get(pid) for pid in default_starting_ids if pid in player_label_by_id]
 
 controls_disabled = is_locked or is_scored
-editing_key = f"fantasy_editing_{current_block}"
+editing_key = f"fantasy_editing_block_{current_block}"
 if controls_disabled:
     st.session_state[editing_key] = False
 else:
-    if editing_key not in st.session_state:
-        st.session_state[editing_key] = False if entry else True
+    if entry is None:
+        st.session_state[editing_key] = True
+    elif editing_key not in st.session_state:
+        st.session_state[editing_key] = False
 editing = bool(st.session_state.get(editing_key))
 
 st.markdown("---")
