@@ -94,8 +94,13 @@ def _is_active_value(v) -> bool:
     return True
 
 
+def _app_backup_folder(dropbox_file_path: str) -> str:
+    app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
+    return posixpath.join(app_folder, "app_data")
+
+
 def _fantasy_backup_path(dropbox_file_path: str) -> str:
-    return posixpath.join(posixpath.dirname(dropbox_file_path.rstrip("/")), "fantasy_backup.json")
+    return posixpath.join(_app_backup_folder(dropbox_file_path), "fantasy_backup.json")
 
 
 def _fantasy_backup_to_dropbox(
@@ -105,7 +110,8 @@ def _fantasy_backup_to_dropbox(
     payload = export_fantasy_backup_payload()
     content = json.dumps(payload, indent=2).encode("utf-8")
     backup_folder = posixpath.dirname(backup_path)
-    ensure_folder(access_token, backup_folder)
+    if backup_folder not in ("", "/"):
+        ensure_folder(access_token, backup_folder)
     upload_file(access_token, backup_path, content, mode="overwrite", autorename=False)
 
 

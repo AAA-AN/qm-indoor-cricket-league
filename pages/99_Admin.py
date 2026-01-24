@@ -162,8 +162,17 @@ def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
 
+def _app_backup_folder(dropbox_file_path: str) -> str:
+    app_folder = posixpath.dirname(dropbox_file_path.rstrip("/"))
+    return posixpath.join(app_folder, "app_data")
+
+
 def _fantasy_backup_path(dropbox_file_path: str) -> str:
-    return posixpath.join(posixpath.dirname(dropbox_file_path.rstrip("/")), "fantasy_backup.json")
+    return posixpath.join(_app_backup_folder(dropbox_file_path), "fantasy_backup.json")
+
+
+def _users_backup_path(dropbox_file_path: str) -> str:
+    return posixpath.join(_app_backup_folder(dropbox_file_path), "users_backup.json")
 
 
 def _fantasy_backup_to_dropbox(
@@ -173,7 +182,8 @@ def _fantasy_backup_to_dropbox(
     payload = export_fantasy_backup_payload()
     content = json.dumps(payload, indent=2).encode("utf-8")
     backup_folder = posixpath.dirname(backup_path)
-    ensure_folder(access_token, backup_folder)
+    if backup_folder not in ("", "/"):
+        ensure_folder(access_token, backup_folder)
     upload_file(access_token, backup_path, content, mode="overwrite", autorename=False)
 
 
@@ -807,6 +817,7 @@ with tab_fantasy_blocks:
         refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
         dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")
         backup_path = _fantasy_backup_path(dropbox_file_path)
+        users_backup_path = _users_backup_path(dropbox_file_path)
     except Exception:
         pass
 
@@ -891,6 +902,8 @@ with tab_fantasy_blocks:
                 current_scored_at = b.get("scored_at")
                 break
         st.write(f"**Current block:** {current_block} (state: {current_state})")
+        if users_backup_path:
+            st.caption(f"Users backup path: {users_backup_path}")
         if backup_path:
             st.caption(f"Fantasy backup path: {backup_path}")
 
