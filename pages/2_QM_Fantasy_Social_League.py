@@ -289,7 +289,8 @@ if not editing:
                 }
             )
 
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        df_selected = pd.DataFrame(rows, columns=["Role", "Player", "Multiplier"])
+        st.dataframe(df_selected, use_container_width=True, hide_index=True)
 
         budget_used = sum(player_price_by_id.get(pid, 0.0) for pid in squad_ids)
         budget_remaining = 60.0 - budget_used
