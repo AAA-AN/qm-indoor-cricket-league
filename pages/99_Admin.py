@@ -135,21 +135,6 @@ def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
         return str(dt_val)
 
 
-def _format_dt_dd_mmm_yyyy_hhmm(dt_val: str | None) -> str | None:
-    if dt_val is None:
-        return None
-    s = str(dt_val).strip()
-    if not s:
-        return s
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(s)
-        return dt.strftime("%d %b %Y %H:%M")
-    except Exception:
-        return str(dt_val)
-
-
 def _load_named_table_from_xlsm_bytes(xbytes: bytes, table_name: str) -> tuple[pd.DataFrame, bool]:
     wb = load_workbook(BytesIO(xbytes), data_only=True)
     for ws in wb.worksheets:
@@ -891,7 +876,7 @@ with tab_fantasy_blocks:
                     "block_number": b.get("block_number"),
                     "first_start_at": _format_dt_dd_mmm_hhmm(b.get("first_start_at")),
                     "lock_at": _format_dt_dd_mmm_hhmm(b.get("lock_at")),
-                    "open_at": _format_dt_dd_mmm_yyyy_hhmm(open_at),
+                    "open_at": _format_dt_dd_mmm_hhmm(open_at),
                     "scored_at": _format_dt_dd_mmm_hhmm(b.get("scored_at")),
                     "override_state": b.get("override_state"),
                     "override_until": _format_dt_dd_mmm_hhmm(b.get("override_until")),
