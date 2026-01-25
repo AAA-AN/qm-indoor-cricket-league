@@ -208,7 +208,7 @@ def _fantasy_restore_from_dropbox_if_needed(
 st.title("Admin")
 
 tab_users, tab_scorecards, tab_fantasy_blocks = st.tabs(
-    ["User Management", "Scorecard Management", "Fantasy Blocks"]
+    ["User Management", "Scorecard Management", "Fantasy"]
 )
 
 # =========================================================
@@ -801,7 +801,7 @@ with tab_scorecards:
 # TAB 3: FANTASY BLOCKS
 # =========================================================
 with tab_fantasy_blocks:
-    st.subheader("Fantasy Blocks")
+    st.subheader("Fantasy")
 
     if st.session_state.get("admin_fantasy_msg"):
         msg = st.session_state.pop("admin_fantasy_msg")
