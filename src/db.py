@@ -511,6 +511,71 @@ def mark_block_scored(block_number: int, scored_at: Any) -> None:
         conn.close()
 
 
+def get_block_first_fixture_start_at(block_number: int) -> Optional[datetime]:
+    ensure_fantasy_block_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT start_at
+            FROM fantasy_block_fixtures
+            WHERE block_number = ?;
+            """,
+            (int(block_number),),
+        ).fetchall()
+        dts: List[datetime] = []
+        for r in rows:
+            dt = _parse_iso_datetime(r["start_at"])
+            if not dt:
+                continue
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=ZoneInfo("Europe/London"))
+            else:
+                dt = dt.astimezone(ZoneInfo("Europe/London"))
+            dts.append(dt)
+        return min(dts) if dts else None
+    finally:
+        conn.close()
+
+
+def get_block_scored_at(block_number: int) -> Optional[datetime]:
+    ensure_fantasy_block_tables_exist()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT scored_at
+            FROM fantasy_blocks
+            WHERE block_number = ?;
+            """,
+            (int(block_number),),
+        ).fetchone()
+        if not row:
+            return None
+        dt = _parse_iso_datetime(row["scored_at"])
+        if not dt:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=ZoneInfo("Europe/London"))
+        return dt.astimezone(ZoneInfo("Europe/London"))
+    finally:
+        conn.close()
+
+
+def get_block_open_at(block_number: int, now_dt: datetime) -> Optional[datetime]:
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=ZoneInfo("Europe/London"))
+    if int(block_number) == 1:
+        first_start_at = get_block_first_fixture_start_at(1)
+        if first_start_at is None:
+            return None
+        return first_start_at - timedelta(days=7)
+    prev_scored_at = get_block_scored_at(int(block_number) - 1)
+    if prev_scored_at is None:
+        return None
+    return prev_scored_at
+
+
 def get_effective_block_state(block_number: int, now_dt: datetime) -> str:
     ensure_fantasy_block_tables_exist()
     if now_dt.tzinfo is None:
@@ -537,6 +602,15 @@ def get_effective_block_state(block_number: int, now_dt: datetime) -> str:
         if override_state in ("OPEN", "LOCKED"):
             if override_until is None or now_dt < override_until:
                 return override_state
+
+        open_at = get_block_open_at(block_number, now_dt)
+        if int(block_number) == 1 and open_at is None:
+            pass
+        else:
+            if open_at is None:
+                return "NOT_OPEN"
+            if now_dt < open_at:
+                return "NOT_OPEN"
 
         lock_at = _parse_iso_datetime(row["lock_at"])
         if lock_at and now_dt >= lock_at:

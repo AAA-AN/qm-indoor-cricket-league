@@ -19,6 +19,7 @@ from src.db import (
     rebuild_blocks_from_fixtures_if_missing,
     get_current_block_number,
     get_effective_block_state,
+    get_block_open_at,
     get_block_fixtures,
     list_blocks_with_fixtures,
     get_block_prices,
@@ -212,6 +213,21 @@ st.write(f"**Selections:** {state}")
 
 is_locked = state == "LOCKED"
 is_scored = state == "SCORED"
+is_not_open = state == "NOT_OPEN"
+
+not_open_blocks_interaction = False
+if is_not_open:
+    open_at = get_block_open_at(current_block, now_london)
+    if int(current_block) == 1 and open_at is None:
+        st.info("This block is not open yet (opening date unavailable).")
+        not_open_blocks_interaction = False
+    elif open_at is None:
+        st.info("This block is not open yet. It will open once the previous block is scored.")
+        not_open_blocks_interaction = True
+    else:
+        open_at_fmt = _format_dt_dd_mmm_hhmm(open_at)
+        st.info(f"This block is not open yet. It will open on {open_at_fmt}.")
+        not_open_blocks_interaction = True
 
 if is_locked:
     st.info("Selections are locked.")
@@ -314,7 +330,7 @@ default_vice = entry.get("vice_captain_id") if entry else None
 default_squad_labels = [player_label_by_id.get(pid) for pid in default_squad_ids if pid in player_label_by_id]
 default_starting_labels = [player_label_by_id.get(pid) for pid in default_starting_ids if pid in player_label_by_id]
 
-controls_disabled = is_locked or is_scored
+controls_disabled = is_locked or is_scored or not_open_blocks_interaction
 editing_key = f"fantasy_editing_block_{current_block}"
 last_block_key = "fantasy_last_block_number"
 last_block = st.session_state.get(last_block_key)
@@ -396,7 +412,9 @@ with tab_team:
                     st.rerun()
         else:
             st.info(
-                "Selections are locked and you have not submitted a team for this block."
+                "This block is not open yet."
+                if is_not_open and controls_disabled
+                else "Selections are locked and you have not submitted a team for this block."
                 if controls_disabled
                 else "No team submitted yet."
             )

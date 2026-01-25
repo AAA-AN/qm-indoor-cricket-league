@@ -31,6 +31,7 @@ from src.db import (
     rebuild_blocks_from_fixtures_if_missing,
     list_blocks_with_fixtures,
     get_effective_block_state,
+    get_block_open_at,
     get_current_block_number,
     set_block_override,
     clear_block_override,
@@ -130,6 +131,21 @@ def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
     try:
         dt = datetime.fromisoformat(s)
         return dt.strftime("%d-%b %H:%M")
+    except Exception:
+        return str(dt_val)
+
+
+def _format_dt_dd_mmm_yyyy_hhmm(dt_val: str | None) -> str | None:
+    if dt_val is None:
+        return None
+    s = str(dt_val).strip()
+    if not s:
+        return s
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+        return dt.strftime("%d %b %Y %H:%M")
     except Exception:
         return str(dt_val)
 
@@ -863,6 +879,7 @@ with tab_fantasy_blocks:
     else:
         rows = []
         for b in blocks:
+            open_at = get_block_open_at(b.get("block_number"), london_now)
             fixtures_list = []
             for fx in b.get("fixtures", []):
                 match_id = fx.get("match_id", "")
@@ -874,6 +891,7 @@ with tab_fantasy_blocks:
                     "block_number": b.get("block_number"),
                     "first_start_at": _format_dt_dd_mmm_hhmm(b.get("first_start_at")),
                     "lock_at": _format_dt_dd_mmm_hhmm(b.get("lock_at")),
+                    "open_at": _format_dt_dd_mmm_yyyy_hhmm(open_at),
                     "scored_at": _format_dt_dd_mmm_hhmm(b.get("scored_at")),
                     "override_state": b.get("override_state"),
                     "override_until": _format_dt_dd_mmm_hhmm(b.get("override_until")),
