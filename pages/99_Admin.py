@@ -930,7 +930,7 @@ with tab_fantasy_blocks:
                         _fantasy_backup_to_dropbox(
                             app_key, app_secret, refresh_token, backup_path
                         )
-                        st.success("Fantasy backup uploaded to Dropbox.")
+                        st.success("Fantasy backup uploaded.")
                         try:
                             access_token = get_access_token(app_key, app_secret, refresh_token)
                             raw = download_file(access_token, backup_path)
@@ -978,7 +978,7 @@ with tab_fantasy_blocks:
                 st.rerun()
         with col4:
             confirm_key = f"fantasy_block_confirm_week_{current_block}"
-            confirm_text = f"I confirm Week{current_block}Stats is complete"
+            confirm_text = f"I confirm Week {current_block} Stats is complete"
             confirm_ok = st.checkbox(
                 confirm_text,
                 value=False,
