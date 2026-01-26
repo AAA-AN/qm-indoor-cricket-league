@@ -448,6 +448,17 @@ with tab_team:
         prev_key = f"fantasy_prev_selected_ids_{current_block}"
         init_key = f"fantasy_squad_initialized_{current_block}"
 
+        def _as_pid_list(v) -> list[str]:
+            """Normalize session state values to a list[str] of PlayerIDs."""
+            if v is None:
+                return []
+            if isinstance(v, str):
+                return [v]
+            try:
+                return list(v)
+            except Exception:
+                return []
+
         # Re-initialize the squad selection from the saved entry when entering edit mode.
         # This prevents stale session_state from overwriting the saved team after submission.
         if not st.session_state.get(init_key):
@@ -461,6 +472,16 @@ with tab_team:
             st.session_state[init_key] = True
             # Ensure the add picker starts blank each edit session.
             st.session_state[f"fantasy_add_pick_{current_block}"] = None
+
+        # Normalize in-memory squad to avoid string-vs-list bugs and drop invalid IDs.
+        st.session_state[squad_key] = _as_pid_list(
+            st.session_state.get(squad_key, default_squad_ids)
+        )
+        st.session_state[squad_key] = [
+            str(pid).strip()
+            for pid in st.session_state[squad_key]
+            if pid and str(pid).strip() in player_label_by_id
+        ]
 
         # Session state is the single source of truth for the current selection.
         selected_ids = st.session_state.get(squad_key, [])
@@ -608,7 +629,10 @@ with tab_team:
             ):
                 pid = label_to_pid.get(remove_label)
                 if pid:
-                    st.session_state[squad_key] = [x for x in selected_for_calc if x != pid]
+                    # Remove from the live session state list to avoid stale local copies.
+                    current_ids = _as_pid_list(st.session_state.get(squad_key, []))
+                    current_ids = [str(x).strip() for x in current_ids if x]
+                    st.session_state[squad_key] = [x for x in current_ids if x != pid]
                     st.session_state[f"fantasy_remove_pick_{current_block}"] = None
                     st.rerun()
 
