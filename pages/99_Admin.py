@@ -344,128 +344,113 @@ with tab_users:
         option_labels.append(label)
         label_to_username[label] = _safe_str(row.get("username"))
 
-    # Leave the dropdown empty until a search term is entered; filter by first-name prefix.
-    search_query = st.text_input("Search by first name", key="admin_user_search")
-    selected_username = ""
+    selected_label = st.selectbox("Select user", option_labels, key="admin_user_select")
+    selected_username = label_to_username[selected_label]
 
-    if search_query:
-        query_lower = search_query.strip().lower()
-        filtered_labels = [
-            label for label in option_labels if label.lower().startswith(query_lower)
-        ]
-        selected_label = st.selectbox("Select user", filtered_labels, key="admin_user_select")
-        selected_username = label_to_username.get(selected_label, "")
-    else:
-        st.selectbox("Select user", [""], key="admin_user_select", disabled=True)
-        st.info("Type a first name to search for a user.")
+    selected = get_user_by_username(selected_username)
+    if not selected:
+        st.error("Selected user could not be found (it may have been deleted).")
+        st.stop()
 
-    if not selected_username:
-        st.markdown("---")
-    else:
-        selected = get_user_by_username(selected_username)
-        if not selected:
-            st.error("Selected user could not be found (it may have been deleted).")
-            st.stop()
+    selected_role = selected["role"]
+    selected_active = bool(selected["is_active"])
 
-        selected_role = selected["role"]
-        selected_active = bool(selected["is_active"])
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"**Name:** {selected['first_name']} {selected['last_name']}")
+        st.write(f"**Username:** {selected['username']}")
+    with col2:
+        st.write(f"**Role:** {selected_role}")
+        st.write(f"**Status:** {'Active' if selected_active else 'Disabled'}")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"**Name:** {selected['first_name']} {selected['last_name']}")
-            st.write(f"**Username:** {selected['username']}")
-        with col2:
-            st.write(f"**Role:** {selected_role}")
-            st.write(f"**Status:** {'Active' if selected_active else 'Disabled'}")
+    admins_total = count_admins(active_only=False)
 
-        admins_total = count_admins(active_only=False)
+    def is_last_admin_target() -> bool:
+        return selected_role == "admin" and admins_total == 1
 
-        def is_last_admin_target() -> bool:
-            return selected_role == "admin" and admins_total == 1
+    st.markdown("### Actions")
 
-        st.markdown("### Actions")
+    with st.expander("Enable / Disable user", expanded=False):
+        desired_active = st.radio(
+            "Set account status",
+            ["Active", "Disabled"],
+            index=0 if selected_active else 1,
+            horizontal=True,
+            key="admin_user_status_radio",
+        )
+        make_active = desired_active == "Active"
 
-        with st.expander("Enable / Disable user", expanded=False):
-            desired_active = st.radio(
-                "Set account status",
-                ["Active", "Disabled"],
-                index=0 if selected_active else 1,
-                horizontal=True,
-                key="admin_user_status_radio",
-            )
-            make_active = desired_active == "Active"
+        if st.button("Apply status change", use_container_width=True, key="admin_apply_status"):
+            if not make_active and is_last_admin_target():
+                st.error("Blocked: You cannot disable the last remaining admin.")
+            else:
+                set_user_active(selected_username, make_active)
 
-            if st.button("Apply status change", use_container_width=True, key="admin_apply_status"):
-                if not make_active and is_last_admin_target():
-                    st.error("Blocked: You cannot disable the last remaining admin.")
+                status_txt = "Active" if make_active else "Disabled"
+                st.session_state["admin_user_action_msg"] = f"Updated '{selected_username}' status to {status_txt}."
+                st.session_state["admin_scroll_to_users"] = True
+                # Return to table (rerun goes back to top)
+                st.rerun()
+
+    with st.expander("Reset password", expanded=False):
+        default_pw = str(st.secrets.get("DEFAULT_RESET_PASSWORD", "ResetMe123!"))
+        st.write("Reset the selected user's password to the default reset password.")
+        st.code(default_pw, language=None)
+        if st.button(
+            "Reset to default password", use_container_width=True, key="admin_reset_pw_btn"
+        ):
+            try:
+                admin_reset_password(selected_username, default_pw)
+
+                st.session_state["admin_user_action_msg"] = (
+                    f"Password reset for '{selected_username}'. User will be prompted to change it on next login."
+                )
+                st.session_state["admin_scroll_to_users"] = True
+
+                # Return to table
+                st.rerun()
+
+            except Exception as e:
+                st.error(str(e))
+
+    with st.expander("Change role", expanded=False):
+        desired_role = st.selectbox(
+            "Role",
+            ["player", "admin"],
+            index=0 if selected_role == "player" else 1,
+            key="admin_role_select",
+        )
+
+        if st.button("Apply role change", use_container_width=True, key="admin_apply_role"):
+            if desired_role == selected_role:
+                st.info("No change to apply.")
+            else:
+                if selected_role == "admin" and desired_role == "player" and is_last_admin_target():
+                    st.error("Blocked: You cannot demote the last remaining admin.")
                 else:
-                    set_user_active(selected_username, make_active)
-
-                    status_txt = "Active" if make_active else "Disabled"
-                    st.session_state["admin_user_action_msg"] = f"Updated '{selected_username}' status to {status_txt}."
-                    st.session_state["admin_scroll_to_users"] = True
-                    # Return to table (rerun goes back to top)
-                    st.rerun()
-
-        with st.expander("Reset password", expanded=False):
-            default_pw = str(st.secrets.get("DEFAULT_RESET_PASSWORD", "ResetMe123!"))
-            st.write("Reset the selected user's password to the default reset password.")
-            st.code(default_pw, language=None)
-            if st.button(
-                "Reset to default password", use_container_width=True, key="admin_reset_pw_btn"
-            ):
-                try:
-                    admin_reset_password(selected_username, default_pw)
+                    set_user_role(selected_username, desired_role)
 
                     st.session_state["admin_user_action_msg"] = (
-                        f"Password reset for '{selected_username}'. User will be prompted to change it on next login."
+                        f"Updated '{selected_username}' role to {desired_role}."
                     )
                     st.session_state["admin_scroll_to_users"] = True
-
                     # Return to table
                     st.rerun()
 
-                except Exception as e:
-                    st.error(str(e))
+    with st.expander("Delete user", expanded=False):
+        st.warning("This permanently deletes the user account. This cannot be undone.")
+        confirm = st.checkbox("I understand and want to delete this user", key="admin_delete_user_confirm")
 
-        with st.expander("Change role", expanded=False):
-            desired_role = st.selectbox(
-                "Role",
-                ["player", "admin"],
-                index=0 if selected_role == "player" else 1,
-                key="admin_role_select",
-            )
+        if st.button("Delete user", use_container_width=True, disabled=not confirm, key="admin_delete_user_btn"):
+            if is_last_admin_target():
+                st.error("Blocked: You cannot delete the last remaining admin.")
+            else:
+                delete_user(selected_username)
 
-            if st.button("Apply role change", use_container_width=True, key="admin_apply_role"):
-                if desired_role == selected_role:
-                    st.info("No change to apply.")
-                else:
-                    if selected_role == "admin" and desired_role == "player" and is_last_admin_target():
-                        st.error("Blocked: You cannot demote the last remaining admin.")
-                    else:
-                        set_user_role(selected_username, desired_role)
-
-                        st.session_state["admin_user_action_msg"] = (
-                            f"Updated '{selected_username}' role to {desired_role}."
-                        )
-                        st.session_state["admin_scroll_to_users"] = True
-                        # Return to table
-                        st.rerun()
-
-        with st.expander("Delete user", expanded=False):
-            st.warning("This permanently deletes the user account. This cannot be undone.")
-            confirm = st.checkbox("I understand and want to delete this user", key="admin_delete_user_confirm")
-
-            if st.button("Delete user", use_container_width=True, disabled=not confirm, key="admin_delete_user_btn"):
-                if is_last_admin_target():
-                    st.error("Blocked: You cannot delete the last remaining admin.")
-                else:
-                    delete_user(selected_username)
-
-                    st.session_state["admin_user_action_msg"] = f"Deleted user '{selected_username}'."
-                    st.session_state["admin_scroll_to_users"] = True
-                    # Return to table
-                    st.rerun()
+                st.session_state["admin_user_action_msg"] = f"Deleted user '{selected_username}'."
+                st.session_state["admin_scroll_to_users"] = True
+                # Return to table
+                st.rerun()
 
 
 # =========================================================
