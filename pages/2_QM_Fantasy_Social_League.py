@@ -441,19 +441,115 @@ with tab_team:
                 else "No team submitted yet."
             )
     else:
-        budget_placeholder = st.empty()
+        # Track selection state per block so we can filter options without hiding current picks.
+        squad_key = f"fantasy_squad_{current_block}"
+        prev_key = f"fantasy_prev_selected_ids_{current_block}"
+        prev_selected_ids = st.session_state.get(prev_key, default_squad_ids)
+        prev_selected_ids = [pid for pid in prev_selected_ids if pid in player_label_by_id]
+
+        # Budget/team cap calculations are derived from the current selection state.
+        budget_cap = 60.0
+        selected_for_calc = prev_selected_ids
+        selected_prices = [player_price_by_id.get(pid) for pid in selected_for_calc]
+        spent_budget = sum(
+            p for p in selected_prices if isinstance(p, (int, float)) and not pd.isna(p)
+        )
+        remaining_budget = budget_cap - spent_budget
+
+        selected_teams = [player_team_by_id.get(pid, "Unknown") or "Unknown" for pid in selected_for_calc]
+        team_counts = pd.Series(selected_teams).value_counts().to_dict()
+        capped_teams = {team for team, count in team_counts.items() if count >= 4}
+
+        # Make remaining budget highly visible for better selection decisions.
+        budget_cols = st.columns(3)
+        with budget_cols[0]:
+            st.metric("Budget Cap", f"{budget_cap:.1f}")
+        with budget_cols[1]:
+            st.metric("Spent", f"{spent_budget:.1f}")
+        with budget_cols[2]:
+            st.metric("Remaining", f"{remaining_budget:.1f}")
+        if remaining_budget < 0:
+            st.error("Remaining budget is negative. Please adjust your selections.")
+
+        # Filter options: hide capped-team players and unaffordable players, but keep selected ones visible.
+        filtered_player_rows = []
+        for row in player_rows:
+            pid = row["player_id"]
+            team = player_team_by_id.get(pid, "Unknown") or "Unknown"
+            price = player_price_by_id.get(pid)
+            is_selected = pid in selected_for_calc
+            affordable = isinstance(price, (int, float)) and not pd.isna(price) and price <= remaining_budget
+            if is_selected or (team not in capped_teams and affordable):
+                filtered_player_rows.append(row)
+
+        player_labels = [r["label"] for r in filtered_player_rows]
 
         squad_labels = st.multiselect(
             "Squad (pick 8)",
             options=player_labels,
-            default=default_squad_labels,
+            default=[player_label_by_id.get(pid) for pid in selected_for_calc if pid in player_label_by_id and player_label_by_id.get(pid) in player_labels],
             max_selections=8,
-            key=f"fantasy_squad_{current_block}",
+            key=squad_key,
             disabled=controls_disabled,
         )
 
         squad_ids = [player_id_by_label.get(lbl) for lbl in squad_labels if lbl in player_id_by_label]
         squad_ids = [pid for pid in squad_ids if pid]
+
+        # Belt-and-braces: sanitize selection if team cap or budget is exceeded (e.g., restored state).
+        prev_ids = st.session_state.get(prev_key, [])
+        added_ids = [pid for pid in squad_ids if pid not in prev_ids]
+
+        def _remove_last_added(ids: list[str], candidates: set[str]) -> str | None:
+            for pid in reversed(added_ids):
+                if pid in candidates:
+                    ids.remove(pid)
+                    return pid
+            for pid in reversed(ids):
+                if pid in candidates:
+                    ids.remove(pid)
+                    return pid
+            return None
+
+        removed_ids: list[str] = []
+
+        # Enforce team cap by removing the most recently added players from capped teams.
+        while True:
+            teams_now = [player_team_by_id.get(pid, "Unknown") or "Unknown" for pid in squad_ids]
+            counts_now = pd.Series(teams_now).value_counts().to_dict()
+            over_cap = {team for team, count in counts_now.items() if count > 4}
+            if not over_cap:
+                break
+            over_cap_ids = {pid for pid in squad_ids if (player_team_by_id.get(pid, "Unknown") or "Unknown") in over_cap}
+            removed = _remove_last_added(squad_ids, over_cap_ids)
+            if removed:
+                removed_ids.append(removed)
+            else:
+                break
+
+        # Enforce budget by removing the most recently added players until within cap.
+        def _spent(ids: list[str]) -> float:
+            return sum(
+                player_price_by_id.get(pid, 0.0)
+                for pid in ids
+                if isinstance(player_price_by_id.get(pid), (int, float))
+                and not pd.isna(player_price_by_id.get(pid))
+            )
+
+        while _spent(squad_ids) > budget_cap:
+            removed = _remove_last_added(squad_ids, set(squad_ids))
+            if removed:
+                removed_ids.append(removed)
+            else:
+                break
+
+        if removed_ids:
+            st.warning("Some selections were removed to enforce the team cap or budget limit.")
+            st.session_state[squad_key] = [player_label_by_id.get(pid) for pid in squad_ids if pid in player_label_by_id]
+            st.session_state[prev_key] = squad_ids
+            st.rerun()
+
+        st.session_state[prev_key] = squad_ids
 
         bench_options = squad_labels if squad_labels else ["(select)"]
 
@@ -505,8 +601,7 @@ with tab_team:
         budget_used = sum(player_price_by_id.get(pid, 0.0) for pid in squad_ids)
         budget_remaining = 60.0 - budget_used
 
-        budget_placeholder.markdown(f"**Budget used:** {budget_used:.1f} / 60.0")
-        budget_placeholder.markdown(f"**Budget remaining:** {budget_remaining:.1f}")
+        # Budget metrics are displayed above; avoid duplicating them here.
 
         errors = []
         if len(squad_ids) != 8:
