@@ -269,20 +269,83 @@ with tab_users:
         t = pd.to_datetime(df_display["created_at"], errors="coerce", utc=True)
         df_display["created_at"] = t.dt.strftime("%d %b %Y %H:%M").fillna("Never")
 
-    st.markdown("### All users")
-    st.dataframe(
-        df_display[
-            ["username", "first_name", "last_name", "role", "is_active", "created_at", "last_login_at"]
-        ],
-        use_container_width=True,
-        hide_index=True,
-    )
+    # Keep the large users table collapsible to reduce scrolling for admins.
+    with st.expander("All users", expanded=False):
+        st.dataframe(
+            df_display[
+                ["username", "first_name", "last_name", "role", "is_active", "created_at", "last_login_at"]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
 
     st.markdown("---")
     st.markdown("### Manage a user")
 
-    usernames = df_display["username"].tolist()
-    selected_username = st.selectbox("Select user", usernames, key="admin_user_select")
+    # Build searchable labels starting with first name; add stable suffixes to keep labels unique.
+    def _safe_str(value: object) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value).strip()
+
+    def _user_sort_key(row: pd.Series) -> tuple:
+        first = _safe_str(row.get("first_name"))
+        last = _safe_str(row.get("last_name"))
+        username = _safe_str(row.get("username"))
+        return (
+            1 if not first else 0,
+            first.lower(),
+            last.lower(),
+            username.lower(),
+        )
+
+    def _base_user_label(row: pd.Series) -> str:
+        first = _safe_str(row.get("first_name"))
+        last = _safe_str(row.get("last_name"))
+        username = _safe_str(row.get("username"))
+
+        if first:
+            display = first
+        elif last:
+            display = "(No first name)"
+        else:
+            display = username or "(No first name)"
+
+        if last:
+            display = f"{display} {last}"
+
+        if username:
+            return f"{display} ({username})"
+        return display
+
+    sorted_users = sorted(df.to_dict("records"), key=lambda row: _user_sort_key(pd.Series(row)))
+    option_labels: list[str] = []
+    label_to_username: dict[str, str] = {}
+    label_counts: dict[str, int] = {}
+
+    for row in sorted_users:
+        series_row = pd.Series(row)
+        base_label = _base_user_label(series_row)
+        label_counts[base_label] = label_counts.get(base_label, 0) + 1
+
+        suffix = ""
+        if label_counts[base_label] > 1:
+            suffix = _safe_str(row.get("id")) or _safe_str(row.get("user_id")) or _safe_str(row.get("created_at"))
+            if suffix:
+                suffix = f" [{suffix}]"
+            else:
+                suffix = f" [{label_counts[base_label]}]"
+
+        label = f"{base_label}{suffix}"
+        counter = 2
+        while label in label_to_username:
+            label = f"{base_label}{suffix} [{counter}]"
+            counter += 1
+        option_labels.append(label)
+        label_to_username[label] = _safe_str(row.get("username"))
+
+    selected_label = st.selectbox("Select user", option_labels, key="admin_user_select")
+    selected_username = label_to_username[selected_label]
 
     selected = get_user_by_username(selected_username)
     if not selected:
