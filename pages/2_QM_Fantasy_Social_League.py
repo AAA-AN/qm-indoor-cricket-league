@@ -560,10 +560,57 @@ with tab_team:
                 addable_ids.append(pid)
 
         # Avoid st.data_editor here; a button ✕ per row makes the remove action clearer than a checkbox.
+        # Render desktop + mobile layouts separately because Streamlit columns stack on small screens.
+        st.markdown(
+            """
+            <style>
+              /* Desktop shown by default */
+              .team-mobile { display: none; }
+              .team-desktop { display: block; }
+
+              /* On small screens: show mobile layout, hide desktop table */
+              @media (max-width: 640px) {
+                .team-mobile { display: block; }
+                .team-desktop { display: none; }
+              }
+
+              /* Optional: compact mobile row styling */
+              .team-card {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 10px 12px;
+                border: 1px solid rgba(49,51,63,0.2);
+                border-radius: 12px;
+                margin-bottom: 8px;
+              }
+              .team-card-left {
+                min-width: 0;
+              }
+              .team-card-player {
+                font-weight: 600;
+                line-height: 1.2;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              }
+              .team-card-meta {
+                font-size: 12px;
+                opacity: 0.75;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         st.markdown("#### Your team")
         if not selected_for_calc:
             st.caption("No players selected yet.")
         else:
+            # Desktop table layout.
+            st.markdown('<div class="team-desktop">', unsafe_allow_html=True)
             h1, h2, h3, h4 = st.columns([4, 3, 1.2, 0.8])
             h1.markdown("**Player**")
             h2.markdown("**Team**")
@@ -582,6 +629,36 @@ with tab_team:
                 ):
                     st.session_state[squad_key] = [x for x in selected_for_calc if x != pid]
                     st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # Mobile card layout with a separate remove button column.
+            st.markdown('<div class="team-mobile">', unsafe_allow_html=True)
+            for pid in selected_for_calc:
+                name = player_name_by_id.get(pid, pid)
+                team = player_team_by_id.get(pid, "Unknown") or "Unknown"
+                cost = float(player_price_by_id.get(pid, 0.0) or 0.0)
+                c_left, c_btn = st.columns([6, 1])
+                with c_left:
+                    st.markdown(
+                        f"""
+                        <div class="team-card">
+                          <div class="team-card-left">
+                            <div class="team-card-player">{name}</div>
+                            <div class="team-card-meta">{team} • {cost:.1f}</div>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                with c_btn:
+                    if st.button(
+                        "✕",
+                        key=f"remove_m_{current_block}_{pid}",
+                        help="Remove player",
+                    ):
+                        st.session_state[squad_key] = [x for x in selected_for_calc if x != pid]
+                        st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
         # Use a single selectbox so picked players are added without showing chips.
         team_is_full = len(selected_for_calc) >= 8
