@@ -445,9 +445,9 @@ with tab_team:
         squad_key = "fantasy_player_select"
         prev_key = f"fantasy_prev_selected_ids_{current_block}"
 
-        # Read the CURRENT selection from session state before building options so caps update immediately.
+        # Session state is the single source of truth for the current selection.
         selected_ids = st.session_state.get(squad_key, default_squad_ids)
-        selected_ids = [pid for pid in selected_ids if pid in player_label_by_id]
+        selected_ids = [str(pid) for pid in selected_ids if str(pid) in player_label_by_id]
 
         # Budget/team cap calculations are derived from the current selection state.
         budget_cap = 60.0
@@ -473,16 +473,17 @@ with tab_team:
         if remaining_budget < 0:
             st.error("Remaining budget is negative. Please adjust your selections.")
 
-        # Filter options: hide capped-team players and unaffordable players, but keep selected ones visible.
-        filtered_player_ids = []
+        # Build addable options (single-select): exclude selected, capped teams, unaffordable players.
+        addable_ids = []
         for row in player_rows:
             pid = row["player_id"]
+            if pid in selected_for_calc:
+                continue
             team = player_team_by_id.get(pid, "Unknown") or "Unknown"
             price = player_price_by_id.get(pid)
-            is_selected = pid in selected_for_calc
             affordable = isinstance(price, (int, float)) and not pd.isna(price) and price <= remaining_budget
-            if is_selected or (team not in capped_teams and affordable):
-                filtered_player_ids.append(pid)
+            if (team not in capped_teams) and affordable:
+                addable_ids.append(pid)
 
         # Selected players are shown in a table (not multiselect chips) for clarity and direct removal.
         # Store PlayerID in the DataFrame index so we can hide it from the UI while still mapping removals reliably.
@@ -517,28 +518,47 @@ with tab_team:
                 st.session_state[squad_key] = [pid for pid in selected_for_calc if pid not in set(to_remove)]
                 st.rerun()
 
-        def _on_fantasy_select_change() -> None:
-            # Force a rerun so option filters apply immediately after selection changes.
-            st.session_state["fantasy_player_select_changed"] = True
-
+        # Use a single selectbox so picked players are added without showing chips.
         team_is_full = len(selected_for_calc) >= 8
         if team_is_full:
             # Hide the selector when full to avoid confusing UX and prevent extra picks.
             st.info("Team Full – To edit your team remove a player first.")
-            squad_ids = list(selected_for_calc)
         else:
-            squad_ids = st.multiselect(
-                "Squad (pick 8)",
-                options=filtered_player_ids,
-                default=selected_for_calc,
-                max_selections=8,
-                key=squad_key,
-                format_func=lambda pid: player_label_by_id.get(pid, pid),
-                on_change=_on_fantasy_select_change,
-                disabled=controls_disabled,
-            )
-            squad_ids = [pid for pid in squad_ids if pid]
+            addable_labels = [player_label_by_id.get(pid, pid) for pid in addable_ids]
+            addable_labels = sorted(addable_labels)
+            label_to_pid = {player_label_by_id.get(pid, pid): pid for pid in addable_ids}
+            pick_key = f"fantasy_add_pick_{current_block}"
 
+            def _on_pick_change() -> None:
+                # Auto-add on selection, then reset to blank so the user can pick again quickly.
+                chosen_label = st.session_state.get(pick_key)
+                if not chosen_label:
+                    return
+                pid = label_to_pid.get(chosen_label)
+                if not pid:
+                    st.session_state[pick_key] = None
+                    return
+                current = [str(x) for x in st.session_state.get(squad_key, []) if str(x)]
+                if pid not in current:
+                    st.session_state[squad_key] = current + [pid]
+                # Reset picker to blank and rerun to refresh cap/budget filters immediately.
+                st.session_state[pick_key] = None
+                st.rerun()
+
+            if not addable_labels:
+                st.caption("No players available to add (team cap and/or budget).")
+            else:
+                st.selectbox(
+                    "Add a player",
+                    options=addable_labels,
+                    index=None,
+                    placeholder="Type to search players...",
+                    key=pick_key,
+                    on_change=_on_pick_change,
+                    disabled=controls_disabled,
+                )
+
+        squad_ids = [str(pid) for pid in st.session_state.get(squad_key, []) if str(pid)]
         prev_ids = st.session_state.get(prev_key, [])
         added_ids = [pid for pid in squad_ids if pid not in prev_ids]
 
@@ -552,10 +572,6 @@ with tab_team:
                     ids.remove(pid)
                     return pid
             return None
-
-        # Explicit rerun after selection change so team/budget filters update immediately.
-        if st.session_state.pop("fantasy_player_select_changed", False):
-            st.rerun()
 
         # Belt-and-braces: sanitize selection if team cap or budget is exceeded (e.g., restored state).
 
@@ -593,7 +609,7 @@ with tab_team:
 
         if removed_ids:
             st.warning("Some selections were removed to enforce the team cap or budget limit.")
-            st.session_state[squad_key] = [player_label_by_id.get(pid) for pid in squad_ids if pid in player_label_by_id]
+            st.session_state[squad_key] = [pid for pid in squad_ids if pid in player_label_by_id]
             st.session_state[prev_key] = squad_ids
             st.rerun()
 
