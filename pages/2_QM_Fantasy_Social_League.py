@@ -488,18 +488,48 @@ with tab_team:
             # Force a rerun so option filters apply immediately after selection changes.
             st.session_state["fantasy_player_select_changed"] = True
 
-        # Use manual selection limits so we can show a custom "team full" message.
-        squad_ids = st.multiselect(
-            "Squad (pick 8)",
-            options=filtered_player_ids,
-            default=selected_for_calc,
-            key=squad_key,
-            format_func=lambda pid: player_label_by_id.get(pid, pid),
-            on_change=_on_fantasy_select_change,
-            disabled=controls_disabled,
-        )
+        selected_count = len(selected_for_calc)
+        remove_key = f"fantasy_player_remove_only_{current_block}"
 
-        squad_ids = [pid for pid in squad_ids if pid]
+        # Avoid rendering a multiselect with zero options; it shows a confusing "No results" UI.
+        if selected_count < 8 and filtered_player_ids:
+            # Use manual selection limits so we can show a custom "team full" message.
+            squad_ids = st.multiselect(
+                "Squad (pick 8)",
+                options=filtered_player_ids,
+                default=selected_for_calc,
+                key=squad_key,
+                format_func=lambda pid: player_label_by_id.get(pid, pid),
+                on_change=_on_fantasy_select_change,
+                disabled=controls_disabled,
+            )
+            squad_ids = [pid for pid in squad_ids if pid]
+        else:
+            squad_ids = list(selected_for_calc)
+            if selected_count >= 8:
+                # Hide the main selector at 8 players to avoid the empty "No results" state.
+                st.info("Team Full – To edit your team remove a player first.")
+            else:
+                st.info("No additional players available with current team/budget limits.")
+
+            # Removal-only mode: allow deselection without showing the main selector.
+            remove_labels = [player_label_by_id.get(pid, pid) for pid in squad_ids]
+            remove_labels = [lbl for lbl in remove_labels if lbl]
+            if remove_labels:
+                keep_labels = st.multiselect(
+                    "Your team (remove players as needed)",
+                    options=remove_labels,
+                    default=remove_labels,
+                    key=remove_key,
+                    disabled=controls_disabled,
+                )
+                keep_ids = [
+                    pid for pid in squad_ids
+                    if player_label_by_id.get(pid, pid) in set(keep_labels)
+                ]
+                if set(keep_ids) != set(squad_ids):
+                    st.session_state[squad_key] = keep_ids
+                    st.rerun()
 
         prev_ids = st.session_state.get(prev_key, [])
         added_ids = [pid for pid in squad_ids if pid not in prev_ids]
@@ -572,9 +602,6 @@ with tab_team:
             st.rerun()
 
         st.session_state[prev_key] = squad_ids
-
-        if len(squad_ids) == 8:
-            st.info("Team Full – To edit your team remove a player first.")
 
         squad_labels = [player_label_by_id.get(pid, pid) for pid in squad_ids]
         bench_options = squad_labels if squad_labels else ["(select)"]
