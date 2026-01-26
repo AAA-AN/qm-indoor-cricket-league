@@ -442,14 +442,16 @@ with tab_team:
             )
     else:
         # Track selection state per block so we can filter options without hiding current picks.
-        squad_key = f"fantasy_squad_{current_block}"
+        squad_key = f"fantasy_player_select_{current_block}"
         prev_key = f"fantasy_prev_selected_ids_{current_block}"
-        prev_selected_ids = st.session_state.get(prev_key, default_squad_ids)
-        prev_selected_ids = [pid for pid in prev_selected_ids if pid in player_label_by_id]
+
+        # Read the CURRENT selection from session state before building options so caps update immediately.
+        selected_ids = st.session_state.get(squad_key, default_squad_ids)
+        selected_ids = [pid for pid in selected_ids if pid in player_label_by_id]
 
         # Budget/team cap calculations are derived from the current selection state.
         budget_cap = 60.0
-        selected_for_calc = prev_selected_ids
+        selected_for_calc = selected_ids
         selected_prices = [player_price_by_id.get(pid) for pid in selected_for_calc]
         spent_budget = sum(
             p for p in selected_prices if isinstance(p, (int, float)) and not pd.isna(p)
@@ -472,7 +474,7 @@ with tab_team:
             st.error("Remaining budget is negative. Please adjust your selections.")
 
         # Filter options: hide capped-team players and unaffordable players, but keep selected ones visible.
-        filtered_player_rows = []
+        filtered_player_ids = []
         for row in player_rows:
             pid = row["player_id"]
             team = player_team_by_id.get(pid, "Unknown") or "Unknown"
@@ -480,21 +482,28 @@ with tab_team:
             is_selected = pid in selected_for_calc
             affordable = isinstance(price, (int, float)) and not pd.isna(price) and price <= remaining_budget
             if is_selected or (team not in capped_teams and affordable):
-                filtered_player_rows.append(row)
+                filtered_player_ids.append(pid)
 
-        player_labels = [r["label"] for r in filtered_player_rows]
+        def _on_fantasy_select_change() -> None:
+            # Force a rerun so option filters apply immediately after selection changes.
+            st.session_state["fantasy_player_select_changed"] = True
 
-        squad_labels = st.multiselect(
+        squad_ids = st.multiselect(
             "Squad (pick 8)",
-            options=player_labels,
-            default=[player_label_by_id.get(pid) for pid in selected_for_calc if pid in player_label_by_id and player_label_by_id.get(pid) in player_labels],
+            options=filtered_player_ids,
+            default=selected_for_calc,
             max_selections=8,
             key=squad_key,
+            format_func=lambda pid: player_label_by_id.get(pid, pid),
+            on_change=_on_fantasy_select_change,
             disabled=controls_disabled,
         )
 
-        squad_ids = [player_id_by_label.get(lbl) for lbl in squad_labels if lbl in player_id_by_label]
         squad_ids = [pid for pid in squad_ids if pid]
+
+        # Explicit rerun after selection change so team/budget filters update immediately.
+        if st.session_state.pop("fantasy_player_select_changed", False):
+            st.rerun()
 
         # Belt-and-braces: sanitize selection if team cap or budget is exceeded (e.g., restored state).
         prev_ids = st.session_state.get(prev_key, [])
@@ -551,6 +560,7 @@ with tab_team:
 
         st.session_state[prev_key] = squad_ids
 
+        squad_labels = [player_label_by_id.get(pid, pid) for pid in squad_ids]
         bench_options = squad_labels if squad_labels else ["(select)"]
 
         bench1_label = st.selectbox(
