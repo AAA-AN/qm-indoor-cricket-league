@@ -479,55 +479,65 @@ with tab_team:
         team_counts = pd.Series(selected_teams).value_counts().to_dict()
         capped_teams = {team for team, count in team_counts.items() if count >= 4}
 
-        # Use a single-line flex budget bar so mobile doesn’t stack the metrics.
-        budget_style = """
-        <style>
-          .budget-bar{
-            display:flex;
-            flex-wrap:nowrap;
-            gap:12px;
-            align-items:center;
-            justify-content:space-between;
-            padding:10px 12px;
-            border:1px solid rgba(49,51,63,0.2);
-            border-radius:10px;
-            margin-bottom:8px;
-          }
-          .budget-item{min-width:0;}
-          .budget-label{
-            font-size:12px;
-            opacity:0.75;
-            line-height:1.1;
-          }
-          .budget-value{
-            font-size:16px;
-            font-weight:700;
-            line-height:1.2;
-            white-space:nowrap;
-          }
-          .budget-remaining{
-            padding:2px 6px;
-            border-radius:6px;
-            background:rgba(14, 91, 118, 0.08);
-          }
-          @media (max-width: 640px){
-            .budget-bar{gap:10px; padding:8px 10px;}
-            .budget-value{font-size:15px;}
-          }
-        </style>
-        """
-        st.markdown(budget_style, unsafe_allow_html=True)
+        # Render metric-style budget cards using flex so they stay on one line on mobile without losing emphasis.
+        st.markdown(
+            """
+            <style>
+            .budget-metrics {
+              display: flex;
+              flex-wrap: nowrap;          /* FORCE single line */
+              gap: 12px;
+              margin-bottom: 10px;
+            }
+
+            .budget-metric {
+              flex: 1 1 0;
+              padding: 12px 14px;
+              border-radius: 12px;
+              border: 1px solid rgba(49,51,63,0.2);
+              background: rgba(255,255,255,0.02);
+              min-width: 0;               /* allow shrinking on mobile */
+            }
+
+            .budget-label {
+              font-size: 13px;
+              color: rgba(49,51,63,0.7);
+              margin-bottom: 4px;
+            }
+
+            .budget-value {
+              font-size: 22px;
+              font-weight: 700;
+              line-height: 1.1;
+              white-space: nowrap;
+            }
+
+            /* Emphasise remaining */
+            .budget-remaining {
+              border: 2px solid rgba(0,123,255,0.6);
+            }
+
+            /* Mobile tweaks */
+            @media (max-width: 640px) {
+              .budget-value {
+                font-size: 18px;          /* slightly smaller but still prominent */
+              }
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         budget_html = f"""
-        <div class="budget-bar">
-          <div class="budget-item">
-            <div class="budget-label">Cap</div>
+        <div class="budget-metrics">
+          <div class="budget-metric">
+            <div class="budget-label">Budget Cap</div>
             <div class="budget-value">{budget_cap:.1f}</div>
           </div>
-          <div class="budget-item">
+          <div class="budget-metric">
             <div class="budget-label">Spent</div>
             <div class="budget-value">{spent_budget:.1f}</div>
           </div>
-          <div class="budget-item budget-remaining">
+          <div class="budget-metric budget-remaining">
             <div class="budget-label">Remaining</div>
             <div class="budget-value">{remaining_budget:.1f}</div>
           </div>
