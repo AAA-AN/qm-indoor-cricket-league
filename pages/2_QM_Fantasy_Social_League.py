@@ -488,11 +488,11 @@ with tab_team:
             # Force a rerun so option filters apply immediately after selection changes.
             st.session_state["fantasy_player_select_changed"] = True
 
+        # Use manual selection limits so we can show a custom "team full" message.
         squad_ids = st.multiselect(
             "Squad (pick 8)",
             options=filtered_player_ids,
             default=selected_for_calc,
-            max_selections=8,
             key=squad_key,
             format_func=lambda pid: player_label_by_id.get(pid, pid),
             on_change=_on_fantasy_select_change,
@@ -501,11 +501,6 @@ with tab_team:
 
         squad_ids = [pid for pid in squad_ids if pid]
 
-        # Explicit rerun after selection change so team/budget filters update immediately.
-        if st.session_state.pop("fantasy_player_select_changed", False):
-            st.rerun()
-
-        # Belt-and-braces: sanitize selection if team cap or budget is exceeded (e.g., restored state).
         prev_ids = st.session_state.get(prev_key, [])
         added_ids = [pid for pid in squad_ids if pid not in prev_ids]
 
@@ -519,6 +514,24 @@ with tab_team:
                     ids.remove(pid)
                     return pid
             return None
+
+        # Enforce the 8-player limit manually (avoids Streamlit's default max_selections message).
+        if len(squad_ids) > 8:
+            while len(squad_ids) > 8:
+                removed = _remove_last_added(squad_ids, set(squad_ids))
+                if removed:
+                    pass
+                else:
+                    squad_ids = squad_ids[:8]
+                    break
+            st.session_state[squad_key] = squad_ids
+            st.rerun()
+
+        # Explicit rerun after selection change so team/budget filters update immediately.
+        if st.session_state.pop("fantasy_player_select_changed", False):
+            st.rerun()
+
+        # Belt-and-braces: sanitize selection if team cap or budget is exceeded (e.g., restored state).
 
         removed_ids: list[str] = []
 
@@ -559,6 +572,9 @@ with tab_team:
             st.rerun()
 
         st.session_state[prev_key] = squad_ids
+
+        if len(squad_ids) == 8:
+            st.info("Team Full – To edit your team remove a player first.")
 
         squad_labels = [player_label_by_id.get(pid, pid) for pid in squad_ids]
         bench_options = squad_labels if squad_labels else ["(select)"]
