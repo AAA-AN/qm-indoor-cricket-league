@@ -344,7 +344,29 @@ with tab_users:
         option_labels.append(label)
         label_to_username[label] = _safe_str(row.get("username"))
 
-    selected_label = st.selectbox("Select user", option_labels, key="admin_user_select")
+    # Avoid auto-selecting the first user to prevent accidental admin actions.
+    # Enforce a "no selection" state until an admin explicitly chooses a user.
+    try:
+        selected_label = st.selectbox(
+            "Select a user",
+            option_labels,
+            index=None,
+            placeholder="Choose an option",
+            key="admin_user_select",
+        )
+    except TypeError:
+        labels_with_prompt = ["Choose an option"] + option_labels
+        selected_label = st.selectbox(
+            "Select a user",
+            labels_with_prompt,
+            index=0,
+            key="admin_user_select",
+        )
+
+    if not selected_label or selected_label == "Choose an option":
+        st.info("Type a first name to search, then select a user to manage.")
+        st.stop()
+
     selected_username = label_to_username[selected_label]
 
     selected = get_user_by_username(selected_username)
