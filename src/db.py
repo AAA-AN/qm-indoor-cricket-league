@@ -613,7 +613,11 @@ def get_effective_block_state(block_number: int, now_dt: datetime) -> str:
                 return "NOT_OPEN"
 
         lock_at = _parse_iso_datetime(row["lock_at"])
-        if lock_at and now_dt >= lock_at:
+        effective_lock_at = lock_at
+        if open_at is not None and lock_at is not None and lock_at < open_at:
+            # Prevent a block from locking before (or exactly when) it can open.
+            effective_lock_at = open_at + timedelta(seconds=1)
+        if effective_lock_at and now_dt >= effective_lock_at:
             return "LOCKED"
         return "OPEN"
     finally:
