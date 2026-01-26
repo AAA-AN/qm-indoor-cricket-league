@@ -580,61 +580,38 @@ with tab_team:
             if (team not in capped_teams) and affordable:
                 addable_ids.append(pid)
 
-        # Use st.dataframe for a mobile-friendly table; buttons cannot live inside the table.
+        # Use a checkbox-based removal table for stability and mobile consistency.
         st.markdown("#### Your team")
-        rows = []
+        selected_rows = []
         for pid in selected_for_calc:
-            rows.append(
+            selected_rows.append(
                 {
                     "Player": player_name_by_id.get(pid, pid),
                     "Team": player_team_by_id.get(pid, "Unknown") or "Unknown",
                     "Cost": float(player_price_by_id.get(pid, 0.0) or 0.0),
+                    "Remove": False,
                 }
             )
-        team_df = pd.DataFrame(rows, columns=["Player", "Team", "Cost"])
-        if team_df.empty:
-            st.caption("No players selected yet.")
-        else:
-            st.dataframe(team_df, use_container_width=True, hide_index=True)
-
-        # Removal is a separate control because st.dataframe cannot embed buttons.
-        selected_labels: list[str] = []
-        label_to_pid: dict[str, str] = {}
-        for pid in selected_for_calc:
-            name = player_name_by_id.get(pid, pid)
-            team = player_team_by_id.get(pid, "Unknown") or "Unknown"
-            cost = float(player_price_by_id.get(pid, 0.0) or 0.0)
-            label = f"{name} — {team} — {cost:.1f}"
-            if label in label_to_pid:
-                label = f"{label} ({pid})"
-            label_to_pid[label] = pid
-            selected_labels.append(label)
-
-        c_sel, c_btn = st.columns([6, 1])
-        with c_sel:
-            remove_label = st.selectbox(
-                "Remove a player",
-                options=selected_labels,
-                index=None,
-                placeholder="Type to search selected players...",
-                key=f"fantasy_remove_pick_{current_block}",
-                disabled=(len(selected_labels) == 0),
-            )
-        with c_btn:
-            if st.button(
-                "✕",
-                key=f"fantasy_remove_btn_{current_block}",
-                disabled=(not remove_label),
-                help="Remove",
-            ):
-                pid = label_to_pid.get(remove_label)
-                if pid:
-                    # Remove from the live session state list to avoid stale local copies.
-                    current_ids = _as_pid_list(st.session_state.get(squad_key, []))
-                    current_ids = [str(x).strip() for x in current_ids if x]
-                    st.session_state[squad_key] = [x for x in current_ids if x != pid]
-                    st.session_state[f"fantasy_remove_pick_{current_block}"] = None
-                    st.rerun()
+        selected_df = pd.DataFrame(selected_rows, index=selected_for_calc)
+        selected_df.index.name = "PlayerID"
+        edited = st.data_editor(
+            selected_df,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Player": st.column_config.TextColumn(disabled=True),
+                "Team": st.column_config.TextColumn(disabled=True),
+                "Cost": st.column_config.NumberColumn(disabled=True, format="%.1f"),
+                "Remove": st.column_config.CheckboxColumn("Remove"),
+            },
+            key="fantasy_selected_table",
+        )
+        to_remove = edited.index[edited["Remove"] == True].tolist()  # noqa: E712
+        if to_remove:
+            st.session_state[squad_key] = [
+                pid for pid in selected_for_calc if pid not in set(to_remove)
+            ]
+            st.rerun()
 
         # Use a single selectbox so picked players are added without showing chips.
         team_is_full = len(selected_for_calc) >= 8
