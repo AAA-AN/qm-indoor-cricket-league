@@ -559,38 +559,29 @@ with tab_team:
             if (team not in capped_teams) and affordable:
                 addable_ids.append(pid)
 
-        # Selected players are shown in a table (not multiselect chips) for clarity and direct removal.
-        # Store PlayerID in the DataFrame index so we can hide it from the UI while still mapping removals reliably.
-        selected_rows = []
-        for pid in selected_for_calc:
-            selected_rows.append(
-                {
-                    "Player": player_name_by_id.get(pid, pid),
-                    "Team": player_team_by_id.get(pid, "Unknown") or "Unknown",
-                    "Cost": float(player_price_by_id.get(pid, 0.0) or 0.0),
-                    "Remove": False,
-                }
-            )
-        selected_df = pd.DataFrame(selected_rows, index=selected_for_calc)
-        selected_df.index.name = "PlayerID"
+        # Avoid st.data_editor here; a button ✕ per row makes the remove action clearer than a checkbox.
         st.markdown("#### Your team")
-        if not selected_df.empty:
-            edited = st.data_editor(
-                selected_df,
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "Player": st.column_config.TextColumn(disabled=True),
-                    "Team": st.column_config.TextColumn(disabled=True),
-                    "Cost": st.column_config.NumberColumn(disabled=True, format="%.1f"),
-                    "Remove": st.column_config.CheckboxColumn("✕", help="Tick to remove this player"),
-                },
-                key="fantasy_selected_table",
-            )
-            to_remove = edited.index[edited["Remove"] == True].tolist()  # noqa: E712
-            if to_remove:
-                st.session_state[squad_key] = [pid for pid in selected_for_calc if pid not in set(to_remove)]
-                st.rerun()
+        if not selected_for_calc:
+            st.caption("No players selected yet.")
+        else:
+            h1, h2, h3, h4 = st.columns([4, 3, 1.2, 0.8])
+            h1.markdown("**Player**")
+            h2.markdown("**Team**")
+            h3.markdown("**Cost**")
+            h4.markdown("")
+
+            for pid in selected_for_calc:
+                c1, c2, c3, c4 = st.columns([4, 3, 1.2, 0.8])
+                c1.write(player_name_by_id.get(pid, pid))
+                c2.write(player_team_by_id.get(pid, "Unknown") or "Unknown")
+                c3.write(f"{player_price_by_id.get(pid, 0.0):.1f}")
+                if c4.button(
+                    "✕",
+                    key=f"remove_{current_block}_{pid}",
+                    help="Remove player from team",
+                ):
+                    st.session_state[squad_key] = [x for x in selected_for_calc if x != pid]
+                    st.rerun()
 
         # Use a single selectbox so picked players are added without showing chips.
         team_is_full = len(selected_for_calc) >= 8
