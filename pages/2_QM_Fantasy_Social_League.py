@@ -485,18 +485,19 @@ with tab_team:
                 filtered_player_ids.append(pid)
 
         # Selected players are shown in a table (not multiselect chips) for clarity and direct removal.
+        # Store PlayerID in the DataFrame index so we can hide it from the UI while still mapping removals reliably.
         selected_rows = []
         for pid in selected_for_calc:
             selected_rows.append(
                 {
-                    "_PlayerID": pid,
                     "Player": player_name_by_id.get(pid, pid),
                     "Team": player_team_by_id.get(pid, "Unknown") or "Unknown",
                     "Cost": float(player_price_by_id.get(pid, 0.0) or 0.0),
                     "Remove": False,
                 }
             )
-        selected_df = pd.DataFrame(selected_rows)
+        selected_df = pd.DataFrame(selected_rows, index=selected_for_calc)
+        selected_df.index.name = "PlayerID"
         st.markdown("#### Your team")
         if not selected_df.empty:
             edited = st.data_editor(
@@ -504,7 +505,6 @@ with tab_team:
                 hide_index=True,
                 use_container_width=True,
                 column_config={
-                    "_PlayerID": st.column_config.TextColumn("", disabled=True, width="small"),
                     "Player": st.column_config.TextColumn(disabled=True),
                     "Team": st.column_config.TextColumn(disabled=True),
                     "Cost": st.column_config.NumberColumn(disabled=True, format="%.1f"),
@@ -512,8 +512,7 @@ with tab_team:
                 },
                 key="fantasy_selected_table",
             )
-            # Apply removals based on the hidden PlayerID to keep session_state as the source of truth.
-            to_remove = edited.loc[edited["Remove"] == True, "_PlayerID"].tolist()  # noqa: E712
+            to_remove = edited.index[edited["Remove"] == True].tolist()  # noqa: E712
             if to_remove:
                 st.session_state[squad_key] = [pid for pid in selected_for_calc if pid not in set(to_remove)]
                 st.rerun()
