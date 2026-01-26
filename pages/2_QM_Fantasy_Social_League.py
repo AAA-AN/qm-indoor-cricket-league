@@ -430,6 +430,8 @@ with tab_team:
 
             if not controls_disabled:
                 if st.button("Edit team", use_container_width=True):
+                    # Clear init flag so edit mode always re-seeds from the saved entry.
+                    st.session_state.pop(f"fantasy_squad_initialized_{current_block}", None)
                     st.session_state[editing_key] = True
                     st.rerun()
         else:
@@ -444,9 +446,24 @@ with tab_team:
         # Track selection state for the selector; keep it stable so session_state is the source of truth.
         squad_key = "fantasy_player_select"
         prev_key = f"fantasy_prev_selected_ids_{current_block}"
+        init_key = f"fantasy_squad_initialized_{current_block}"
+
+        # Re-initialize the squad selection from the saved entry when entering edit mode.
+        # This prevents stale session_state from overwriting the saved team after submission.
+        if not st.session_state.get(init_key):
+            if entry and entry.get("squad_player_ids"):
+                seed_ids = entry.get("squad_player_ids", [])
+            else:
+                seed_ids = default_squad_ids
+            # Normalize and keep only valid PlayerIDs.
+            seed_ids = [str(pid) for pid in seed_ids if pid and str(pid) in player_label_by_id]
+            st.session_state[squad_key] = seed_ids
+            st.session_state[init_key] = True
+            # Ensure the add picker starts blank each edit session.
+            st.session_state[f"fantasy_add_pick_{current_block}"] = None
 
         # Session state is the single source of truth for the current selection.
-        selected_ids = st.session_state.get(squad_key, default_squad_ids)
+        selected_ids = st.session_state.get(squad_key, [])
         selected_ids = [str(pid) for pid in selected_ids if str(pid) in player_label_by_id]
 
         # Budget/team cap calculations are derived from the current selection state.
@@ -609,7 +626,8 @@ with tab_team:
 
         if removed_ids:
             st.warning("Some selections were removed to enforce the team cap or budget limit.")
-            st.session_state[squad_key] = [pid for pid in squad_ids if pid in player_label_by_id]
+            # Keep PlayerIDs in session state (never labels).
+            st.session_state[squad_key] = [str(pid) for pid in squad_ids if str(pid) in player_label_by_id]
             st.session_state[prev_key] = squad_ids
             st.rerun()
 
@@ -729,6 +747,7 @@ with tab_team:
                         except Exception as e:
                             st.error(f"Fantasy backup failed: {e}")
                         st.session_state[editing_key] = False
+                        st.session_state.pop(f"fantasy_squad_initialized_{current_block}", None)
                         st.success("Fantasy team submitted.")
                         st.rerun()
                     except ValueError as e:
