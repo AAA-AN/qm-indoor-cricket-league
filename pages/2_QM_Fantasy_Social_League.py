@@ -479,14 +479,61 @@ with tab_team:
         team_counts = pd.Series(selected_teams).value_counts().to_dict()
         capped_teams = {team for team, count in team_counts.items() if count >= 4}
 
-        # Make remaining budget highly visible for better selection decisions.
-        budget_cols = st.columns(3)
-        with budget_cols[0]:
-            st.metric("Budget Cap", f"{budget_cap:.1f}")
-        with budget_cols[1]:
-            st.metric("Spent", f"{spent_budget:.1f}")
-        with budget_cols[2]:
-            st.metric("Remaining", f"{remaining_budget:.1f}")
+        # Use a single-line flex budget bar so mobile doesn’t stack the metrics.
+        budget_style = """
+        <style>
+          .budget-bar{
+            display:flex;
+            flex-wrap:nowrap;
+            gap:12px;
+            align-items:center;
+            justify-content:space-between;
+            padding:10px 12px;
+            border:1px solid rgba(49,51,63,0.2);
+            border-radius:10px;
+            margin-bottom:8px;
+          }
+          .budget-item{min-width:0;}
+          .budget-label{
+            font-size:12px;
+            opacity:0.75;
+            line-height:1.1;
+          }
+          .budget-value{
+            font-size:16px;
+            font-weight:700;
+            line-height:1.2;
+            white-space:nowrap;
+          }
+          .budget-remaining{
+            padding:2px 6px;
+            border-radius:6px;
+            background:rgba(14, 91, 118, 0.08);
+          }
+          @media (max-width: 640px){
+            .budget-bar{gap:10px; padding:8px 10px;}
+            .budget-value{font-size:15px;}
+          }
+        </style>
+        """
+        st.markdown(budget_style, unsafe_allow_html=True)
+        budget_html = f"""
+        <div class="budget-bar">
+          <div class="budget-item">
+            <div class="budget-label">Cap</div>
+            <div class="budget-value">{budget_cap:.1f}</div>
+          </div>
+          <div class="budget-item">
+            <div class="budget-label">Spent</div>
+            <div class="budget-value">{spent_budget:.1f}</div>
+          </div>
+          <div class="budget-item budget-remaining">
+            <div class="budget-label">Remaining</div>
+            <div class="budget-value">{remaining_budget:.1f}</div>
+          </div>
+        </div>
+        """
+        st.markdown(budget_html, unsafe_allow_html=True)
         if remaining_budget < 0:
             st.error("Remaining budget is negative. Please adjust your selections.")
 
