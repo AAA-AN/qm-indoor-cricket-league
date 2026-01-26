@@ -441,8 +441,8 @@ with tab_team:
                 else "No team submitted yet."
             )
     else:
-        # Track selection state per block so we can filter options without hiding current picks.
-        squad_key = f"fantasy_player_select_{current_block}"
+        # Track selection state for the selector; keep it stable so session_state is the source of truth.
+        squad_key = "fantasy_player_select"
         prev_key = f"fantasy_prev_selected_ids_{current_block}"
 
         # Read the CURRENT selection from session state before building options so caps update immediately.
@@ -491,28 +491,13 @@ with tab_team:
         selected_count = len(selected_for_calc)
         remove_key = f"fantasy_player_remove_only_{current_block}"
 
-        # Avoid rendering a multiselect with zero options; it shows a confusing "No results" UI.
-        if selected_count < 8 and filtered_player_ids:
-            # Use manual selection limits so we can show a custom "team full" message.
-            squad_ids = st.multiselect(
-                "Squad (pick 8)",
-                options=filtered_player_ids,
-                default=selected_for_calc,
-                key=squad_key,
-                format_func=lambda pid: player_label_by_id.get(pid, pid),
-                on_change=_on_fantasy_select_change,
-                disabled=controls_disabled,
-            )
-            squad_ids = [pid for pid in squad_ids if pid]
-        else:
+        # When the team is full, don't render the main selector because Streamlit's "No results"
+        # text cannot be overridden; use a removal-only selector instead.
+        if selected_count >= 8:
             squad_ids = list(selected_for_calc)
-            if selected_count >= 8:
-                # Hide the main selector at 8 players to avoid the empty "No results" state.
-                st.info("Team Full – To edit your team remove a player first.")
-            else:
-                st.info("No additional players available with current team/budget limits.")
+            st.info("Team Full – To edit your team remove a player first.")
 
-            # Removal-only mode: allow deselection without showing the main selector.
+            # Removal-only mode replaces the main selector so users can still deselect players.
             remove_labels = [player_label_by_id.get(pid, pid) for pid in squad_ids]
             remove_labels = [lbl for lbl in remove_labels if lbl]
             if remove_labels:
@@ -530,6 +515,22 @@ with tab_team:
                 if set(keep_ids) != set(squad_ids):
                     st.session_state[squad_key] = keep_ids
                     st.rerun()
+        # Avoid rendering a multiselect with zero options; it shows a confusing "No results" UI.
+        elif filtered_player_ids:
+            # Use manual selection limits so we can show a custom "team full" message.
+            squad_ids = st.multiselect(
+                "Squad (pick 8)",
+                options=filtered_player_ids,
+                default=selected_for_calc,
+                key=squad_key,
+                format_func=lambda pid: player_label_by_id.get(pid, pid),
+                on_change=_on_fantasy_select_change,
+                disabled=controls_disabled,
+            )
+            squad_ids = [pid for pid in squad_ids if pid]
+        else:
+            squad_ids = list(selected_for_calc)
+            st.info("No additional players available with current team/budget limits.")
 
         prev_ids = st.session_state.get(prev_key, [])
         added_ids = [pid for pid in squad_ids if pid not in prev_ids]
