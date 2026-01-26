@@ -484,6 +484,7 @@ with tab_team:
             if is_selected or (team not in capped_teams and affordable):
                 filtered_player_ids.append(pid)
 
+        # Always render the selected-player table so the team can be edited even when full.
         # Selected players are shown in a table (not multiselect chips) for clarity and direct removal.
         selected_rows = []
         for pid in selected_for_calc:
@@ -498,21 +499,21 @@ with tab_team:
             )
         selected_df = pd.DataFrame(selected_rows)
         st.markdown("#### Your team")
+        edited = st.data_editor(
+            selected_df,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "_PlayerID": st.column_config.TextColumn("", disabled=True, width="small"),
+                "Player": st.column_config.TextColumn(disabled=True),
+                "Team": st.column_config.TextColumn(disabled=True),
+                "Cost": st.column_config.NumberColumn(disabled=True, format="%.1f"),
+                "Remove": st.column_config.CheckboxColumn("✕", help="Tick to remove this player"),
+            },
+            key="fantasy_selected_table",
+        )
+        # Apply removals based on the hidden PlayerID to keep session_state as the source of truth.
         if not selected_df.empty:
-            edited = st.data_editor(
-                selected_df,
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "_PlayerID": st.column_config.TextColumn("", disabled=True, width="small"),
-                    "Player": st.column_config.TextColumn(disabled=True),
-                    "Team": st.column_config.TextColumn(disabled=True),
-                    "Cost": st.column_config.NumberColumn(disabled=True, format="%.1f"),
-                    "Remove": st.column_config.CheckboxColumn("✕", help="Tick to remove this player"),
-                },
-                key="fantasy_selected_table",
-            )
-            # Apply removals based on the hidden PlayerID to keep session_state as the source of truth.
             to_remove = edited.loc[edited["Remove"] == True, "_PlayerID"].tolist()  # noqa: E712
             if to_remove:
                 st.session_state[squad_key] = [pid for pid in selected_for_calc if pid not in set(to_remove)]
@@ -522,6 +523,7 @@ with tab_team:
             # Force a rerun so option filters apply immediately after selection changes.
             st.session_state["fantasy_player_select_changed"] = True
 
+        # Hide only the selector at 8 players to prevent further additions; removals happen via the table.
         team_is_full = len(selected_for_calc) >= 8
         if team_is_full:
             # Hide the selector when full to avoid confusing UX and prevent extra picks.
