@@ -506,7 +506,7 @@ with tab_team:
             }
 
             .budget-value {
-              font-size: 22px;
+              font-size: 26px;
               font-weight: 700;
               line-height: 1.1;
               white-space: nowrap;
@@ -520,7 +520,7 @@ with tab_team:
             /* Mobile tweaks */
             @media (max-width: 640px) {
               .budget-value {
-                font-size: 18px;          /* slightly smaller but still prominent */
+                font-size: 22px;          /* slightly smaller but still prominent */
               }
             }
             </style>
