@@ -559,106 +559,58 @@ with tab_team:
             if (team not in capped_teams) and affordable:
                 addable_ids.append(pid)
 
-        # Avoid st.data_editor here; a button ✕ per row makes the remove action clearer than a checkbox.
-        # Render desktop + mobile layouts separately because Streamlit columns stack on small screens.
-        st.markdown(
-            """
-            <style>
-              /* Desktop shown by default */
-              .team-mobile { display: none; }
-              .team-desktop { display: block; }
-
-              /* On small screens: show mobile layout, hide desktop table */
-              @media (max-width: 640px) {
-                .team-mobile { display: block; }
-                .team-desktop { display: none; }
-              }
-
-              /* Optional: compact mobile row styling */
-              .team-card {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 10px 12px;
-                border: 1px solid rgba(49,51,63,0.2);
-                border-radius: 12px;
-                margin-bottom: 8px;
-              }
-              .team-card-left {
-                min-width: 0;
-              }
-              .team-card-player {
-                font-weight: 600;
-                line-height: 1.2;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-              }
-              .team-card-meta {
-                font-size: 12px;
-                opacity: 0.75;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-              }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        # Use st.dataframe for a mobile-friendly table; buttons cannot live inside the table.
         st.markdown("#### Your team")
-        if not selected_for_calc:
+        rows = []
+        for pid in selected_for_calc:
+            rows.append(
+                {
+                    "Player": player_name_by_id.get(pid, pid),
+                    "Team": player_team_by_id.get(pid, "Unknown") or "Unknown",
+                    "Cost": float(player_price_by_id.get(pid, 0.0) or 0.0),
+                }
+            )
+        team_df = pd.DataFrame(rows, columns=["Player", "Team", "Cost"])
+        if team_df.empty:
             st.caption("No players selected yet.")
         else:
-            # Desktop table layout.
-            st.markdown('<div class="team-desktop">', unsafe_allow_html=True)
-            h1, h2, h3, h4 = st.columns([4, 3, 1.2, 0.8])
-            h1.markdown("**Player**")
-            h2.markdown("**Team**")
-            h3.markdown("**Cost**")
-            h4.markdown("")
+            st.dataframe(team_df, use_container_width=True, hide_index=True)
 
-            for pid in selected_for_calc:
-                c1, c2, c3, c4 = st.columns([4, 3, 1.2, 0.8])
-                c1.write(player_name_by_id.get(pid, pid))
-                c2.write(player_team_by_id.get(pid, "Unknown") or "Unknown")
-                c3.write(f"{player_price_by_id.get(pid, 0.0):.1f}")
-                if c4.button(
-                    "✕",
-                    key=f"remove_{current_block}_{pid}",
-                    help="Remove player from team",
-                ):
+        # Removal is a separate control because st.dataframe cannot embed buttons.
+        selected_labels: list[str] = []
+        label_to_pid: dict[str, str] = {}
+        for pid in selected_for_calc:
+            name = player_name_by_id.get(pid, pid)
+            team = player_team_by_id.get(pid, "Unknown") or "Unknown"
+            cost = float(player_price_by_id.get(pid, 0.0) or 0.0)
+            label = f"{name} — {team} — {cost:.1f}"
+            if label in label_to_pid:
+                label = f"{label} ({pid})"
+            label_to_pid[label] = pid
+            selected_labels.append(label)
+
+        c_sel, c_btn = st.columns([6, 1])
+        with c_sel:
+            remove_label = st.selectbox(
+                "Remove a player",
+                options=selected_labels,
+                index=None,
+                placeholder="Type to search selected players...",
+                key=f"fantasy_remove_pick_{current_block}",
+                disabled=(len(selected_labels) == 0),
+            )
+        with c_btn:
+            if st.button(
+                "✕",
+                key=f"fantasy_remove_btn_{current_block}",
+                disabled=(not remove_label),
+                help="Remove",
+            ):
+                pid = label_to_pid.get(remove_label)
+                if pid:
                     st.session_state[squad_key] = [x for x in selected_for_calc if x != pid]
+                    st.session_state[f"fantasy_remove_pick_{current_block}"] = None
                     st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            # Mobile card layout with a separate remove button column.
-            st.markdown('<div class="team-mobile">', unsafe_allow_html=True)
-            for pid in selected_for_calc:
-                name = player_name_by_id.get(pid, pid)
-                team = player_team_by_id.get(pid, "Unknown") or "Unknown"
-                cost = float(player_price_by_id.get(pid, 0.0) or 0.0)
-                c_left, c_btn = st.columns([6, 1])
-                with c_left:
-                    st.markdown(
-                        f"""
-                        <div class="team-card">
-                          <div class="team-card-left">
-                            <div class="team-card-player">{name}</div>
-                            <div class="team-card-meta">{team} • {cost:.1f}</div>
-                          </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                with c_btn:
-                    if st.button(
-                        "✕",
-                        key=f"remove_m_{current_block}_{pid}",
-                        help="Remove player",
-                    ):
-                        st.session_state[squad_key] = [x for x in selected_for_calc if x != pid]
-                        st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
         # Use a single selectbox so picked players are added without showing chips.
         team_is_full = len(selected_for_calc) >= 8
