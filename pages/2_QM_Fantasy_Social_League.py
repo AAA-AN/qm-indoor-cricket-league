@@ -268,6 +268,10 @@ if teams_df is not None and not teams_df.empty:
         ttmp = ttmp[(ttmp[team_id_col_teams] != "") & (ttmp[team_name_col_teams] != "")].drop_duplicates()
         team_id_to_name = dict(zip(ttmp[team_id_col_teams], ttmp[team_name_col_teams]))
 
+# Filter out players with missing names to avoid blank selector entries.
+missing_name_mask = league[name_col].isna() | league[name_col].astype(str).str.strip().isin(["", "-"])
+league = league[~missing_name_mask].copy()
+
 league[player_id_col] = league[player_id_col].astype(str).str.strip()
 league[name_col] = league[name_col].astype(str).str.strip()
 
@@ -326,6 +330,24 @@ default_bench1 = entry.get("bench1") if entry else None
 default_bench2 = entry.get("bench2") if entry else None
 default_captain = entry.get("captain_id") if entry else None
 default_vice = entry.get("vice_captain_id") if entry else None
+
+# Remove any previously-selected players that no longer have names to avoid stale IDs.
+valid_player_ids = set(player_label_by_id.keys())
+invalid_defaults = [
+    pid for pid in (default_squad_ids + default_starting_ids + [default_bench1, default_bench2, default_captain, default_vice])
+    if pid and pid not in valid_player_ids
+]
+if invalid_defaults:
+    default_squad_ids = [pid for pid in default_squad_ids if pid in valid_player_ids]
+    default_starting_ids = [pid for pid in default_starting_ids if pid in valid_player_ids]
+    default_bench1 = default_bench1 if default_bench1 in valid_player_ids else None
+    default_bench2 = default_bench2 if default_bench2 in valid_player_ids else None
+    default_captain = default_captain if default_captain in valid_player_ids else None
+    default_vice = default_vice if default_vice in valid_player_ids else None
+    notice_key = f"fantasy_hidden_players_notice_{current_block}"
+    if not st.session_state.get(notice_key):
+        st.info("Some players were hidden because they have no name.")
+        st.session_state[notice_key] = True
 
 default_squad_labels = [player_label_by_id.get(pid) for pid in default_squad_ids if pid in player_label_by_id]
 default_starting_labels = [player_label_by_id.get(pid) for pid in default_starting_ids if pid in player_label_by_id]
