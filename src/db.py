@@ -603,22 +603,13 @@ def get_effective_block_state(block_number: int, now_dt: datetime) -> str:
             if override_until is None or now_dt < override_until:
                 return override_state
 
-        open_at = get_block_open_at(block_number, now_dt)
-        if int(block_number) == 1 and open_at is None:
-            pass
-        else:
-            if open_at is None:
+        # Block 1 is gated by its open window; all other blocks are open by default unless overridden.
+        if int(block_number) == 1:
+            open_at = get_block_open_at(block_number, now_dt)
+            if open_at is not None and now_dt < open_at:
                 return "NOT_OPEN"
-            if now_dt < open_at:
-                return "NOT_OPEN"
+            return "OPEN"
 
-        lock_at = _parse_iso_datetime(row["lock_at"])
-        effective_lock_at = lock_at
-        if open_at is not None and lock_at is not None and lock_at < open_at:
-            # Prevent a block from locking before (or exactly when) it can open.
-            effective_lock_at = open_at + timedelta(seconds=1)
-        if effective_lock_at and now_dt >= effective_lock_at:
-            return "LOCKED"
         return "OPEN"
     finally:
         conn.close()
