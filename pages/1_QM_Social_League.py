@@ -1434,18 +1434,28 @@ if selected_tab == "Historical Stats":
 
         datasets: dict[str, pd.DataFrame] = {}
         if hist_a is not None and not hist_a.empty:
-            datasets["A_25_26"] = _normalize_playerid_for_display(hist_a)
+            datasets["Sem A 25/26"] = _normalize_playerid_for_display(hist_a)
         if hist_b is not None and not hist_b.empty:
-            datasets["B_24_25"] = _normalize_playerid_for_display(hist_b)
+            datasets["Sem B 24/25"] = _normalize_playerid_for_display(hist_b)
         if combined_view is not None and not combined_view.empty:
             datasets["All-time (combined)"] = combined_view
 
         if not datasets:
             st.info("Historical tables are missing player names.")
         else:
+            dataset_order = []
+            if "All-time (combined)" in datasets:
+                dataset_order.append("All-time (combined)")
+            for label in ["Sem A 25/26", "Sem B 24/25"]:
+                if label in datasets:
+                    dataset_order.append(label)
+            for label in datasets.keys():
+                if label not in dataset_order:
+                    dataset_order.append(label)
+
             selected_dataset = st.selectbox(
                 "Dataset",
-                list(datasets.keys()),
+                dataset_order,
                 key="hs_dataset",
             )
             league = datasets[selected_dataset].copy()
@@ -1455,11 +1465,6 @@ if selected_tab == "Historical Stats":
             if not name_col:
                 st.info("Historical tables do not include a Name column.")
             else:
-                team_col = _find_col(league, ["Team", "Team Name", "Team Names"])
-                if team_col is None:
-                    team_col = "Team"
-                    league[team_col] = None
-
                 # Coerce numeric columns so Streamlit sorts numerically (not as strings)
                 numeric_cols = [
                     "Runs Scored",
@@ -1491,30 +1496,8 @@ if selected_tab == "Historical Stats":
                     if col in league.columns:
                         league[col] = pd.to_numeric(league[col], errors="coerce")
 
-                team_names = (
-                    sorted([t for t in league[team_col].dropna().astype(str).str.strip().unique().tolist() if t != ""])
-                    if team_col in league.columns
-                    else []
-                )
-                team_dropdown_options = ["All"] + team_names
-
-                c1, c2 = st.columns([2, 1])
-
-                with c2:
-                    selected_team_name = st.selectbox(
-                        "Team",
-                        team_dropdown_options if team_dropdown_options else ["All"],
-                        key="hs_team_name",
-                    )
-
-                player_options_df = league
-                if selected_team_name != "All" and team_col in league.columns:
-                    player_options_df = league[
-                        league[team_col].astype(str).str.strip() == str(selected_team_name).strip()
-                    ]
-
                 player_options = (
-                    player_options_df[name_col]
+                    league[name_col]
                     .dropna()
                     .astype(str)
                     .map(str.strip)
@@ -1525,18 +1508,13 @@ if selected_tab == "Historical Stats":
                 current_players = [p for p in current_players if p in player_options]
                 st.session_state["hs_players"] = current_players
 
-                with c1:
-                    selected_players = st.multiselect(
-                        "Players – Leave blank for all players",
-                        player_options,
-                        key="hs_players",
-                    )
+                selected_players = st.multiselect(
+                    "Players – Leave blank for all players",
+                    player_options,
+                    key="hs_players",
+                )
 
                 filtered = league.copy()
-                if selected_team_name != "All" and team_col in filtered.columns:
-                    filtered = filtered[
-                        filtered[team_col].astype(str).str.strip() == str(selected_team_name).strip()
-                    ]
 
                 if selected_players:
                     filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
