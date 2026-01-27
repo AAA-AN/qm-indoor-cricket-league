@@ -656,7 +656,12 @@ with tab_team:
                 st.rerun()
 
             if not addable_labels:
-                st.caption("No players available to add (budget/team limits).")
+                if remaining_budget > 0:
+                    st.warning(
+                        "No affordable players available. Remove a higher-cost player to free up budget."
+                    )
+                else:
+                    st.warning("No budget remaining. Remove a player to continue.")
             else:
                 st.selectbox(
                     "Add a player",
