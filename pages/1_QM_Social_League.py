@@ -101,22 +101,10 @@ def _normalize_playerid_for_display(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _resolve_all_selection(widget_key: str, options: list[str], all_label: str = "All") -> list[str]:
-    sel = st.session_state.get(widget_key, None)
-    if sel is None:
-        return options[:]
-    sel = [s for s in sel if s]
-    if not sel:
-        return options[:]
-    if all_label in sel:
-        return options[:]
-    return [s for s in sel if s in options]
+ALL_OPT = "All"
 
 
-ALL_LABEL = "All"
-
-
-def _coerce_list(v):
+def _as_list(v):
     if v is None:
         return []
     if isinstance(v, str):
@@ -127,20 +115,29 @@ def _coerce_list(v):
         return []
 
 
-def _handle_all_exclusive(widget_key: str, all_label: str = ALL_LABEL) -> None:
-    # Called by widget on_change; safe place to edit session_state.
-    sel = _coerce_list(st.session_state.get(widget_key))
+def _all_exclusive(widget_key: str, all_label: str = ALL_OPT) -> None:
+    sel = _as_list(st.session_state.get(widget_key))
+    if not sel:
+        return
     if all_label in sel and len(sel) > 1:
         st.session_state[widget_key] = [all_label]
+        return
+    if all_label in sel and len(sel) == 1:
+        return
 
 
-def _resolve_all(sel, real_options: list[str], all_label: str = ALL_LABEL) -> list[str]:
-    sel = _coerce_list(sel)
+def _resolved_selection(
+    widget_key: str,
+    real_options: list[str],
+    default_list: list[str],
+    all_label: str = ALL_OPT,
+) -> list[str]:
+    sel = _as_list(st.session_state.get(widget_key, default_list))
     if not sel:
         return []
     if all_label in sel:
         return real_options[:]
-    return [s for s in sel if s in real_options]
+    return [x for x in sel if x in real_options]
 
 
 def _init_or_sanitize_multiselect_state_allow_empty(key: str, options: list[str], defaults: list[str]) -> None:
@@ -1238,53 +1235,45 @@ if selected_tab == "Player Stats":
     st.markdown("#### Select Stats To Display")
     d1, d2, d3 = st.columns(3)
 
+    DEFAULT_BATTING = ["Runs Scored", "Batting Average"]
+    DEFAULT_BOWLING = ["Wickets", "Economy"]
+    DEFAULT_FIELDING: list[str] = []
+
     batting_select_key = "batting_cols_select"
     bowling_select_key = "bowling_cols_select"
     fielding_select_key = "fielding_cols_select"
 
     with d1:
-        batting_select_options = [ALL_LABEL] + batting_options
+        batting_select_options = [ALL_OPT] + batting_options
         selected_batting = st.multiselect(
             "Batting stats",
             options=batting_select_options,
-            default=default_batting,
+            default=DEFAULT_BATTING,
             key=batting_select_key,
-            on_change=lambda: _handle_all_exclusive(batting_select_key),
+            on_change=lambda: _all_exclusive(batting_select_key),
         )
     with d2:
-        bowling_select_options = [ALL_LABEL] + bowling_options
+        bowling_select_options = [ALL_OPT] + bowling_options
         selected_bowling = st.multiselect(
             "Bowling stats",
             options=bowling_select_options,
-            default=default_bowling,
+            default=DEFAULT_BOWLING,
             key=bowling_select_key,
-            on_change=lambda: _handle_all_exclusive(bowling_select_key),
+            on_change=lambda: _all_exclusive(bowling_select_key),
         )
     with d3:
-        fielding_select_options = [ALL_LABEL] + fielding_options
+        fielding_select_options = [ALL_OPT] + fielding_options
         selected_fielding = st.multiselect(
             "Fielding stats",
             options=fielding_select_options,
-            default=default_fielding,
+            default=DEFAULT_FIELDING,
             key=fielding_select_key,
-            on_change=lambda: _handle_all_exclusive(fielding_select_key),
+            on_change=lambda: _all_exclusive(fielding_select_key),
         )
 
-    resolved_batting = _resolve_all(
-        st.session_state.get(batting_select_key, default_batting),
-        batting_options,
-        ALL_LABEL,
-    )
-    resolved_bowling = _resolve_all(
-        st.session_state.get(bowling_select_key, default_bowling),
-        bowling_options,
-        ALL_LABEL,
-    )
-    resolved_fielding = _resolve_all(
-        st.session_state.get(fielding_select_key, default_fielding),
-        fielding_options,
-        ALL_LABEL,
-    )
+    resolved_batting = _resolved_selection(batting_select_key, batting_options, DEFAULT_BATTING)
+    resolved_bowling = _resolved_selection(bowling_select_key, bowling_options, DEFAULT_BOWLING)
+    resolved_fielding = _resolved_selection(fielding_select_key, fielding_options, DEFAULT_FIELDING)
 
     selected_columns = resolved_batting + resolved_bowling + resolved_fielding
 
@@ -1642,53 +1631,45 @@ if selected_tab == "Historical Stats":
                 st.markdown("#### Select Stats To Display")
                 d1, d2, d3 = st.columns(3)
 
+                DEFAULT_BATTING = ["Runs Scored", "Batting Average"]
+                DEFAULT_BOWLING = ["Wickets", "Economy"]
+                DEFAULT_FIELDING: list[str] = []
+
                 hs_batting_key = "hs_batting_cols_select"
                 hs_bowling_key = "hs_bowling_cols_select"
                 hs_fielding_key = "hs_fielding_cols_select"
 
                 with d1:
-                    hs_batting_options = [ALL_LABEL] + batting_options
+                    hs_batting_options = [ALL_OPT] + batting_options
                     selected_batting = st.multiselect(
                         "Batting stats",
                         options=hs_batting_options,
-                        default=default_batting,
+                        default=DEFAULT_BATTING,
                         key=hs_batting_key,
-                        on_change=lambda: _handle_all_exclusive(hs_batting_key),
+                        on_change=lambda: _all_exclusive(hs_batting_key),
                     )
                 with d2:
-                    hs_bowling_options = [ALL_LABEL] + bowling_options
+                    hs_bowling_options = [ALL_OPT] + bowling_options
                     selected_bowling = st.multiselect(
                         "Bowling stats",
                         options=hs_bowling_options,
-                        default=default_bowling,
+                        default=DEFAULT_BOWLING,
                         key=hs_bowling_key,
-                        on_change=lambda: _handle_all_exclusive(hs_bowling_key),
+                        on_change=lambda: _all_exclusive(hs_bowling_key),
                     )
                 with d3:
-                    hs_fielding_options = [ALL_LABEL] + fielding_options
+                    hs_fielding_options = [ALL_OPT] + fielding_options
                     selected_fielding = st.multiselect(
                         "Fielding stats",
                         options=hs_fielding_options,
-                        default=default_fielding,
+                        default=DEFAULT_FIELDING,
                         key=hs_fielding_key,
-                        on_change=lambda: _handle_all_exclusive(hs_fielding_key),
+                        on_change=lambda: _all_exclusive(hs_fielding_key),
                     )
 
-                resolved_batting = _resolve_all(
-                    st.session_state.get(hs_batting_key, default_batting),
-                    batting_options,
-                    ALL_LABEL,
-                )
-                resolved_bowling = _resolve_all(
-                    st.session_state.get(hs_bowling_key, default_bowling),
-                    bowling_options,
-                    ALL_LABEL,
-                )
-                resolved_fielding = _resolve_all(
-                    st.session_state.get(hs_fielding_key, default_fielding),
-                    fielding_options,
-                    ALL_LABEL,
-                )
+                resolved_batting = _resolved_selection(hs_batting_key, batting_options, DEFAULT_BATTING)
+                resolved_bowling = _resolved_selection(hs_bowling_key, bowling_options, DEFAULT_BOWLING)
+                resolved_fielding = _resolved_selection(hs_fielding_key, fielding_options, DEFAULT_FIELDING)
 
                 selected_columns = resolved_batting + resolved_bowling + resolved_fielding
 
