@@ -1275,19 +1275,35 @@ if selected_tab == "Historical Stats":
     if hist_a is None and hist_b is None:
         st.info("No historical tables found in the workbook.")
     else:
+        def _hist_col_config_for(df: pd.DataFrame) -> dict:
+            config: dict = {}
+            # Match Player Stats styling: pin Name, format rate stats, keep Fantasy Points last.
+            if "Name" in df.columns:
+                config["Name"] = st.column_config.TextColumn(pinned=True)
+            for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
+                if c in df.columns:
+                    config[c] = st.column_config.NumberColumn(format="%.2f")
+            if "Fantasy Points" in df.columns:
+                config["Fantasy Points"] = st.column_config.NumberColumn()
+            return config
+
         if hist_a is not None and not hist_a.empty:
             st.markdown("### A_25_26")
-            st.dataframe(
+            st.data_editor(
                 _normalize_playerid_for_display(hist_a),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
+                disabled=True,
+                column_config=_hist_col_config_for(hist_a),
             )
         if hist_b is not None and not hist_b.empty:
             st.markdown("### B_24_25")
-            st.dataframe(
+            st.data_editor(
                 _normalize_playerid_for_display(hist_b),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
+                disabled=True,
+                column_config=_hist_col_config_for(hist_b),
             )
 
         def _normalize_name(name: str) -> str:
@@ -1447,10 +1463,13 @@ if selected_tab == "Historical Stats":
                     ordered_cols.append(c)
 
             st.markdown("### All-time (combined)")
-            st.dataframe(
-                _normalize_playerid_for_display(result[ordered_cols]),
-                use_container_width=True,
+            combined_view = _normalize_playerid_for_display(result[ordered_cols])
+            st.data_editor(
+                combined_view,
+                width="stretch",
                 hide_index=True,
+                disabled=True,
+                column_config=_hist_col_config_for(combined_view),
             )
 
 # ============================
