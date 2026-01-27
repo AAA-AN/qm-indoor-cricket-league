@@ -116,17 +116,17 @@ def _as_list(v):
 
 
 def enforce_all_exclusive(key: str, all_token: str = ALL) -> None:
-    sel = st.session_state.get(key) or []
-    if not isinstance(sel, list):
-        sel = list(sel) if sel else []
-    if all_token in sel and len(sel) > 1:
-        st.session_state[key] = [all_token]
-        return
+    sel = _as_list(st.session_state.get(key))
     prev_key = f"__prev_{key}"
-    prev = st.session_state.get(prev_key, [])
-    if prev == [all_token] and all_token in sel and len(sel) > 1:
-        st.session_state[key] = [x for x in sel if x != all_token]
-        return
+    prev = _as_list(st.session_state.get(prev_key))
+
+    if all_token in sel:
+        if all_token not in prev:
+            st.session_state[key] = [all_token]
+            return
+        if len(sel) > 1:
+            st.session_state[key] = [x for x in sel if x != all_token]
+            return
 
 
 def _resolved_selection(
@@ -1246,6 +1246,13 @@ if selected_tab == "Player Stats":
     bowling_select_key = "bowling_cols_select"
     fielding_select_key = "fielding_cols_select"
 
+    if f"__prev_{batting_select_key}" not in st.session_state:
+        st.session_state[f"__prev_{batting_select_key}"] = DEFAULT_BATTING
+    if f"__prev_{bowling_select_key}" not in st.session_state:
+        st.session_state[f"__prev_{bowling_select_key}"] = DEFAULT_BOWLING
+    if f"__prev_{fielding_select_key}" not in st.session_state:
+        st.session_state[f"__prev_{fielding_select_key}"] = DEFAULT_FIELDING
+
     with d1:
         batting_select_options = [ALL] + batting_options
         selected_batting = st.multiselect(
@@ -1645,6 +1652,13 @@ if selected_tab == "Historical Stats":
                 hs_batting_key = "hs_batting_cols_select"
                 hs_bowling_key = "hs_bowling_cols_select"
                 hs_fielding_key = "hs_fielding_cols_select"
+
+                if f"__prev_{hs_batting_key}" not in st.session_state:
+                    st.session_state[f"__prev_{hs_batting_key}"] = DEFAULT_BATTING
+                if f"__prev_{hs_bowling_key}" not in st.session_state:
+                    st.session_state[f"__prev_{hs_bowling_key}"] = DEFAULT_BOWLING
+                if f"__prev_{hs_fielding_key}" not in st.session_state:
+                    st.session_state[f"__prev_{hs_fielding_key}"] = DEFAULT_FIELDING
 
                 with d1:
                     hs_batting_options = [ALL] + batting_options
