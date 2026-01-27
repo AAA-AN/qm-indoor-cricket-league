@@ -359,6 +359,8 @@ last_block = st.session_state.get(last_block_key)
 block_changed = last_block is None or int(last_block) != int(current_block)
 
 if block_changed:
+    # Clear init flag when the block changes so edit mode re-seeds correctly.
+    st.session_state.pop(f"fantasy_squad_initialized_{current_block}", None)
     if controls_disabled:
         st.session_state[editing_key] = False
     elif entry is None:
@@ -462,12 +464,13 @@ with tab_team:
         # Re-initialize the squad selection from the saved entry when entering edit mode.
         # This prevents stale session_state from overwriting the saved team after submission.
         if not st.session_state.get(init_key):
+            # Seed from saved entry if present; otherwise start empty for a new block.
             if entry and entry.get("squad_player_ids"):
                 seed_ids = entry.get("squad_player_ids", [])
             else:
-                seed_ids = default_squad_ids
+                seed_ids = []
             # Normalize and keep only valid PlayerIDs.
-            seed_ids = [str(pid) for pid in seed_ids if pid and str(pid) in player_label_by_id]
+            seed_ids = [str(pid).strip() for pid in seed_ids if pid and str(pid).strip() in player_label_by_id]
             st.session_state[squad_key] = seed_ids
             st.session_state[init_key] = True
             # Ensure the add picker starts blank each edit session.
@@ -475,7 +478,7 @@ with tab_team:
 
         # Normalize in-memory squad to avoid string-vs-list bugs and drop invalid IDs.
         st.session_state[squad_key] = _as_pid_list(
-            st.session_state.get(squad_key, default_squad_ids)
+            st.session_state.get(squad_key, [])
         )
         st.session_state[squad_key] = [
             str(pid).strip()
@@ -484,8 +487,8 @@ with tab_team:
         ]
 
         # Session state is the single source of truth for the current selection.
-        selected_ids = st.session_state.get(squad_key, [])
-        selected_ids = [str(pid) for pid in selected_ids if str(pid) in player_label_by_id]
+        selected_for_calc = st.session_state[squad_key]
+        selected_ids = [str(pid) for pid in selected_for_calc if str(pid) in player_label_by_id]
 
         # Budget/team cap calculations are derived from the current selection state.
         budget_cap = 60.0
@@ -646,7 +649,7 @@ with tab_team:
                 st.rerun()
 
             if not addable_labels:
-                st.caption("No players available to add (team cap and/or budget).")
+                st.caption("No players available to add (budget/team limits).")
             else:
                 st.selectbox(
                     "Add a player",
