@@ -115,14 +115,12 @@ def _as_list(v):
         return []
 
 
-def _all_exclusive(widget_key: str, all_label: str = ALL_OPT) -> None:
+def _all_toggle(widget_key: str, all_label: str = ALL_OPT) -> None:
     sel = _as_list(st.session_state.get(widget_key))
     if not sel:
         return
     if all_label in sel and len(sel) > 1:
-        st.session_state[widget_key] = [all_label]
-        return
-    if all_label in sel and len(sel) == 1:
+        st.session_state[widget_key] = [x for x in sel if x != all_label]
         return
 
 
@@ -1250,7 +1248,7 @@ if selected_tab == "Player Stats":
             options=batting_select_options,
             default=DEFAULT_BATTING,
             key=batting_select_key,
-            on_change=lambda: _all_exclusive(batting_select_key),
+            on_change=lambda: _all_toggle(batting_select_key),
         )
     with d2:
         bowling_select_options = [ALL_OPT] + bowling_options
@@ -1259,7 +1257,7 @@ if selected_tab == "Player Stats":
             options=bowling_select_options,
             default=DEFAULT_BOWLING,
             key=bowling_select_key,
-            on_change=lambda: _all_exclusive(bowling_select_key),
+            on_change=lambda: _all_toggle(bowling_select_key),
         )
     with d3:
         fielding_select_options = [ALL_OPT] + fielding_options
@@ -1268,7 +1266,7 @@ if selected_tab == "Player Stats":
             options=fielding_select_options,
             default=DEFAULT_FIELDING,
             key=fielding_select_key,
-            on_change=lambda: _all_exclusive(fielding_select_key),
+            on_change=lambda: _all_toggle(fielding_select_key),
         )
 
     resolved_batting = _resolved_selection(batting_select_key, batting_options, DEFAULT_BATTING)
@@ -1646,7 +1644,7 @@ if selected_tab == "Historical Stats":
                         options=hs_batting_options,
                         default=DEFAULT_BATTING,
                         key=hs_batting_key,
-                        on_change=lambda: _all_exclusive(hs_batting_key),
+                        on_change=lambda: _all_toggle(hs_batting_key),
                     )
                 with d2:
                     hs_bowling_options = [ALL_OPT] + bowling_options
@@ -1655,7 +1653,7 @@ if selected_tab == "Historical Stats":
                         options=hs_bowling_options,
                         default=DEFAULT_BOWLING,
                         key=hs_bowling_key,
-                        on_change=lambda: _all_exclusive(hs_bowling_key),
+                        on_change=lambda: _all_toggle(hs_bowling_key),
                     )
                 with d3:
                     hs_fielding_options = [ALL_OPT] + fielding_options
@@ -1664,7 +1662,7 @@ if selected_tab == "Historical Stats":
                         options=hs_fielding_options,
                         default=DEFAULT_FIELDING,
                         key=hs_fielding_key,
-                        on_change=lambda: _all_exclusive(hs_fielding_key),
+                        on_change=lambda: _all_toggle(hs_fielding_key),
                     )
 
                 resolved_batting = _resolved_selection(hs_batting_key, batting_options, DEFAULT_BATTING)
