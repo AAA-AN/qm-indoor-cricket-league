@@ -4,6 +4,7 @@ import statistics
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from zoneinfo import ZoneInfo
+import pandas as pd
 
 DB_PATH = Path("data") / "app.db"
 
@@ -1235,6 +1236,101 @@ def compute_starting_prices_from_history(
         prices[str(pid)] = float(price)
 
     return prices
+
+
+def ensure_block_prices_from_history_or_default(
+    block_number: int,
+    current_league_df: pd.DataFrame,
+    player_id_col: str,
+    name_col: str,
+    player_ids: list[str],
+    history_dfs: list[pd.DataFrame | None],
+    default_price: float = 7.5,
+) -> dict[str, float]:
+    """
+    Ensure prices exist for a block using historical points when available.
+    - Does not rely on page-level mappings.
+    - New players get the median of returning prices (rounded to nearest 0.5).
+    """
+    prices = get_block_prices(block_number)
+    if prices:
+        return prices
+
+    def _normalize_name(s: object) -> str:
+        return " ".join(str(s or "").split()).casefold()
+
+    def _round_to_0_5(x: float) -> float:
+        return round(x * 2) / 2
+
+    def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+        cols = list(df.columns)
+        for c in candidates:
+            if c in cols:
+                return c
+        return None
+
+    name_to_pid: dict[str, str] = {}
+    if player_id_col in current_league_df.columns and name_col in current_league_df.columns:
+        for _, r in current_league_df[[player_id_col, name_col]].iterrows():
+            pid = str(r.get(player_id_col) or "").strip()
+            nm = str(r.get(name_col) or "").strip()
+            if pid and nm:
+                name_to_pid[_normalize_name(nm)] = pid
+
+    valid_pids = set(str(pid).strip() for pid in player_ids if pid)
+    points_by_pid: dict[str, float] = {}
+
+    points_cols = ["Fantasy Points", "Total Points", "Points", "Pts"]
+    pid_cols = ["PlayerID", "Player Id", "Player ID"]
+    name_cols = ["Name", "Player", "Player Name"]
+
+    for df in history_dfs:
+        if df is None or df.empty:
+            continue
+        tmp = df.copy()
+        tmp.columns = [str(c).strip() for c in tmp.columns]
+        pid_col = _find_col(tmp, pid_cols)
+        name_col_hist = _find_col(tmp, name_cols)
+        points_col = _find_col(tmp, points_cols)
+        if points_col is None:
+            continue
+        tmp[points_col] = pd.to_numeric(tmp[points_col], errors="coerce")
+
+        for _, row in tmp.iterrows():
+            pts = row.get(points_col)
+            if pts is None or pd.isna(pts):
+                continue
+            pid = None
+            if pid_col:
+                pid_val = str(row.get(pid_col) or "").strip()
+                if pid_val in valid_pids:
+                    pid = pid_val
+            if pid is None and name_col_hist:
+                nm = _normalize_name(row.get(name_col_hist))
+                pid = name_to_pid.get(nm)
+            if pid:
+                points_by_pid[pid] = float(points_by_pid.get(pid, 0.0)) + float(pts)
+
+    if points_by_pid:
+        base_prices = compute_starting_prices_from_history(points_by_pid, default_price=default_price)
+        returning_prices = list(base_prices.values())
+        median_price = None
+        if returning_prices:
+            median_price = _round_to_0_5(float(statistics.median(returning_prices)))
+
+        final_prices: dict[str, float] = {}
+        for pid in player_ids:
+            pid_str = str(pid).strip()
+            if pid_str in base_prices:
+                final_prices[pid_str] = float(base_prices[pid_str])
+            else:
+                final_prices[pid_str] = median_price if median_price is not None else default_price
+
+        upsert_block_prices_from_dict(block_number, final_prices)
+        return get_block_prices(block_number)
+
+    ensure_block_prices_default(block_number, player_ids, default_price=default_price)
+    return get_block_prices(block_number)
 
 
 def _fantasy_block_self_test() -> None:
