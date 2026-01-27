@@ -101,7 +101,7 @@ def _normalize_playerid_for_display(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-ALL_OPT = "All"
+ALL = "All"
 
 
 def _as_list(v):
@@ -115,12 +115,17 @@ def _as_list(v):
         return []
 
 
-def _all_toggle(widget_key: str, all_label: str = ALL_OPT) -> None:
-    sel = _as_list(st.session_state.get(widget_key))
-    if not sel:
+def enforce_all_exclusive(key: str, all_token: str = ALL) -> None:
+    sel = st.session_state.get(key) or []
+    if not isinstance(sel, list):
+        sel = list(sel) if sel else []
+    if all_token in sel and len(sel) > 1:
+        st.session_state[key] = [all_token]
         return
-    if all_label in sel and len(sel) > 1:
-        st.session_state[widget_key] = [x for x in sel if x != all_label]
+    prev_key = f"__prev_{key}"
+    prev = st.session_state.get(prev_key, [])
+    if prev == [all_token] and all_token in sel and len(sel) > 1:
+        st.session_state[key] = [x for x in sel if x != all_token]
         return
 
 
@@ -128,7 +133,7 @@ def _resolved_selection(
     widget_key: str,
     real_options: list[str],
     default_list: list[str],
-    all_label: str = ALL_OPT,
+    all_label: str = ALL,
 ) -> list[str]:
     sel = _as_list(st.session_state.get(widget_key, default_list))
     if not sel:
@@ -1242,36 +1247,40 @@ if selected_tab == "Player Stats":
     fielding_select_key = "fielding_cols_select"
 
     with d1:
-        batting_select_options = [ALL_OPT] + batting_options
+        batting_select_options = [ALL] + batting_options
         selected_batting = st.multiselect(
             "Batting stats",
             options=batting_select_options,
             default=DEFAULT_BATTING,
             key=batting_select_key,
-            on_change=lambda: _all_toggle(batting_select_key),
+            on_change=lambda: enforce_all_exclusive(batting_select_key),
         )
     with d2:
-        bowling_select_options = [ALL_OPT] + bowling_options
+        bowling_select_options = [ALL] + bowling_options
         selected_bowling = st.multiselect(
             "Bowling stats",
             options=bowling_select_options,
             default=DEFAULT_BOWLING,
             key=bowling_select_key,
-            on_change=lambda: _all_toggle(bowling_select_key),
+            on_change=lambda: enforce_all_exclusive(bowling_select_key),
         )
     with d3:
-        fielding_select_options = [ALL_OPT] + fielding_options
+        fielding_select_options = [ALL] + fielding_options
         selected_fielding = st.multiselect(
             "Fielding stats",
             options=fielding_select_options,
             default=DEFAULT_FIELDING,
             key=fielding_select_key,
-            on_change=lambda: _all_toggle(fielding_select_key),
+            on_change=lambda: enforce_all_exclusive(fielding_select_key),
         )
 
     resolved_batting = _resolved_selection(batting_select_key, batting_options, DEFAULT_BATTING)
     resolved_bowling = _resolved_selection(bowling_select_key, bowling_options, DEFAULT_BOWLING)
     resolved_fielding = _resolved_selection(fielding_select_key, fielding_options, DEFAULT_FIELDING)
+
+    st.session_state[f"__prev_{batting_select_key}"] = st.session_state.get(batting_select_key) or []
+    st.session_state[f"__prev_{bowling_select_key}"] = st.session_state.get(bowling_select_key) or []
+    st.session_state[f"__prev_{fielding_select_key}"] = st.session_state.get(fielding_select_key) or []
 
     selected_columns = resolved_batting + resolved_bowling + resolved_fielding
 
@@ -1638,36 +1647,40 @@ if selected_tab == "Historical Stats":
                 hs_fielding_key = "hs_fielding_cols_select"
 
                 with d1:
-                    hs_batting_options = [ALL_OPT] + batting_options
+                    hs_batting_options = [ALL] + batting_options
                     selected_batting = st.multiselect(
                         "Batting stats",
                         options=hs_batting_options,
                         default=DEFAULT_BATTING,
                         key=hs_batting_key,
-                        on_change=lambda: _all_toggle(hs_batting_key),
+                        on_change=lambda: enforce_all_exclusive(hs_batting_key),
                     )
                 with d2:
-                    hs_bowling_options = [ALL_OPT] + bowling_options
+                    hs_bowling_options = [ALL] + bowling_options
                     selected_bowling = st.multiselect(
                         "Bowling stats",
                         options=hs_bowling_options,
                         default=DEFAULT_BOWLING,
                         key=hs_bowling_key,
-                        on_change=lambda: _all_toggle(hs_bowling_key),
+                        on_change=lambda: enforce_all_exclusive(hs_bowling_key),
                     )
                 with d3:
-                    hs_fielding_options = [ALL_OPT] + fielding_options
+                    hs_fielding_options = [ALL] + fielding_options
                     selected_fielding = st.multiselect(
                         "Fielding stats",
                         options=hs_fielding_options,
                         default=DEFAULT_FIELDING,
                         key=hs_fielding_key,
-                        on_change=lambda: _all_toggle(hs_fielding_key),
+                        on_change=lambda: enforce_all_exclusive(hs_fielding_key),
                     )
 
                 resolved_batting = _resolved_selection(hs_batting_key, batting_options, DEFAULT_BATTING)
                 resolved_bowling = _resolved_selection(hs_bowling_key, bowling_options, DEFAULT_BOWLING)
                 resolved_fielding = _resolved_selection(hs_fielding_key, fielding_options, DEFAULT_FIELDING)
+
+                st.session_state[f"__prev_{hs_batting_key}"] = st.session_state.get(hs_batting_key) or []
+                st.session_state[f"__prev_{hs_bowling_key}"] = st.session_state.get(hs_bowling_key) or []
+                st.session_state[f"__prev_{hs_fielding_key}"] = st.session_state.get(hs_fielding_key) or []
 
                 selected_columns = resolved_batting + resolved_bowling + resolved_fielding
 
