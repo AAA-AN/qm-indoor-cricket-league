@@ -86,6 +86,21 @@ def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
     return None
 
 
+def _normalize_playerid_for_display(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Streamlit uses Arrow; mixed types in object columns (int + str) can cause ArrowInvalid.
+    Force PlayerID-like columns to clean strings.
+    """
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    for c in ["PlayerID", "Player Id", "Player ID"]:
+        if c in out.columns:
+            out[c] = out[c].astype(str).str.strip()
+            out[c] = out[c].replace({"nan": "", "None": "", "NaT": ""})
+    return out
+
+
 def _init_or_sanitize_multiselect_state_allow_empty(key: str, options: list[str], defaults: list[str]) -> None:
     """
     - First load: set defaults (only those in options).
@@ -1262,10 +1277,18 @@ if selected_tab == "Historical Stats":
     else:
         if hist_a is not None and not hist_a.empty:
             st.markdown("### A_25_26")
-            st.dataframe(hist_a, use_container_width=True, hide_index=True)
+            st.dataframe(
+                _normalize_playerid_for_display(hist_a),
+                use_container_width=True,
+                hide_index=True,
+            )
         if hist_b is not None and not hist_b.empty:
             st.markdown("### B_24_25")
-            st.dataframe(hist_b, use_container_width=True, hide_index=True)
+            st.dataframe(
+                _normalize_playerid_for_display(hist_b),
+                use_container_width=True,
+                hide_index=True,
+            )
 
         def _normalize_name(name: str) -> str:
             return " ".join(str(name).split()).casefold()
@@ -1299,7 +1322,7 @@ if selected_tab == "Historical Stats":
             combined = pd.concat(frames, ignore_index=True)
             combined = combined[combined["_norm_name"] != ""]
 
-            rate_keywords = ["avg", "average", "sr", "strike rate", "economy", "econ", "rate"]
+            rate_keywords = ["avg", "average", "sr", "strike", "economy", "econ", "rate", "%"]
             rate_cols = [
                 c for c in combined.columns if any(k in str(c).casefold() for k in rate_keywords)
             ]
@@ -1311,13 +1334,15 @@ if selected_tab == "Historical Stats":
             for c in combined.columns:
                 if c in exclude_cols:
                     continue
+                if any(k in str(c).casefold() for k in rate_keywords):
+                    continue
                 series = pd.to_numeric(combined[c], errors="coerce")
                 if series.notna().any():
                     counting_cols.append(c)
 
             grouped = combined.groupby("_norm_name", dropna=False)
-            summed = grouped[counting_cols].apply(
-                lambda df: pd.to_numeric(df, errors="coerce").sum(min_count=1)
+            summed = grouped[counting_cols].agg(
+                lambda s: pd.to_numeric(s, errors="coerce").sum(min_count=1)
             )
 
             name_display = grouped["_name"].agg(
@@ -1423,7 +1448,7 @@ if selected_tab == "Historical Stats":
 
             st.markdown("### All-time (combined)")
             st.dataframe(
-                result[ordered_cols],
+                _normalize_playerid_for_display(result[ordered_cols]),
                 use_container_width=True,
                 hide_index=True,
             )
