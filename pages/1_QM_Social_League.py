@@ -1193,21 +1193,57 @@ if selected_tab == "Player Stats":
     default_bowling = [c for c in ["Wickets", "Economy"] if c in bowling_options]
     default_fielding: list[str] = []
 
-    _init_or_sanitize_multiselect_state_allow_empty("ps_batting_cols", batting_options, default_batting)
-    _init_or_sanitize_multiselect_state_allow_empty("ps_bowling_cols", bowling_options, default_bowling)
-    _init_or_sanitize_multiselect_state_allow_empty("ps_fielding_cols", fielding_options, default_fielding)
-
     st.markdown("#### Select Stats To Display")
     d1, d2, d3 = st.columns(3)
 
-    with d1:
-        selected_batting = st.multiselect("Batting Stats", options=batting_options, key="ps_batting_cols")
-    with d2:
-        selected_bowling = st.multiselect("Bowling Stats", options=bowling_options, key="ps_bowling_cols")
-    with d3:
-        selected_fielding = st.multiselect("Fielding Stats", options=fielding_options, key="ps_fielding_cols")
+    BAT_ALL = "All"
+    batting_select_key = "batting_cols_select"
+    bowling_select_key = "bowling_cols_select"
+    fielding_select_key = "fielding_cols_select"
 
-    selected_columns = selected_batting + selected_bowling + selected_fielding
+    with d1:
+        batting_select_options = [BAT_ALL] + batting_options
+        selected_batting = st.multiselect(
+            "Batting stats",
+            options=batting_select_options,
+            default=st.session_state.get(batting_select_key, [BAT_ALL]),
+            key=batting_select_key,
+        )
+    with d2:
+        bowling_select_options = [BAT_ALL] + bowling_options
+        selected_bowling = st.multiselect(
+            "Bowling stats",
+            options=bowling_select_options,
+            default=st.session_state.get(bowling_select_key, [BAT_ALL]),
+            key=bowling_select_key,
+        )
+    with d3:
+        fielding_select_options = [BAT_ALL] + fielding_options
+        selected_fielding = st.multiselect(
+            "Fielding stats",
+            options=fielding_select_options,
+            default=st.session_state.get(fielding_select_key, [BAT_ALL]),
+            key=fielding_select_key,
+        )
+
+    # Normalize selections so "All" expands to the full list and de-selects when specific picks are made.
+    def _resolve_all(selected: list[str], options: list[str], key: str) -> list[str]:
+        sel = list(st.session_state.get(key, selected))
+        if BAT_ALL in sel and len(sel) > 1:
+            sel = [c for c in sel if c != BAT_ALL]
+        if BAT_ALL in sel:
+            resolved = options[:]
+        else:
+            resolved = sel[:] if sel else options[:]
+        if set(resolved) == set(options):
+            st.session_state[key] = [BAT_ALL]
+        return resolved
+
+    resolved_batting = _resolve_all(selected_batting, batting_options, batting_select_key)
+    resolved_bowling = _resolve_all(selected_bowling, bowling_options, bowling_select_key)
+    resolved_fielding = _resolve_all(selected_fielding, fielding_options, fielding_select_key)
+
+    selected_columns = resolved_batting + resolved_bowling + resolved_fielding
 
     # Fixed columns (Name first)
     fixed_cols: list[str] = []
@@ -1560,21 +1596,57 @@ if selected_tab == "Historical Stats":
                 default_bowling = [c for c in ["Wickets", "Economy"] if c in bowling_options]
                 default_fielding: list[str] = []
 
-                _init_or_sanitize_multiselect_state_allow_empty("hs_batting_cols", batting_options, default_batting)
-                _init_or_sanitize_multiselect_state_allow_empty("hs_bowling_cols", bowling_options, default_bowling)
-                _init_or_sanitize_multiselect_state_allow_empty("hs_fielding_cols", fielding_options, default_fielding)
-
                 st.markdown("#### Select Stats To Display")
                 d1, d2, d3 = st.columns(3)
 
-                with d1:
-                    selected_batting = st.multiselect("Batting Stats", options=batting_options, key="hs_batting_cols")
-                with d2:
-                    selected_bowling = st.multiselect("Bowling Stats", options=bowling_options, key="hs_bowling_cols")
-                with d3:
-                    selected_fielding = st.multiselect("Fielding Stats", options=fielding_options, key="hs_fielding_cols")
+                HS_ALL = "All"
+                hs_batting_key = "hs_batting_cols_select"
+                hs_bowling_key = "hs_bowling_cols_select"
+                hs_fielding_key = "hs_fielding_cols_select"
 
-                selected_columns = selected_batting + selected_bowling + selected_fielding
+                with d1:
+                    hs_batting_options = [HS_ALL] + batting_options
+                    selected_batting = st.multiselect(
+                        "Batting stats",
+                        options=hs_batting_options,
+                        default=st.session_state.get(hs_batting_key, [HS_ALL]),
+                        key=hs_batting_key,
+                    )
+                with d2:
+                    hs_bowling_options = [HS_ALL] + bowling_options
+                    selected_bowling = st.multiselect(
+                        "Bowling stats",
+                        options=hs_bowling_options,
+                        default=st.session_state.get(hs_bowling_key, [HS_ALL]),
+                        key=hs_bowling_key,
+                    )
+                with d3:
+                    hs_fielding_options = [HS_ALL] + fielding_options
+                    selected_fielding = st.multiselect(
+                        "Fielding stats",
+                        options=hs_fielding_options,
+                        default=st.session_state.get(hs_fielding_key, [HS_ALL]),
+                        key=hs_fielding_key,
+                    )
+
+                # Normalize selections so "All" expands to the full list and de-selects when specific picks are made.
+                def _resolve_all_hist(selected: list[str], options: list[str], key: str) -> list[str]:
+                    sel = list(st.session_state.get(key, selected))
+                    if HS_ALL in sel and len(sel) > 1:
+                        sel = [c for c in sel if c != HS_ALL]
+                    if HS_ALL in sel:
+                        resolved = options[:]
+                    else:
+                        resolved = sel[:] if sel else options[:]
+                    if set(resolved) == set(options):
+                        st.session_state[key] = [HS_ALL]
+                    return resolved
+
+                resolved_batting = _resolve_all_hist(selected_batting, batting_options, hs_batting_key)
+                resolved_bowling = _resolve_all_hist(selected_bowling, bowling_options, hs_bowling_key)
+                resolved_fielding = _resolve_all_hist(selected_fielding, fielding_options, hs_fielding_key)
+
+                selected_columns = resolved_batting + resolved_bowling + resolved_fielding
 
                 fixed_cols: list[str] = []
                 if name_col in filtered.columns:
