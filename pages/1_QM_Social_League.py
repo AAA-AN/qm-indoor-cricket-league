@@ -1438,14 +1438,14 @@ if selected_tab == "Historical Stats":
         if hist_b is not None and not hist_b.empty:
             datasets["Sem B 24/25"] = _normalize_playerid_for_display(hist_b)
         if combined_view is not None and not combined_view.empty:
-            datasets["All-time (combined)"] = combined_view
+            datasets["All-time"] = combined_view
 
         if not datasets:
             st.info("Historical tables are missing player names.")
         else:
             dataset_order = []
             if "All-time" in datasets:
-                dataset_order.append("All-time (combined)")
+                dataset_order.append("All-time")
             for label in ["Sem A 25/26", "Sem B 24/25"]:
                 if label in datasets:
                     dataset_order.append(label)
