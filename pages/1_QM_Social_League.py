@@ -101,6 +101,18 @@ def _normalize_playerid_for_display(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _resolve_all_selection(widget_key: str, options: list[str], all_label: str = "All") -> list[str]:
+    sel = st.session_state.get(widget_key, None)
+    if sel is None:
+        return options[:]
+    sel = [s for s in sel if s]
+    if not sel:
+        return options[:]
+    if all_label in sel:
+        return options[:]
+    return [s for s in sel if s in options]
+
+
 def _init_or_sanitize_multiselect_state_allow_empty(key: str, options: list[str], defaults: list[str]) -> None:
     """
     - First load: set defaults (only those in options).
@@ -1206,7 +1218,7 @@ if selected_tab == "Player Stats":
         selected_batting = st.multiselect(
             "Batting stats",
             options=batting_select_options,
-            default=st.session_state.get(batting_select_key, [BAT_ALL]),
+            default=[BAT_ALL],
             key=batting_select_key,
         )
     with d2:
@@ -1214,7 +1226,7 @@ if selected_tab == "Player Stats":
         selected_bowling = st.multiselect(
             "Bowling stats",
             options=bowling_select_options,
-            default=st.session_state.get(bowling_select_key, [BAT_ALL]),
+            default=[BAT_ALL],
             key=bowling_select_key,
         )
     with d3:
@@ -1222,26 +1234,13 @@ if selected_tab == "Player Stats":
         selected_fielding = st.multiselect(
             "Fielding stats",
             options=fielding_select_options,
-            default=st.session_state.get(fielding_select_key, [BAT_ALL]),
+            default=[BAT_ALL],
             key=fielding_select_key,
         )
 
-    # Normalize selections so "All" expands to the full list and de-selects when specific picks are made.
-    def _resolve_all(selected: list[str], options: list[str], key: str) -> list[str]:
-        sel = list(st.session_state.get(key, selected))
-        if BAT_ALL in sel and len(sel) > 1:
-            sel = [c for c in sel if c != BAT_ALL]
-        if BAT_ALL in sel:
-            resolved = options[:]
-        else:
-            resolved = sel[:] if sel else options[:]
-        if set(resolved) == set(options):
-            st.session_state[key] = [BAT_ALL]
-        return resolved
-
-    resolved_batting = _resolve_all(selected_batting, batting_options, batting_select_key)
-    resolved_bowling = _resolve_all(selected_bowling, bowling_options, bowling_select_key)
-    resolved_fielding = _resolve_all(selected_fielding, fielding_options, fielding_select_key)
+    resolved_batting = _resolve_all_selection(batting_select_key, batting_options, BAT_ALL)
+    resolved_bowling = _resolve_all_selection(bowling_select_key, bowling_options, BAT_ALL)
+    resolved_fielding = _resolve_all_selection(fielding_select_key, fielding_options, BAT_ALL)
 
     selected_columns = resolved_batting + resolved_bowling + resolved_fielding
 
@@ -1609,7 +1608,7 @@ if selected_tab == "Historical Stats":
                     selected_batting = st.multiselect(
                         "Batting stats",
                         options=hs_batting_options,
-                        default=st.session_state.get(hs_batting_key, [HS_ALL]),
+                        default=[HS_ALL],
                         key=hs_batting_key,
                     )
                 with d2:
@@ -1617,7 +1616,7 @@ if selected_tab == "Historical Stats":
                     selected_bowling = st.multiselect(
                         "Bowling stats",
                         options=hs_bowling_options,
-                        default=st.session_state.get(hs_bowling_key, [HS_ALL]),
+                        default=[HS_ALL],
                         key=hs_bowling_key,
                     )
                 with d3:
@@ -1625,26 +1624,13 @@ if selected_tab == "Historical Stats":
                     selected_fielding = st.multiselect(
                         "Fielding stats",
                         options=hs_fielding_options,
-                        default=st.session_state.get(hs_fielding_key, [HS_ALL]),
+                        default=[HS_ALL],
                         key=hs_fielding_key,
                     )
 
-                # Normalize selections so "All" expands to the full list and de-selects when specific picks are made.
-                def _resolve_all_hist(selected: list[str], options: list[str], key: str) -> list[str]:
-                    sel = list(st.session_state.get(key, selected))
-                    if HS_ALL in sel and len(sel) > 1:
-                        sel = [c for c in sel if c != HS_ALL]
-                    if HS_ALL in sel:
-                        resolved = options[:]
-                    else:
-                        resolved = sel[:] if sel else options[:]
-                    if set(resolved) == set(options):
-                        st.session_state[key] = [HS_ALL]
-                    return resolved
-
-                resolved_batting = _resolve_all_hist(selected_batting, batting_options, hs_batting_key)
-                resolved_bowling = _resolve_all_hist(selected_bowling, bowling_options, hs_bowling_key)
-                resolved_fielding = _resolve_all_hist(selected_fielding, fielding_options, hs_fielding_key)
+                resolved_batting = _resolve_all_selection(hs_batting_key, batting_options, HS_ALL)
+                resolved_bowling = _resolve_all_selection(hs_bowling_key, bowling_options, HS_ALL)
+                resolved_fielding = _resolve_all_selection(hs_fielding_key, fielding_options, HS_ALL)
 
                 selected_columns = resolved_batting + resolved_bowling + resolved_fielding
 
