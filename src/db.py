@@ -12,7 +12,11 @@ DB_PATH = Path("data") / "app.db"
 def get_conn() -> sqlite3.Connection:
     """Return a SQLite connection (ensures folder exists)."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout=30000;")
+    conn.execute("PRAGMA foreign_keys=ON;")
     conn.row_factory = sqlite3.Row
     return conn
 
