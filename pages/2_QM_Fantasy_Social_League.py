@@ -627,8 +627,15 @@ with tab_team:
             # Hide the selector when full to avoid confusing UX and prevent extra picks.
             st.info("Team Full – To edit your team remove a player first.")
         else:
+            # Sort by highest cost first; team/name secondary for readable grouping.
+            def _add_sort_key(pid: str) -> tuple:
+                price = player_price_by_id.get(pid, 0.0)
+                team = player_team_by_id.get(pid, "Unknown") or "Unknown"
+                name = player_name_by_id.get(pid, "")
+                return (-price, team.lower(), name.lower())
+
+            addable_ids = sorted(addable_ids, key=_add_sort_key)
             addable_labels = [player_label_by_id.get(pid, pid) for pid in addable_ids]
-            addable_labels = sorted(addable_labels)
             label_to_pid = {player_label_by_id.get(pid, pid): pid for pid in addable_ids}
             pick_key = f"fantasy_add_pick_{current_block}"
 
