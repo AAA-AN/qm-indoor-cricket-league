@@ -1444,7 +1444,7 @@ if selected_tab == "Historical Stats":
             st.info("Historical tables are missing player names.")
         else:
             dataset_order = []
-            if "All-time (combined)" in datasets:
+            if "All-time" in datasets:
                 dataset_order.append("All-time (combined)")
             for label in ["Sem A 25/26", "Sem B 24/25"]:
                 if label in datasets:
@@ -1454,7 +1454,7 @@ if selected_tab == "Historical Stats":
                     dataset_order.append(label)
 
             selected_dataset = st.selectbox(
-                "Dataset",
+                "Historic Leagues",
                 dataset_order,
                 key="hs_dataset",
             )
