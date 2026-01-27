@@ -15,6 +15,8 @@ class ExcelLoadResult:
     players: Optional[pd.DataFrame] = None
     teams: Optional[pd.DataFrame] = None
     league_data: Optional[pd.DataFrame] = None
+    history_A_25_26: Optional[pd.DataFrame] = None
+    history_B_24_25: Optional[pd.DataFrame] = None
 
 
 def _read_named_table(
@@ -70,6 +72,28 @@ def _read_named_table(
     return df
 
 
+def _read_named_table_any_sheet(
+    wb,
+    table_name: str,
+    *,
+    drop_empty_columns: bool = True,
+) -> pd.DataFrame:
+    """
+    Read a named table by searching all sheets.
+    Useful for history tables that may live on different sheets.
+    """
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        if table_name in ws.tables:
+            return _read_named_table(
+                wb,
+                sheet_name=sheet_name,
+                table_name=table_name,
+                drop_empty_columns=drop_empty_columns,
+            )
+    raise ValueError(f"Table '{table_name}' not found in any worksheet.")
+
+
 def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     """
     Load the league workbook from bytes and return key tables.
@@ -92,6 +116,8 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     players = None
     teams = None
     league_data = None
+    history_A_25_26 = None
+    history_B_24_25 = None
 
     # League table (pre-calculated in Excel)
     try:
@@ -121,10 +147,26 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     except Exception:
         league_data = None
 
+    try:
+        history_A_25_26 = _read_named_table_any_sheet(
+            wb, table_name="A_25_26", drop_empty_columns=True
+        )
+    except Exception:
+        history_A_25_26 = None
+
+    try:
+        history_B_24_25 = _read_named_table_any_sheet(
+            wb, table_name="B_24_25", drop_empty_columns=True
+        )
+    except Exception:
+        history_B_24_25 = None
+
     return ExcelLoadResult(
         fixture_results=fixture_results,
         league_table=league_table,
         players=players,
         teams=teams,
         league_data=league_data,
+        history_A_25_26=history_A_25_26,
+        history_B_24_25=history_B_24_25,
     )

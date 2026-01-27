@@ -24,6 +24,8 @@ from src.db import (
     list_blocks_with_fixtures,
     get_block_prices,
     ensure_block_prices_default,
+    upsert_block_prices_from_dict,
+    compute_starting_prices_from_history,
     save_fantasy_entry,
     get_fantasy_entry,
     get_latest_scored_block_number,
@@ -290,8 +292,77 @@ player_ids = league[player_id_col].astype(str).str.strip().tolist()
 
 prices = get_block_prices(current_block)
 if not prices:
-    ensure_block_prices_default(current_block, player_ids, default_price=7.5)
-    prices = get_block_prices(current_block)
+    history_dfs = [
+        getattr(data, "history_A_25_26", None),
+        getattr(data, "history_B_24_25", None),
+    ]
+
+    def _normalize_name(s: object) -> str:
+        return " ".join(str(s or "").split()).casefold()
+
+    def _round_to_0_5(x: float) -> float:
+        return round(x * 2) / 2
+
+    def _history_points_by_player() -> dict[str, float]:
+        points_by_pid: dict[str, float] = {}
+        name_to_pid: dict[str, str] = {}
+        for pid in player_ids:
+            name_to_pid[_normalize_name(player_name_by_id.get(pid, pid))] = str(pid)
+
+        points_cols = ["Fantasy Points", "Total Points", "Points", "Pts"]
+        pid_cols = ["PlayerID", "Player Id", "Player ID"]
+        name_cols = ["Name", "Player", "Player Name"]
+
+        for df in history_dfs:
+            if df is None or df.empty:
+                continue
+            tmp = df.copy()
+            tmp.columns = [str(c).strip() for c in tmp.columns]
+            pid_col = _find_col(tmp, pid_cols)
+            name_col = _find_col(tmp, name_cols)
+            points_col = _find_col(tmp, points_cols)
+            if points_col is None:
+                continue
+            tmp[points_col] = pd.to_numeric(tmp[points_col], errors="coerce")
+
+            for _, row in tmp.iterrows():
+                pts = row.get(points_col)
+                if pts is None or pd.isna(pts):
+                    continue
+                pid = None
+                if pid_col:
+                    pid_val = str(row.get(pid_col) or "").strip()
+                    if pid_val in player_label_by_id:
+                        pid = pid_val
+                if pid is None and name_col:
+                    norm = _normalize_name(row.get(name_col))
+                    pid = name_to_pid.get(norm)
+                if pid:
+                    points_by_pid[pid] = float(points_by_pid.get(pid, 0.0)) + float(pts)
+
+        return points_by_pid
+
+    history_points = _history_points_by_player()
+    if history_points:
+        base_prices = compute_starting_prices_from_history(history_points, default_price=7.5)
+        returning_prices = list(base_prices.values())
+        median_price = None
+        if returning_prices:
+            median_price = float(pd.Series(returning_prices).median())
+            median_price = _round_to_0_5(median_price)
+
+        final_prices: dict[str, float] = {}
+        for pid in player_ids:
+            if pid in base_prices:
+                final_prices[pid] = float(base_prices[pid])
+            else:
+                final_prices[pid] = median_price if median_price is not None else 7.5
+
+        upsert_block_prices_from_dict(current_block, final_prices)
+        prices = get_block_prices(current_block)
+    else:
+        ensure_block_prices_default(current_block, player_ids, default_price=7.5)
+        prices = get_block_prices(current_block)
 
 player_rows = []
 player_label_by_id: dict[str, str] = {}

@@ -137,7 +137,7 @@ else:
 # ----------------------------
 selected_tab = st.radio(
     label="Navigation Tabs",
-    options=["Fixtures & Results", "League Table", "Teams", "Player Stats", "Scorecards"],
+    options=["Fixtures & Results", "League Table", "Teams", "Player Stats", "Historical Stats", "Scorecards"],
     horizontal=True,
     key="main_tab",
     label_visibility="collapsed",
@@ -1249,7 +1249,187 @@ if selected_tab == "Player Stats":
     )
 
 # ============================
-# TAB 5: SCORECARDS
+# TAB 5: HISTORICAL STATS
+# ============================
+if selected_tab == "Historical Stats":
+    st.subheader("Historical Stats")
+
+    hist_a = getattr(data, "history_A_25_26", None)
+    hist_b = getattr(data, "history_B_24_25", None)
+
+    if hist_a is None and hist_b is None:
+        st.info("No historical tables found in the workbook.")
+    else:
+        if hist_a is not None and not hist_a.empty:
+            st.markdown("### A_25_26")
+            st.dataframe(hist_a, use_container_width=True, hide_index=True)
+        if hist_b is not None and not hist_b.empty:
+            st.markdown("### B_24_25")
+            st.dataframe(hist_b, use_container_width=True, hide_index=True)
+
+        def _normalize_name(name: str) -> str:
+            return " ".join(str(name).split()).casefold()
+
+        # Combine by normalized name, sum counting stats, and recompute rate stats from base columns.
+        frames: list[pd.DataFrame] = []
+        name_cols: list[str] = []
+        pid_cols: list[str] = []
+
+        for df, source in [(hist_a, "A_25_26"), (hist_b, "B_24_25")]:
+            if df is None or df.empty:
+                continue
+            tmp = df.copy()
+            tmp.columns = [str(c).strip() for c in tmp.columns]
+            name_col = _find_col(tmp, ["Name", "Player", "Player Name"])
+            if not name_col:
+                continue
+            pid_col = _find_col(tmp, ["PlayerID", "Player Id", "Player ID"])
+            name_cols.append(name_col)
+            if pid_col:
+                pid_cols.append(pid_col)
+            tmp["_name"] = tmp[name_col].astype(str).str.strip()
+            tmp["_norm_name"] = tmp["_name"].apply(_normalize_name)
+            tmp["_player_id"] = tmp[pid_col].astype(str).str.strip() if pid_col else ""
+            tmp["_source"] = source
+            frames.append(tmp)
+
+        if not frames:
+            st.info("Historical tables are missing player names.")
+        else:
+            combined = pd.concat(frames, ignore_index=True)
+            combined = combined[combined["_norm_name"] != ""]
+
+            rate_keywords = ["avg", "average", "sr", "strike rate", "economy", "econ", "rate"]
+            rate_cols = [
+                c for c in combined.columns if any(k in str(c).casefold() for k in rate_keywords)
+            ]
+
+            internal_cols = {"_name", "_norm_name", "_player_id", "_source"}
+            exclude_cols = set(name_cols + pid_cols) | internal_cols | set(rate_cols)
+
+            counting_cols: list[str] = []
+            for c in combined.columns:
+                if c in exclude_cols:
+                    continue
+                series = pd.to_numeric(combined[c], errors="coerce")
+                if series.notna().any():
+                    counting_cols.append(c)
+
+            grouped = combined.groupby("_norm_name", dropna=False)
+            summed = grouped[counting_cols].apply(
+                lambda df: pd.to_numeric(df, errors="coerce").sum(min_count=1)
+            )
+
+            name_display = grouped["_name"].agg(
+                lambda s: s.dropna().astype(str).str.strip().mode().iat[0]
+                if not s.dropna().empty
+                else ""
+            )
+
+            def _pick_player_id(sub: pd.DataFrame) -> str:
+                preferred = sub[sub["_source"] == "A_25_26"]["_player_id"]
+                for val in preferred:
+                    if val:
+                        return str(val).strip()
+                for val in sub["_player_id"]:
+                    if val:
+                        return str(val).strip()
+                return ""
+
+            pid_display = grouped.apply(_pick_player_id)
+
+            result = summed.reset_index().rename(columns={"_norm_name": "Norm Name"})
+            result["PlayerID"] = pid_display.values
+            result["Name"] = name_display.values
+
+            def _first_col(candidates: list[str]) -> str | None:
+                for c in candidates:
+                    if c in result.columns:
+                        return c
+                return None
+
+            runs_col = _first_col(["Runs Scored", "Runs"])
+            inns_col = _first_col(["Innings Played", "Innings"])
+            not_out_col = _first_col(["Not Out's", "Not Outs", "Not Out", "NO"])
+            balls_faced_col = _first_col(["Balls Faced", "Balls", "BF"])
+            runs_conceded_col = _first_col(["Runs Conceded"])
+            wickets_col = _first_col(["Wickets", "Wkts"])
+            overs_col = _first_col(["Overs", "Overs Bowled"])
+            balls_bowled_col = _first_col(["Balls Bowled", "Balls Bowled (Bowling)"])
+
+            if "Batting Average" in rate_cols:
+                if runs_col and inns_col and not_out_col:
+                    outs = (result[inns_col] - result[not_out_col]).fillna(0.0)
+                    outs = outs.where(outs > 0, 1.0)
+                    result["Batting Average"] = result[runs_col] / outs
+                else:
+                    result["Batting Average"] = pd.NA
+
+            if "Batting Strike Rate" in rate_cols:
+                if runs_col and balls_faced_col:
+                    denom = result[balls_faced_col].fillna(0.0)
+                    denom = denom.where(denom > 0, pd.NA)
+                    result["Batting Strike Rate"] = (result[runs_col] / denom) * 100
+                else:
+                    result["Batting Strike Rate"] = pd.NA
+
+            if "Bowling Average" in rate_cols:
+                if runs_conceded_col and wickets_col:
+                    denom = result[wickets_col].fillna(0.0)
+                    denom = denom.where(denom > 0, pd.NA)
+                    result["Bowling Average"] = result[runs_conceded_col] / denom
+                else:
+                    result["Bowling Average"] = pd.NA
+
+            if "Bowling Strike Rate" in rate_cols:
+                if balls_bowled_col and wickets_col:
+                    denom = result[wickets_col].fillna(0.0)
+                    denom = denom.where(denom > 0, pd.NA)
+                    result["Bowling Strike Rate"] = result[balls_bowled_col] / denom
+                else:
+                    result["Bowling Strike Rate"] = pd.NA
+
+            if "Economy" in rate_cols:
+                if runs_conceded_col and overs_col:
+                    denom = result[overs_col].fillna(0.0)
+                    denom = denom.where(denom > 0, pd.NA)
+                    result["Economy"] = result[runs_conceded_col] / denom
+                elif runs_conceded_col and balls_bowled_col:
+                    overs = result[balls_bowled_col] / 6.0
+                    denom = overs.fillna(0.0)
+                    denom = denom.where(denom > 0, pd.NA)
+                    result["Economy"] = result[runs_conceded_col] / denom
+                else:
+                    result["Economy"] = pd.NA
+
+            base_order: list[str] = []
+            for df in [hist_a, hist_b]:
+                if df is None or df.empty:
+                    continue
+                base_order.extend([str(c).strip() for c in df.columns])
+            ordered_cols: list[str] = []
+            if "PlayerID" in result.columns:
+                ordered_cols.append("PlayerID")
+            if "Name" in result.columns:
+                ordered_cols.append("Name")
+            for c in base_order:
+                if c in name_cols or c in pid_cols:
+                    continue
+                if c in result.columns and c not in ordered_cols:
+                    ordered_cols.append(c)
+            for c in result.columns:
+                if c not in ordered_cols and c not in {"Norm Name"}:
+                    ordered_cols.append(c)
+
+            st.markdown("### All-time (combined)")
+            st.dataframe(
+                result[ordered_cols],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+# ============================
+# TAB 6: SCORECARDS
 # ============================
 if selected_tab == "Scorecards":
     st.subheader("Scorecards")

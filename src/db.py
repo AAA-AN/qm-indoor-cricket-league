@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime, timezone, date, time, timedelta
+import statistics
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from zoneinfo import ZoneInfo
@@ -1193,6 +1194,47 @@ def set_price(block_number: int, player_id: str, price: float) -> None:
 
 def upsert_block_prices_from_dict(block_number: int, prices: Dict[str, float]) -> None:
     upsert_block_prices(block_number, prices)
+
+
+def _round_to_0_5(x: float) -> float:
+    return round(x * 2) / 2
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
+
+
+def compute_starting_prices_from_history(
+    points_by_player: Dict[str, float],
+    *,
+    default_price: float = 7.5,
+) -> Dict[str, float]:
+    """
+    Derive starting prices from historical points using the same framework
+    as the admin price adjustment (median/iqr scaling and 0.5 rounding).
+    """
+    if not points_by_player:
+        return {}
+
+    pts = [float(v) for v in points_by_player.values()]
+    median = float(statistics.median(pts))
+    if len(pts) >= 2:
+        q1, q2, q3 = statistics.quantiles(pts, n=4, method="inclusive")
+        iqr = float(q3 - q1)
+    else:
+        iqr = 0.0
+
+    k = 0.5
+    prices: Dict[str, float] = {}
+    for pid, pts_val in points_by_player.items():
+        denom = max(iqr, 1.0)
+        delta_raw = k * (float(pts_val) - median) / denom
+        delta_capped = _clamp(delta_raw, -1.0, 1.0)
+        delta = _round_to_0_5(delta_capped)
+        price = _clamp(_round_to_0_5(default_price + delta), 5.0, 10.0)
+        prices[str(pid)] = float(price)
+
+    return prices
 
 
 def _fantasy_block_self_test() -> None:
