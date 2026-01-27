@@ -583,45 +583,45 @@ with tab_team:
             if (team not in capped_teams) and affordable:
                 addable_ids.append(pid)
 
-        # Use a checkbox-based removal table for stability and mobile consistency.
-        # Editor key is block-specific so schema changes don't reuse stale state.
-        st.markdown("#### Your team")
-        selected_rows = []
-        for pid in selected_for_calc:
-            selected_rows.append(
-                {
-                    "Player": player_name_by_id.get(pid, pid),
-                    "Team": player_team_by_id.get(pid, "Unknown") or "Unknown",
-                    "Cost": float(player_price_by_id.get(pid, 0.0) or 0.0),
-                    "Remove": False,
-                }
+        # Don't render the table when empty to avoid Streamlit's "empty" placeholder.
+        if selected_for_calc:
+            # Use a checkbox-based removal table for stability and mobile consistency.
+            # Editor key is block-specific so schema changes don't reuse stale state.
+            st.markdown("#### Your team")
+            selected_rows = []
+            for pid in selected_for_calc:
+                selected_rows.append(
+                    {
+                        "Player": player_name_by_id.get(pid, pid),
+                        "Team": player_team_by_id.get(pid, "Unknown") or "Unknown",
+                        "Cost": float(player_price_by_id.get(pid, 0.0) or 0.0),
+                        "Remove": False,
+                    }
+                )
+            selected_df = pd.DataFrame(selected_rows, index=selected_for_calc)
+            selected_df.index.name = "PlayerID"
+            editor_key = f"fantasy_selected_table_block_{current_block}"
+            edited = st.data_editor(
+                selected_df,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Player": st.column_config.TextColumn(disabled=True),
+                    "Team": st.column_config.TextColumn(disabled=True),
+                    "Cost": st.column_config.NumberColumn(disabled=True, format="%.1f"),
+                    "Remove": st.column_config.CheckboxColumn("Remove"),
+                },
+                key=editor_key,
             )
-        selected_df = pd.DataFrame(selected_rows, index=selected_for_calc)
-        selected_df.index.name = "PlayerID"
-        editor_key = f"fantasy_selected_table_block_{current_block}"
-        edited = st.data_editor(
-            selected_df,
-            hide_index=True,
-            width="stretch",
-            column_config={
-                "Player": st.column_config.TextColumn(disabled=True),
-                "Team": st.column_config.TextColumn(disabled=True),
-                "Cost": st.column_config.NumberColumn(disabled=True, format="%.1f"),
-                "Remove": st.column_config.CheckboxColumn("Remove"),
-            },
-            key=editor_key,
-        )
-        if "Remove" not in edited.columns:
-            # Editor state from older schema – ignore this render cycle.
-            st.stop()
-        to_remove = edited.index[edited["Remove"] == True].tolist()  # noqa: E712
-        if to_remove:
-            st.session_state[squad_key] = [
-                pid for pid in selected_for_calc if pid not in set(to_remove)
-            ]
-            st.rerun()
+            if "Remove" in edited.columns:
+                to_remove = edited.index[edited["Remove"] == True].tolist()  # noqa: E712
+                if to_remove:
+                    st.session_state[squad_key] = [
+                        pid for pid in selected_for_calc if pid not in set(to_remove)
+                    ]
+                    st.rerun()
 
-        # Use a single selectbox so picked players are added without showing chips.
+        # Selector is always shown unless the team is full.
         team_is_full = len(selected_for_calc) >= 8
         if team_is_full:
             # Hide the selector when full to avoid confusing UX and prevent extra picks.
