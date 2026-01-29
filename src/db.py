@@ -1205,6 +1205,10 @@ def _round_to_0_5(x: float) -> float:
     return round(x * 2) / 2
 
 
+def _round_to_half(x: float) -> float:
+    return _round_to_0_5(x)
+
+
 def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
@@ -1230,13 +1234,30 @@ def compute_starting_prices_from_history(
         iqr = 0.0
 
     k = 0.5
-    prices: Dict[str, float] = {}
+    base_prices: Dict[str, float] = {}
+    denom = max(iqr, 1.0)
     for pid, pts_val in points_by_player.items():
-        denom = max(iqr, 1.0)
         delta_raw = k * (float(pts_val) - median) / denom
         delta_capped = _clamp(delta_raw, -1.0, 1.0)
         delta = _round_to_0_5(delta_capped)
         price = _clamp(_round_to_0_5(default_price + delta), 5.0, 10.0)
+        base_prices[str(pid)] = float(price)
+
+    min_price = 5.0
+    current_max_price = max(base_prices.values())
+    min_pts = min(pts)
+    max_pts = max(pts)
+    prices: Dict[str, float] = {}
+    if max_pts == min_pts:
+        for pid in points_by_player.keys():
+            prices[str(pid)] = float(min_price)
+        return prices
+
+    scale = (current_max_price - min_price) / (max_pts - min_pts)
+    for pid, pts_val in points_by_player.items():
+        scaled = min_price + (float(pts_val) - min_pts) * scale
+        price = _round_to_half(scaled)
+        price = _clamp(price, min_price, current_max_price)
         prices[str(pid)] = float(price)
 
     return prices
