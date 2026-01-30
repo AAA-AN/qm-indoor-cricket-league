@@ -270,9 +270,6 @@ def _fantasy_restore_from_dropbox_if_needed(
 
 st.title("Admin")
 
-if st.session_state.pop("_force_rerun", False):
-    st.rerun()
-
 tab_users, tab_scorecards, tab_fantasy_blocks = st.tabs(
     ["User Management", "Scorecard Management", "Fantasy"]
 )
@@ -288,6 +285,8 @@ with tab_users:
 
     if "admin_user_select_ver" not in st.session_state:
         st.session_state["admin_user_select_ver"] = 0
+    if "_admin_force_rerun" not in st.session_state:
+        st.session_state["_admin_force_rerun"] = False
 
     # One-time popup message after admin actions
     if st.session_state.get("admin_user_action_msg"):
@@ -309,6 +308,7 @@ with tab_users:
             """,
             height=0,
         )
+
     
     # One-time popup message after admin actions
     if st.session_state.get("admin_user_action_msg"):
@@ -482,6 +482,8 @@ with tab_users:
                     status_txt = "Active" if make_active else "Disabled"
                     st.session_state["admin_user_action_msg"] = f"Updated '{selected_username}' status to {status_txt}."
                     st.session_state["admin_scroll_to_users"] = True
+                    st.session_state["admin_user_select_ver"] += 1
+                    st.session_state["_admin_force_rerun"] = True
 
         with st.expander("Reset password", expanded=False):
             default_pw = str(st.secrets.get("DEFAULT_RESET_PASSWORD", "ResetMe123!"))
@@ -497,6 +499,8 @@ with tab_users:
                         f"Password reset for '{selected_username}'. User will be prompted to change it on next login."
                     )
                     st.session_state["admin_scroll_to_users"] = True
+                    st.session_state["admin_user_select_ver"] += 1
+                    st.session_state["_admin_force_rerun"] = True
 
                 except Exception as e:
                     st.error(str(e))
@@ -522,6 +526,8 @@ with tab_users:
                             f"Updated '{selected_username}' role to {desired_role}."
                         )
                         st.session_state["admin_scroll_to_users"] = True
+                        st.session_state["admin_user_select_ver"] += 1
+                        st.session_state["_admin_force_rerun"] = True
 
         with st.expander("Delete user", expanded=False):
             st.warning("This permanently deletes the user account. This cannot be undone.")
@@ -545,11 +551,12 @@ with tab_users:
 
                     st.session_state["admin_user_action_msg"] = f"Deleted user: {selected_username}"
                     st.session_state["admin_scroll_to_users"] = True
-                    st.session_state["admin_user_select_ver"] = int(
-                        st.session_state.get("admin_user_select_ver", 0)
-                    ) + 1
+                    st.session_state["admin_user_select_ver"] += 1
                     st.session_state["admin_selected_username"] = None
-                    st.session_state["_force_rerun"] = True
+                    st.session_state["_admin_force_rerun"] = True
+
+    if st.session_state.pop("_admin_force_rerun", False):
+        st.rerun()
 
 
 # =========================================================
