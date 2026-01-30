@@ -256,6 +256,9 @@ def _fantasy_restore_from_dropbox_if_needed(
 
 st.title("Admin")
 
+if st.session_state.pop("_force_rerun", False):
+    st.rerun()
+
 tab_users, tab_scorecards, tab_fantasy_blocks = st.tabs(
     ["User Management", "Scorecard Management", "Fantasy"]
 )
@@ -516,12 +519,13 @@ with tab_users:
                 else:
                     delete_user(selected_username)
 
-                    st.session_state["admin_user_action_msg"] = f"Deleted user '{selected_username}'."
+                    st.session_state["admin_user_action_msg"] = f"Deleted user: {selected_username}"
                     st.session_state["admin_scroll_to_users"] = True
                     st.session_state["admin_user_select_ver"] = int(
                         st.session_state.get("admin_user_select_ver", 0)
                     ) + 1
                     st.session_state["admin_selected_username"] = None
+                    st.session_state["_force_rerun"] = True
 
 
 # =========================================================
