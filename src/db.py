@@ -574,13 +574,8 @@ def get_block_open_at(block_number: int, now_dt: datetime) -> Optional[datetime]
     if now_dt.tzinfo is None:
         now_dt = now_dt.replace(tzinfo=ZoneInfo("Europe/London"))
     if int(block_number) == 1:
-        first_start_at = get_block_first_fixture_start_at(1)
-        if first_start_at is None:
-            return None
-        return first_start_at - timedelta(days=7)
-    prev_scored_at = get_block_scored_at(int(block_number) - 1)
-    if prev_scored_at is None:
         return None
+    prev_scored_at = get_block_scored_at(int(block_number) - 1)
     return prev_scored_at
 
 
@@ -611,14 +606,13 @@ def get_effective_block_state(block_number: int, now_dt: datetime) -> str:
             if override_until is None or now_dt < override_until:
                 return override_state
 
-        # Block 1 is gated by its open window; all other blocks are open by default unless overridden.
         if int(block_number) == 1:
-            open_at = get_block_open_at(block_number, now_dt)
-            if open_at is not None and now_dt < open_at:
-                return "NOT_OPEN"
-            return "OPEN"
+            return "LOCKED"
 
-        return "OPEN"
+        prev_scored_at = get_block_scored_at(int(block_number) - 1)
+        if prev_scored_at is not None:
+            return "OPEN"
+        return "LOCKED"
     finally:
         conn.close()
 
