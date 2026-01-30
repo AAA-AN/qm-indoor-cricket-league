@@ -269,6 +269,9 @@ with tab_users:
     # Anchor placed above the user table (target for scroll)
     st.markdown('<div id="users_table_top"></div>', unsafe_allow_html=True)
 
+    if "admin_user_select_ver" not in st.session_state:
+        st.session_state["admin_user_select_ver"] = 0
+
     # One-time popup message after admin actions
     if st.session_state.get("admin_user_action_msg"):
         msg = st.session_state.pop("admin_user_action_msg")
@@ -395,13 +398,14 @@ with tab_users:
 
     # Avoid auto-selecting the first user to prevent accidental admin actions.
     # Enforce a "no selection" state until an admin explicitly chooses a user.
+    select_key = f"admin_user_select_v{st.session_state['admin_user_select_ver']}"
     try:
         selected_label = st.selectbox(
             "Select a user",
             option_labels,
             index=None,
             placeholder="Choose an option",
-            key="admin_user_select",
+            key=select_key,
         )
     except TypeError:
         labels_with_prompt = ["Choose an option"] + option_labels
@@ -409,7 +413,7 @@ with tab_users:
             "Select a user",
             labels_with_prompt,
             index=0,
-            key="admin_user_select",
+            key=select_key,
         )
 
     # Don't call st.stop() here; it would prevent other admin tabs from rendering.
@@ -514,7 +518,10 @@ with tab_users:
 
                     st.session_state["admin_user_action_msg"] = f"Deleted user '{selected_username}'."
                     st.session_state["admin_scroll_to_users"] = True
-                    st.session_state["admin_user_select"] = None
+                    st.session_state["admin_user_select_ver"] = int(
+                        st.session_state.get("admin_user_select_ver", 0)
+                    ) + 1
+                    st.session_state["admin_selected_username"] = None
 
 
 # =========================================================
