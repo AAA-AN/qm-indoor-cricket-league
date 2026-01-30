@@ -598,37 +598,70 @@ with tab_team:
             # Use a checkbox-based removal table for stability and mobile consistency.
             # Editor key is block-specific so schema changes don't reuse stale state.
             st.markdown("#### Your team")
+            ver_key = f"fantasy_selected_editor_ver_{current_block}"
+            if ver_key not in st.session_state:
+                st.session_state[ver_key] = 0
+
+            def _on_remove_change(editor_key: str, squad_key: str, ver_key: str) -> None:
+                raw = st.session_state.get(editor_key)
+                if raw is None:
+                    return
+                if isinstance(raw, pd.DataFrame):
+                    edited_df = raw.copy()
+                else:
+                    try:
+                        edited_df = pd.DataFrame(raw)
+                    except Exception:
+                        return
+                if edited_df is None or edited_df.empty:
+                    return
+
+                if "Remove" not in edited_df.columns:
+                    return
+
+                if "PlayerID" in edited_df.columns:
+                    ids = edited_df["PlayerID"].astype(str)
+                else:
+                    ids = edited_df.index.to_series().astype(str)
+
+                to_remove = set(ids[edited_df["Remove"].astype(bool)].tolist())
+                if not to_remove:
+                    return
+
+                current = [str(x) for x in st.session_state.get(squad_key, []) if str(x)]
+                st.session_state[squad_key] = [pid for pid in current if pid not in to_remove]
+                st.session_state[ver_key] = int(st.session_state.get(ver_key, 0)) + 1
+
             selected_rows = []
             for pid in selected_for_calc:
                 selected_rows.append(
                     {
+                        "PlayerID": pid,
                         "Player": player_name_by_id.get(pid, pid),
                         "Team": player_team_by_id.get(pid, "Unknown") or "Unknown",
                         "Cost": float(player_price_by_id.get(pid, 0.0) or 0.0),
                         "Remove": False,
                     }
                 )
-            selected_df = pd.DataFrame(selected_rows, index=selected_for_calc)
-            selected_df.index.name = "PlayerID"
-            editor_key = f"fantasy_selected_table_block_{current_block}"
-            edited = st.data_editor(
+            selected_df = pd.DataFrame(selected_rows)
+            editor_key = (
+                f"fantasy_selected_editor_block_{current_block}_v{st.session_state[ver_key]}"
+            )
+            st.data_editor(
                 selected_df,
                 hide_index=True,
                 width="stretch",
                 column_config={
+                    "PlayerID": st.column_config.TextColumn(disabled=True),
                     "Player": st.column_config.TextColumn(disabled=True),
                     "Team": st.column_config.TextColumn(disabled=True),
                     "Cost": st.column_config.NumberColumn(disabled=True, format="%.1f"),
-                    "Remove": st.column_config.CheckboxColumn("Remove"),
+                    "Remove": st.column_config.CheckboxColumn("Remove", required=False),
                 },
                 key=editor_key,
+                on_change=_on_remove_change,
+                args=(editor_key, squad_key, ver_key),
             )
-            if "Remove" in edited.columns:
-                to_remove = edited.index[edited["Remove"] == True].tolist()  # noqa: E712
-                if to_remove:
-                    st.session_state[squad_key] = [
-                        pid for pid in selected_for_calc if pid not in set(to_remove)
-                    ]
 
         # Selector is always shown unless the team is full.
         team_is_full = len(selected_for_calc) >= 8
