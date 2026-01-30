@@ -97,6 +97,6 @@ def render_logout_button():
     if st.session_state.get("user") is None:
         return
 
-    if st.sidebar.button("Logout", use_container_width=True):
+    if st.sidebar.button("Logout", width="stretch"):
         st.session_state["user"] = None
         st.switch_page("app.py")

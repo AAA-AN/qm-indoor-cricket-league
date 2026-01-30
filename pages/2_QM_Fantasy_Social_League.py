@@ -434,7 +434,7 @@ with tab_team:
                 )
 
             df_selected = pd.DataFrame(rows, columns=["Role", "Player", "Multiplier"])
-            st.dataframe(df_selected, use_container_width=True, hide_index=True)
+            st.dataframe(df_selected, width="stretch", hide_index=True)
 
             budget_used = sum(player_price_by_id.get(pid, 0.0) for pid in squad_ids)
             budget_remaining = 60.0 - budget_used
@@ -442,7 +442,7 @@ with tab_team:
             st.markdown(f"**Budget remaining:** {budget_remaining:.1f}")
 
             if not controls_disabled:
-                if st.button("Edit team", use_container_width=True):
+                if st.button("Edit team", width="stretch"):
                     # Clear init flag so edit mode always re-seeds from the saved entry.
                     st.session_state.pop(f"fantasy_squad_initialized_{current_block}", None)
                     st.session_state[editing_key] = True
@@ -831,7 +831,7 @@ with tab_team:
                 st.warning(msg)
 
         if not controls_disabled:
-            if st.button("Submit Team", use_container_width=True):
+            if st.button("Submit Team", width="stretch"):
                 if errors:
                     st.error("Please fix the issues above before submitting.")
                 else:
@@ -948,7 +948,7 @@ with tab_results:
                     )
 
                 df_results = pd.DataFrame(rows, columns=["Role", "Multiplier", "Player", "Points"])
-                st.dataframe(df_results, use_container_width=True, hide_index=True)
+                st.dataframe(df_results, width="stretch", hide_index=True)
 
                 budget_used_latest = sum(float(prices_latest.get(pid, 7.5)) for pid in squad_ids_latest)
                 budget_remaining_latest = 60.0 - budget_used_latest
@@ -1047,7 +1047,7 @@ with tab_results:
                 cols.append("Points")
             st.dataframe(
                 pd.DataFrame(rows, columns=cols),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -1080,7 +1080,7 @@ with tab_leaderboard:
         st.markdown("### Season Leaderboard")
         st.dataframe(
             pd.DataFrame(season_display),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -1112,7 +1112,7 @@ with tab_leaderboard:
             st.markdown("### Block-by-block History")
             st.dataframe(
                 pd.DataFrame(hist_rows),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
     st.markdown("---")
@@ -1168,6 +1168,6 @@ with tab_leaderboard:
 
                 st.dataframe(
                     pd.DataFrame(display_rows),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )

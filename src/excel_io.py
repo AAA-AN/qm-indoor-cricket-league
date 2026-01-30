@@ -3,9 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Optional, List
+import warnings
 
 import pandas as pd
 from openpyxl import load_workbook
+
+warnings.filterwarnings(
+    "ignore",
+    message="Data Validation extension is not supported and will be removed",
+)
 
 
 @dataclass(frozen=True)

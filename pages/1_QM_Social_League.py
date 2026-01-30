@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import streamlit as st
 import pandas as pd
 
@@ -63,19 +65,26 @@ def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
 
 
 def _format_time_ampm(series: pd.Series) -> pd.Series:
-    t = pd.to_datetime(series.astype(str), errors="coerce")
-    t2 = pd.to_datetime("2000-01-01 " + series.astype(str), errors="coerce")
-    out = t.fillna(t2)
+    formats = ("%H:%M", "%H:%M:%S", "%I %p", "%I:%M %p")
 
-    formatted = out.dt.strftime("%-I %p")
-    formatted = formatted.where(formatted.notna(), out.dt.strftime("%I %p").str.lstrip("0"))
+    def _format_one(val: object) -> str:
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return str(val)
+        raw = str(val).strip()
+        if not raw or raw.lower() == "nan":
+            return raw
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(raw, fmt)
+            except ValueError:
+                continue
+            hour = parsed.strftime("%I").lstrip("0") or "12"
+            if parsed.minute == 0:
+                return f"{hour} {parsed.strftime('%p')}"
+            return f"{hour}:{parsed.strftime('%M')} {parsed.strftime('%p')}"
+        return raw
 
-    mins = out.dt.minute
-    with_mins = out.dt.strftime("%-I:%M %p")
-    with_mins = with_mins.where(with_mins.notna(), out.dt.strftime("%I:%M %p").str.lstrip("0"))
-
-    formatted = formatted.where((mins == 0) | (mins.isna()), with_mins)
-    return formatted.fillna(series.astype(str))
+    return series.apply(_format_one)
 
 
 def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
@@ -1935,7 +1944,7 @@ if selected_tab == "Scorecards":
             try:
                 img_bytes = _download_scorecard_bytes(app_key, app_secret, refresh_token, dbx_path)
                 st.markdown(f"**{fname}**")
-                st.image(img_bytes, use_container_width=True)
+                st.image(img_bytes, width="stretch")
             except Exception as e:
                 st.warning(f"Could not load image '{fname}': {e}")
 
@@ -1990,7 +1999,7 @@ if selected_tab == "Scorecards":
                 st.link_button(
                     f"{fname}",
                     url,
-                    use_container_width=True,
+                    width="stretch",
                 )
             except Exception as e:
                 st.warning(f"Could not create link for '{fname}': {e}")

@@ -6,8 +6,14 @@ import re
 import streamlit.components.v1 as components
 from datetime import datetime, timezone
 from io import BytesIO
+import warnings
 from openpyxl import load_workbook
 from zoneinfo import ZoneInfo
+
+warnings.filterwarnings(
+    "ignore",
+    message="Data Validation extension is not supported and will be removed",
+)
 
 from src.guard import (
     APP_TITLE,
@@ -122,19 +128,26 @@ def _format_date_dd_mmm(series: pd.Series) -> pd.Series:
 
 
 def _format_time_ampm(series: pd.Series) -> pd.Series:
-    t = pd.to_datetime(series.astype(str), errors="coerce")
-    t2 = pd.to_datetime("2000-01-01 " + series.astype(str), errors="coerce")
-    out = t.fillna(t2)
+    formats = ("%H:%M", "%H:%M:%S", "%I %p", "%I:%M %p")
 
-    formatted = out.dt.strftime("%-I %p")
-    formatted = formatted.where(formatted.notna(), out.dt.strftime("%I %p").str.lstrip("0"))
+    def _format_one(val: object) -> str:
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return str(val)
+        raw = str(val).strip()
+        if not raw or raw.lower() == "nan":
+            return raw
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(raw, fmt)
+            except ValueError:
+                continue
+            hour = parsed.strftime("%I").lstrip("0") or "12"
+            if parsed.minute == 0:
+                return f"{hour} {parsed.strftime('%p')}"
+            return f"{hour}:{parsed.strftime('%M')} {parsed.strftime('%p')}"
+        return raw
 
-    mins = out.dt.minute
-    with_mins = out.dt.strftime("%-I:%M %p")
-    with_mins = with_mins.where(with_mins.notna(), out.dt.strftime("%I:%M %p").str.lstrip("0"))
-
-    formatted = formatted.where((mins == 0) | (mins.isna()), with_mins)
-    return formatted.fillna(series.astype(str))
+    return series.apply(_format_one)
 
 def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
     if dt_val is None:
@@ -311,7 +324,7 @@ with tab_users:
             df_display[
                 ["username", "first_name", "last_name", "role", "is_active", "created_at", "last_login_at"]
             ],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -439,7 +452,7 @@ with tab_users:
             )
             make_active = desired_active == "Active"
 
-            if st.button("Apply status change", use_container_width=True, key="admin_apply_status"):
+            if st.button("Apply status change", width="stretch", key="admin_apply_status"):
                 if not make_active and is_last_admin_target():
                     st.error("Blocked: You cannot disable the last remaining admin.")
                 else:
@@ -456,7 +469,7 @@ with tab_users:
             st.write("Reset the selected user's password to the default reset password.")
             st.code(default_pw, language=None)
             if st.button(
-                "Reset to default password", use_container_width=True, key="admin_reset_pw_btn"
+                "Reset to default password", width="stretch", key="admin_reset_pw_btn"
             ):
                 try:
                     admin_reset_password(selected_username, default_pw)
@@ -480,7 +493,7 @@ with tab_users:
                 key="admin_role_select",
             )
 
-            if st.button("Apply role change", use_container_width=True, key="admin_apply_role"):
+            if st.button("Apply role change", width="stretch", key="admin_apply_role"):
                 if desired_role == selected_role:
                     st.info("No change to apply.")
                 else:
@@ -500,7 +513,7 @@ with tab_users:
             st.warning("This permanently deletes the user account. This cannot be undone.")
             confirm = st.checkbox("I understand and want to delete this user", key="admin_delete_user_confirm")
 
-            if st.button("Delete user", use_container_width=True, disabled=not confirm, key="admin_delete_user_btn"):
+            if st.button("Delete user", width="stretch", disabled=not confirm, key="admin_delete_user_btn"):
                 if is_last_admin_target():
                     st.error("Blocked: You cannot delete the last remaining admin.")
                 else:
@@ -665,7 +678,7 @@ with tab_scorecards:
 
     colu1, colu2 = st.columns([1, 2])
     with colu1:
-        do_upload = st.button("Upload to Match", use_container_width=True, disabled=not uploaded_files, key="scorecard_upload_btn")
+        do_upload = st.button("Upload to Match", width="stretch", disabled=not uploaded_files, key="scorecard_upload_btn")
     with colu2:
         st.write("Uploads are appended (existing files are not removed). Filenames may be auto-renamed if duplicates exist.")
 
@@ -862,7 +875,7 @@ with tab_scorecards:
                     if st.button(
                         "Delete file",
                         type="primary",
-                        use_container_width=True,
+                        width="stretch",
                         disabled=not confirm_del,
                         key=f"scorecard_del_btn_{scorecard_id}",
                     ):
@@ -892,7 +905,7 @@ with tab_scorecards:
         if st.button(
             "Delete ALL files for this Match",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=not confirm_del_all,
             key=f"scorecard_delete_all_btn_{match_id}",
         ):
@@ -1009,7 +1022,7 @@ with tab_fantasy_blocks:
 
         st.dataframe(
             pd.DataFrame(rows),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -1031,7 +1044,7 @@ with tab_fantasy_blocks:
         with col1:
             if st.button(
                 "Lock now",
-                use_container_width=True,
+                width="stretch",
                 key="fantasy_block_lock_now",
                 disabled=current_state == "SCORED",
             ):
@@ -1047,7 +1060,7 @@ with tab_fantasy_blocks:
                 st.rerun()
             if st.button(
                 "Backup fantasy now",
-                use_container_width=True,
+                width="stretch",
                 key="fantasy_backup_now",
             ):
                 if backup_path and app_key and app_secret and refresh_token:
@@ -1070,7 +1083,7 @@ with tab_fantasy_blocks:
         with col2:
             if st.button(
                 "Unlock now",
-                use_container_width=True,
+                width="stretch",
                 key="fantasy_block_unlock_now",
                 disabled=current_state == "SCORED",
             ):
@@ -1087,7 +1100,7 @@ with tab_fantasy_blocks:
         with col3:
             if st.button(
                 "Clear override",
-                use_container_width=True,
+                width="stretch",
                 key="fantasy_block_clear_override",
                 disabled=current_state == "SCORED",
             ):
@@ -1112,7 +1125,7 @@ with tab_fantasy_blocks:
             )
             if st.button(
                 "Score block (stats entered)",
-                use_container_width=True,
+                width="stretch",
                 key="fantasy_block_score_now",
                 disabled=(current_state == "SCORED" or not confirm_ok),
             ):
@@ -1369,7 +1382,7 @@ with tab_fantasy_blocks:
             display_rows.append(row)
         st.dataframe(
             pd.DataFrame(display_rows),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -1388,7 +1401,7 @@ with tab_fantasy_blocks:
         type="password",
         key="fantasy_reset_password",
     )
-    if st.button("Reset Fantasy League", type="primary", use_container_width=True):
+    if st.button("Reset Fantasy League", type="primary", width="stretch"):
         if not confirm_reset:
             st.error("Please confirm you understand the reset.")
         else:
