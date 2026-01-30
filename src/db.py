@@ -348,6 +348,8 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
             }
         )
 
+    now_local = datetime.now(ZoneInfo("Europe/London"))
+    fixtures_with_dt = [fx for fx in fixtures_with_dt if fx["start_at"] >= now_local]
     fixtures_with_dt.sort(key=lambda x: x["start_at"])
 
     total = len(fixtures_with_dt)
