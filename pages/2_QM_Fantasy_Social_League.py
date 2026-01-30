@@ -614,13 +614,13 @@ with tab_team:
                     }
                 )
             selected_df = pd.DataFrame(selected_rows)
+            display_df = selected_df.drop(columns=["PlayerID"])
             editor_key = f"fantasy_selected_table_block_{current_block}_v{st.session_state[ver_key]}"
             edited = st.data_editor(
-                selected_df,
+                display_df,
                 hide_index=True,
                 width="stretch",
                 column_config={
-                    "PlayerID": st.column_config.TextColumn(disabled=True),
                     "Player": st.column_config.TextColumn(disabled=True),
                     "Team": st.column_config.TextColumn(disabled=True),
                     "Cost": st.column_config.NumberColumn(disabled=True, format="%.1f"),
@@ -629,7 +629,12 @@ with tab_team:
                 key=editor_key,
             )
             if "Remove" in edited.columns:
-                to_remove = edited.loc[edited["Remove"] == True, "PlayerID"].astype(str).tolist()  # noqa: E712
+                remove_mask = edited["Remove"] == True  # noqa: E712
+                to_remove = [
+                    selected_for_calc[i]
+                    for i, flag in enumerate(remove_mask.tolist())
+                    if flag and i < len(selected_for_calc)
+                ]
                 if to_remove:
                     st.session_state[squad_key] = [
                         pid for pid in selected_for_calc if str(pid) not in set(to_remove)
