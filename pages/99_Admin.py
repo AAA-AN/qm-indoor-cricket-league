@@ -514,6 +514,7 @@ with tab_users:
 
                     st.session_state["admin_user_action_msg"] = f"Deleted user '{selected_username}'."
                     st.session_state["admin_scroll_to_users"] = True
+                    st.session_state["admin_user_select"] = None
 
 
 # =========================================================

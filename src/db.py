@@ -1583,7 +1583,31 @@ def update_last_login(username: str, last_login_at: str) -> None:
 def delete_user(username: str) -> None:
     conn = get_conn()
     try:
-        conn.execute("DELETE FROM users WHERE username = ?;", (username,))
+        row = conn.execute(
+            "SELECT user_id FROM users WHERE username = ?;",
+            (str(username),),
+        ).fetchone()
+        if not row:
+            return
+        user_id = int(row["user_id"])
+
+        conn.execute("BEGIN;")
+        conn.execute(
+            "DELETE FROM fantasy_entry_players WHERE user_id = ?;",
+            (user_id,),
+        )
+        conn.execute(
+            "DELETE FROM fantasy_entries WHERE user_id = ?;",
+            (user_id,),
+        )
+        conn.execute(
+            "DELETE FROM fantasy_block_user_points WHERE user_id = ?;",
+            (user_id,),
+        )
+        conn.execute(
+            "DELETE FROM users WHERE user_id = ?;",
+            (user_id,),
+        )
         conn.commit()
     finally:
         conn.close()
