@@ -97,6 +97,22 @@ def _load_workbook_fixture_results(app_key: str, app_secret: str, refresh_token:
     return fixtures
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_workbook_league_data(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str) -> pd.DataFrame:
+    """
+    Loads the league workbook from Dropbox and returns the League_Data_Stats dataframe.
+    Cached briefly to keep Admin UI responsive.
+    """
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+    xbytes = download_file(access_token, dropbox_path)
+    data = load_league_workbook_from_bytes(xbytes)
+    if data.league_data is None:
+        return pd.DataFrame()
+    league_data = data.league_data.copy()
+    league_data.columns = [str(c).strip() for c in league_data.columns]
+    return league_data
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -161,6 +177,26 @@ def _round_to_0_5(x: float) -> float:
 
 def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
+
+
+def _safe_float(val: object) -> float | None:
+    try:
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return None
+        out = float(val)
+    except Exception:
+        return None
+    if pd.isna(out):
+        return None
+    return out
+
+
+def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    cols = list(df.columns)
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
 
 
 def _app_backup_folder(dropbox_file_path: str) -> str:
@@ -1183,6 +1219,15 @@ with tab_fantasy_blocks:
                     upsert_block_user_points(current_block, user_points, london_now_iso)
                     mark_block_scored(current_block, london_now_iso)
 
+                    league_data_df = pd.DataFrame()
+                    if app_key and app_secret and refresh_token and dropbox_file_path:
+                        try:
+                            league_data_df = _load_workbook_league_data(
+                                app_key, app_secret, refresh_token, dropbox_file_path
+                            )
+                        except Exception:
+                            league_data_df = pd.DataFrame()
+
                     played_players = list(points_by_player.keys())
                     current_prices = get_block_prices(current_block)
                     if not current_prices:
@@ -1198,12 +1243,96 @@ with tab_fantasy_blocks:
                         median = 0.0
                         iqr = 0.0
 
+                    appm_by_pid: dict[str, float] = {}
+                    matches_by_pid: dict[str, float] = {}
+                    use_appm = False
+                    if not league_data_df.empty:
+                        tmp = league_data_df.copy()
+                        tmp.columns = [str(c).strip() for c in tmp.columns]
+                        pid_col = _find_col(tmp, ["PlayerID", "Player Id", "Player ID"])
+                        appm_col = _find_col(
+                            tmp,
+                            [
+                                "Ave Points Per Match",
+                                "Avg Points Per Match",
+                                "Average Points Per Match",
+                                "Ave Pts Per Match",
+                                "Avg Pts Per Match",
+                            ],
+                        )
+                        matches_col = _find_col(
+                            tmp,
+                            ["Matches Played", "Match Played", "Games Played", "Played"],
+                        )
+                        points_col = _find_col(tmp, ["Fantasy Points", "Total Points", "Points", "Pts"])
+
+                        if pid_col and matches_col:
+                            if appm_col:
+                                tmp[appm_col] = pd.to_numeric(tmp[appm_col], errors="coerce")
+                            if matches_col:
+                                tmp[matches_col] = pd.to_numeric(tmp[matches_col], errors="coerce")
+                            if points_col:
+                                tmp[points_col] = pd.to_numeric(tmp[points_col], errors="coerce")
+
+                            for _, row in tmp.iterrows():
+                                pid_val = str(row.get(pid_col) or "").strip()
+                                if not pid_val:
+                                    continue
+                                matches = _safe_float(row.get(matches_col))
+                                if matches is None or matches <= 0:
+                                    continue
+
+                                appm = _safe_float(row.get(appm_col)) if appm_col else None
+                                if appm is None and points_col:
+                                    pts = _safe_float(row.get(points_col))
+                                    if pts is not None:
+                                        appm = pts / matches
+                                if appm is None:
+                                    continue
+
+                                appm_by_pid[pid_val] = float(appm)
+                                matches_by_pid[pid_val] = float(matches)
+
+                            if appm_by_pid:
+                                use_appm = True
+
+                    if use_appm and played_players:
+                        appm_vals = [
+                            float(appm_by_pid[p])
+                            for p in played_players
+                            if p in appm_by_pid
+                        ]
+                        if appm_vals:
+                            appm_series = pd.Series(appm_vals)
+                            median_appm = float(appm_series.median())
+                            q25_appm = float(appm_series.quantile(0.25))
+                            q75_appm = float(appm_series.quantile(0.75))
+                            iqr_appm = q75_appm - q25_appm
+                        else:
+                            median_appm = 0.0
+                            iqr_appm = 0.0
+                    else:
+                        median_appm = 0.0
+                        iqr_appm = 0.0
+
                     k = 0.5
                     next_prices: dict[str, float] = {}
                     for pid in played_players:
                         current_price = float(current_prices.get(pid, 7.5))
                         delta_raw = 0.0
-                        if pid in points_by_player:
+                        if use_appm and pid in appm_by_pid:
+                            matches = matches_by_pid.get(pid, 0.0)
+                            new_appm = float(appm_by_pid[pid])
+                            match_points = float(points_by_player.get(pid, 0.0))
+                            if matches and matches > 1:
+                                old_total = (new_appm * matches) - match_points
+                                old_appm = old_total / (matches - 1)
+                            else:
+                                old_appm = 0.0
+                            delta_appm = new_appm - old_appm
+                            denom = max(iqr_appm, 1.0)
+                            delta_raw = k * delta_appm / denom
+                        elif pid in points_by_player:
                             denom = max(iqr, 1.0)
                             delta_raw = k * (float(points_by_player[pid]) - median) / denom
                         delta_capped = _clamp(delta_raw, -1.0, 1.0)

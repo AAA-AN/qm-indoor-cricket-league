@@ -1273,7 +1273,7 @@ def ensure_block_prices_from_history_or_default(
     default_price: float = 7.5,
 ) -> dict[str, float]:
     """
-    Ensure prices exist for a block using historical points when available.
+    Ensure prices exist for a block using historical APPM when available.
     - Does not rely on page-level mappings.
     - New players get the median of returning prices (rounded to nearest 0.5).
     """
@@ -1294,6 +1294,17 @@ def ensure_block_prices_from_history_or_default(
                 return c
         return None
 
+    def _safe_float(val: object) -> float | None:
+        try:
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return None
+            out = float(val)
+        except Exception:
+            return None
+        if pd.isna(out):
+            return None
+        return out
+
     name_to_pid: dict[str, str] = {}
     if player_id_col in current_league_df.columns and name_col in current_league_df.columns:
         for _, r in current_league_df[[player_id_col, name_col]].iterrows():
@@ -1303,8 +1314,17 @@ def ensure_block_prices_from_history_or_default(
                 name_to_pid[_normalize_name(nm)] = pid
 
     valid_pids = set(str(pid).strip() for pid in player_ids if pid)
-    points_by_pid: dict[str, float] = {}
+    appm_weighted_by_pid: dict[str, float] = {}
+    matches_by_pid: dict[str, float] = {}
 
+    appm_cols = [
+        "Ave Points Per Match",
+        "Avg Points Per Match",
+        "Average Points Per Match",
+        "Ave Pts Per Match",
+        "Avg Pts Per Match",
+    ]
+    matches_cols = ["Matches Played", "Match Played", "Games Played", "Played"]
     points_cols = ["Fantasy Points", "Total Points", "Points", "Pts"]
     pid_cols = ["PlayerID", "Player Id", "Player ID"]
     name_cols = ["Name", "Player", "Player Name"]
@@ -1316,15 +1336,31 @@ def ensure_block_prices_from_history_or_default(
         tmp.columns = [str(c).strip() for c in tmp.columns]
         pid_col = _find_col(tmp, pid_cols)
         name_col_hist = _find_col(tmp, name_cols)
+        appm_col = _find_col(tmp, appm_cols)
+        matches_col = _find_col(tmp, matches_cols)
         points_col = _find_col(tmp, points_cols)
-        if points_col is None:
+        if appm_col is None and points_col is None:
             continue
-        tmp[points_col] = pd.to_numeric(tmp[points_col], errors="coerce")
+        if appm_col is not None:
+            tmp[appm_col] = pd.to_numeric(tmp[appm_col], errors="coerce")
+        if matches_col is not None:
+            tmp[matches_col] = pd.to_numeric(tmp[matches_col], errors="coerce")
+        if points_col is not None:
+            tmp[points_col] = pd.to_numeric(tmp[points_col], errors="coerce")
 
         for _, row in tmp.iterrows():
-            pts = row.get(points_col)
-            if pts is None or pd.isna(pts):
+            matches = _safe_float(row.get(matches_col)) if matches_col else None
+            if matches is None or matches <= 0:
                 continue
+
+            appm = _safe_float(row.get(appm_col)) if appm_col else None
+            if appm is None and points_col:
+                pts = _safe_float(row.get(points_col))
+                if pts is not None:
+                    appm = pts / matches
+            if appm is None or pd.isna(appm):
+                continue
+
             pid = None
             if pid_col:
                 pid_val = str(row.get(pid_col) or "").strip()
@@ -1334,25 +1370,39 @@ def ensure_block_prices_from_history_or_default(
                 nm = _normalize_name(row.get(name_col_hist))
                 pid = name_to_pid.get(nm)
             if pid:
-                points_by_pid[pid] = float(points_by_pid.get(pid, 0.0)) + float(pts)
+                appm_weighted_by_pid[pid] = float(appm_weighted_by_pid.get(pid, 0.0)) + float(
+                    appm * matches
+                )
+                matches_by_pid[pid] = float(matches_by_pid.get(pid, 0.0)) + float(matches)
 
-    if points_by_pid:
-        base_prices = compute_starting_prices_from_history(points_by_pid, default_price=default_price)
-        returning_prices = list(base_prices.values())
-        median_price = None
-        if returning_prices:
-            median_price = _round_to_0_5(float(statistics.median(returning_prices)))
+    if appm_weighted_by_pid:
+        combined_appm: dict[str, float] = {}
+        for pid, weighted_sum in appm_weighted_by_pid.items():
+            total_matches = matches_by_pid.get(pid, 0.0)
+            if total_matches and total_matches > 0:
+                combined_appm[pid] = float(weighted_sum) / float(total_matches)
 
-        final_prices: dict[str, float] = {}
-        for pid in player_ids:
-            pid_str = str(pid).strip()
-            if pid_str in base_prices:
-                final_prices[pid_str] = float(base_prices[pid_str])
-            else:
-                final_prices[pid_str] = median_price if median_price is not None else default_price
+        if combined_appm:
+            base_prices = compute_starting_prices_from_history(
+                combined_appm, default_price=default_price
+            )
+            returning_prices = list(base_prices.values())
+            median_price = None
+            if returning_prices:
+                median_price = _round_to_0_5(float(statistics.median(returning_prices)))
 
-        upsert_block_prices_from_dict(block_number, final_prices)
-        return get_block_prices(block_number)
+            final_prices: dict[str, float] = {}
+            for pid in player_ids:
+                pid_str = str(pid).strip()
+                if pid_str in base_prices:
+                    final_prices[pid_str] = float(base_prices[pid_str])
+                else:
+                    final_prices[pid_str] = (
+                        median_price if median_price is not None else default_price
+                    )
+
+            upsert_block_prices_from_dict(block_number, final_prices)
+            return get_block_prices(block_number)
 
     ensure_block_prices_default(block_number, player_ids, default_price=default_price)
     return get_block_prices(block_number)
