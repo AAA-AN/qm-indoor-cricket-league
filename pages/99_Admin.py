@@ -49,6 +49,7 @@ from src.db import (
     get_block_prices,
     upsert_block_prices_from_dict,
     export_fantasy_backup_payload,
+    export_users_backup_payload,
     restore_fantasy_from_backup_payload,
     wipe_all_fantasy_data,
     fantasy_has_state,
@@ -230,6 +231,19 @@ def _fantasy_backup_to_dropbox(
 ) -> None:
     access_token = get_access_token(app_key, app_secret, refresh_token)
     payload = export_fantasy_backup_payload()
+    content = json.dumps(payload, indent=2).encode("utf-8")
+    backup_folder = posixpath.dirname(backup_path)
+    if backup_folder not in ("", "/"):
+        ensure_folder(access_token, backup_folder)
+    upload_file(access_token, backup_path, content, mode="overwrite", autorename=False)
+
+
+def _users_backup_to_dropbox(
+    app_key: str, app_secret: str, refresh_token: str, dropbox_file_path: str
+) -> None:
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+    backup_path = _users_backup_path(dropbox_file_path)
+    payload = export_users_backup_payload()
     content = json.dumps(payload, indent=2).encode("utf-8")
     backup_folder = posixpath.dirname(backup_path)
     if backup_folder not in ("", "/"):
@@ -518,6 +532,16 @@ with tab_users:
                     st.error("Blocked: You cannot delete the last remaining admin.")
                 else:
                     delete_user(selected_username)
+                    try:
+                        app_key = _get_secret("DROPBOX_APP_KEY")
+                        app_secret = _get_secret("DROPBOX_APP_SECRET")
+                        refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
+                        dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")
+                        _users_backup_to_dropbox(
+                            app_key, app_secret, refresh_token, dropbox_file_path
+                        )
+                    except Exception as e:
+                        st.error(f"Users backup failed: {e}")
 
                     st.session_state["admin_user_action_msg"] = f"Deleted user: {selected_username}"
                     st.session_state["admin_scroll_to_users"] = True
