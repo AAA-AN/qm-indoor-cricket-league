@@ -461,8 +461,6 @@ with tab_users:
                     status_txt = "Active" if make_active else "Disabled"
                     st.session_state["admin_user_action_msg"] = f"Updated '{selected_username}' status to {status_txt}."
                     st.session_state["admin_scroll_to_users"] = True
-                    # Return to table (rerun goes back to top)
-                    st.rerun()
 
         with st.expander("Reset password", expanded=False):
             default_pw = str(st.secrets.get("DEFAULT_RESET_PASSWORD", "ResetMe123!"))
@@ -478,9 +476,6 @@ with tab_users:
                         f"Password reset for '{selected_username}'. User will be prompted to change it on next login."
                     )
                     st.session_state["admin_scroll_to_users"] = True
-
-                    # Return to table
-                    st.rerun()
 
                 except Exception as e:
                     st.error(str(e))
@@ -506,8 +501,6 @@ with tab_users:
                             f"Updated '{selected_username}' role to {desired_role}."
                         )
                         st.session_state["admin_scroll_to_users"] = True
-                        # Return to table
-                        st.rerun()
 
         with st.expander("Delete user", expanded=False):
             st.warning("This permanently deletes the user account. This cannot be undone.")
@@ -521,8 +514,6 @@ with tab_users:
 
                     st.session_state["admin_user_action_msg"] = f"Deleted user '{selected_username}'."
                     st.session_state["admin_scroll_to_users"] = True
-                    # Return to table
-                    st.rerun()
 
 
 # =========================================================
@@ -781,7 +772,6 @@ with tab_scorecards:
 
             st.success("Upload complete.")
             st.session_state["scorecard_uploader_nonce"] += 1
-            st.rerun()
 
         except Exception as e:
             st.error(f"Upload failed: {e}")
@@ -884,7 +874,6 @@ with tab_scorecards:
                             delete_path(access_token, dbx_path)          # remove from Dropbox
                             delete_scorecard_by_path(dbx_path)           # remove from SQLite
                             st.success("Deleted.")
-                            st.rerun()
                         except Exception as e:
                             st.error(f"Delete failed: {e}")
 
@@ -927,7 +916,6 @@ with tab_scorecards:
                     pass  # Folder already gone is acceptable
 
                 st.success("All scorecard files and database records for this Match have been deleted.")
-                st.rerun()
             except Exception as e:
                 st.error(f"Delete-all failed: {e}")
 
@@ -1057,7 +1045,6 @@ with tab_fantasy_blocks:
                     except Exception as e:
                         st.error(f"Fantasy backup failed: {e}")
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} locked."
-                st.rerun()
             if st.button(
                 "Backup fantasy now",
                 width="stretch",
@@ -1096,7 +1083,6 @@ with tab_fantasy_blocks:
                     except Exception as e:
                         st.error(f"Fantasy backup failed: {e}")
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} unlocked."
-                st.rerun()
         with col3:
             if st.button(
                 "Clear override",
@@ -1113,7 +1099,6 @@ with tab_fantasy_blocks:
                     except Exception as e:
                         st.error(f"Fantasy backup failed: {e}")
                 st.session_state["admin_fantasy_msg"] = f"Block {current_block} override cleared."
-                st.rerun()
         with col4:
             confirm_key = f"fantasy_block_confirm_week_{current_block}"
             confirm_text = f"I confirm Week {current_block} Stats is complete"
@@ -1369,7 +1354,6 @@ with tab_fantasy_blocks:
                             st.error(f"Fantasy backup failed: {e}")
 
                     st.session_state["admin_fantasy_msg"] = f"Block {current_block} scored."
-                    st.rerun()
 
     if st.session_state.get("admin_fantasy_leaderboard"):
         st.markdown("### Block Leaderboard")
@@ -1429,4 +1413,3 @@ with tab_fantasy_blocks:
                     st.session_state.pop("fantasy_restore_attempted", None)
                     st.session_state.pop("admin_fantasy_leaderboard", None)
                     st.success("Fantasy league reset.")
-                    st.rerun()

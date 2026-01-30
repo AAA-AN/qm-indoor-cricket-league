@@ -446,7 +446,6 @@ with tab_team:
                     # Clear init flag so edit mode always re-seeds from the saved entry.
                     st.session_state.pop(f"fantasy_squad_initialized_{current_block}", None)
                     st.session_state[editing_key] = True
-                    st.rerun()
         else:
             st.info(
                 "This block is not open yet."
@@ -630,7 +629,6 @@ with tab_team:
                     st.session_state[squad_key] = [
                         pid for pid in selected_for_calc if pid not in set(to_remove)
                     ]
-                    st.rerun()
 
         # Selector is always shown unless the team is full.
         team_is_full = len(selected_for_calc) >= 8
@@ -664,7 +662,6 @@ with tab_team:
                     st.session_state[squad_key] = current + [pid]
                 # Reset picker to blank and rerun to refresh cap/budget filters immediately.
                 st.session_state[pick_key] = None
-                st.rerun()
 
             if not addable_labels:
                 if remaining_budget > 0:
@@ -738,7 +735,6 @@ with tab_team:
             # Keep PlayerIDs in session state (never labels).
             st.session_state[squad_key] = [str(pid) for pid in squad_ids if str(pid) in player_label_by_id]
             st.session_state[prev_key] = squad_ids
-            st.rerun()
 
         st.session_state[prev_key] = squad_ids
 
@@ -858,7 +854,6 @@ with tab_team:
                         st.session_state[editing_key] = False
                         st.session_state.pop(f"fantasy_squad_initialized_{current_block}", None)
                         st.success("Fantasy team submitted.")
-                        st.rerun()
                     except ValueError as e:
                         st.error(str(e))
 

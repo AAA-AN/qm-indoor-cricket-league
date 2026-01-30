@@ -1962,7 +1962,6 @@ if selected_tab == "Scorecards":
                 key=f"img_prev_{selected_match_id}",
             ):
                 st.session_state[idx_key] = max(0, idx - 1)
-                st.rerun()
 
         with c_next:
             if st.button(
@@ -1972,7 +1971,6 @@ if selected_tab == "Scorecards":
                 key=f"img_next_{selected_match_id}",
             ):
                 st.session_state[idx_key] = min(n - 1, idx + 1)
-                st.rerun()
 
     # -----------------------------
     # PDFs (open in a new tab via Dropbox temporary link)

@@ -275,7 +275,7 @@ def home_welcome():
             if int(user.get("must_reset_password") or 0) == 1:
                 st.session_state["pending_reset_username"] = user["username"]
                 st.session_state["home_view"] = "force_reset"
-                st.rerun()
+                st.session_state["home_force_rerun"] = True
 
             st.session_state["user"] = user
             # Clear prefill after successful login
@@ -287,7 +287,7 @@ def home_welcome():
     st.markdown("---")
     if st.button("Create an account"):
         st.session_state["home_view"] = "signup"
-        st.rerun()
+        st.session_state["home_force_rerun"] = True
 
 
 def home_force_reset():
@@ -296,7 +296,7 @@ def home_force_reset():
     u = (st.session_state.get("pending_reset_username") or "").strip()
     if not u:
         st.session_state["home_view"] = "welcome"
-        st.rerun()
+        st.session_state["home_force_rerun"] = True
 
     st.info(f"User '{u}' must set a new password before continuing.")
 
@@ -337,7 +337,7 @@ def home_force_reset():
     if st.button("Back to Login"):
         st.session_state["home_view"] = "welcome"
         st.session_state["pending_reset_username"] = ""
-        st.rerun()
+        st.session_state["home_force_rerun"] = True
 
 
 def home_signup():
@@ -369,18 +369,21 @@ def home_signup():
                 st.session_state["prefill_login_username"] = (username or "").strip()
                 st.session_state["signup_success"] = True
                 st.session_state["home_view"] = "welcome"
-                st.rerun()
+                st.session_state["home_force_rerun"] = True
             except Exception as e:
                 st.error(str(e))
 
     if st.button("Back to Welcome"):
         st.session_state["home_view"] = "welcome"
-        st.rerun()
+        st.session_state["home_force_rerun"] = True
 
 
 def main():
     init_db()
     ensure_session_state()
+
+    if st.session_state.pop("home_force_rerun", False):
+        st.rerun()
 
     # Restore users from Dropbox if this is a fresh boot (empty users table)
     restore_users_from_dropbox_if_needed()
