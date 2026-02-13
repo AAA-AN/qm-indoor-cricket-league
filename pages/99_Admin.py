@@ -39,6 +39,7 @@ from src.db import (
     get_effective_block_state,
     get_block_open_at,
     get_current_block_number,
+    list_fantasy_submission_status_for_block,
     set_block_override,
     clear_block_override,
     mark_block_scored,
@@ -1100,6 +1101,38 @@ with tab_fantasy_blocks:
                 current_scored_at = b.get("scored_at")
                 break
         st.write(f"**Current block:** {current_block} (state: {current_state})")
+
+        status_rows = list_fantasy_submission_status_for_block(current_block)
+        if status_rows:
+            status_df = pd.DataFrame(status_rows)
+            status_df["Full Name"] = (
+                status_df["first_name"].fillna("").astype(str).str.strip()
+                + " "
+                + status_df["last_name"].fillna("").astype(str).str.strip()
+            ).str.strip()
+            status_df["Submitted"] = status_df["submitted_at"].notna().map(
+                {True: "✅", False: ""}
+            )
+            submitted_london = pd.to_datetime(
+                status_df["submitted_at"], errors="coerce", utc=True
+            ).dt.tz_convert("Europe/London")
+            status_df["Submitted At (London)"] = submitted_london.dt.strftime(
+                "%d-%b-%Y %H:%M"
+            )
+            status_df["Submitted At (London)"] = status_df[
+                "Submitted At (London)"
+            ].fillna("")
+
+            st.dataframe(
+                status_df[
+                    ["username", "Full Name", "Submitted", "Submitted At (London)"]
+                ].rename(columns={"username": "Username"}),
+                width="stretch",
+                hide_index=True,
+            )
+        else:
+            st.info("No active players found.")
+
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             if st.button(

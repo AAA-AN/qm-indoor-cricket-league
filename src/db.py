@@ -1301,6 +1301,36 @@ def get_all_entries_for_block(block_number: int) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def list_fantasy_submission_status_for_block(block_number: int) -> List[Dict[str, Any]]:
+    """
+    Return active players and whether they have a fantasy submission for the given block.
+    """
+    ensure_fantasy_team_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                u.user_id,
+                u.username,
+                u.first_name,
+                u.last_name,
+                e.submitted_at
+            FROM users u
+            LEFT JOIN fantasy_entries e
+              ON e.user_id = u.user_id
+             AND e.block_number = ?
+            WHERE u.role = 'player'
+              AND u.is_active = 1
+            ORDER BY LOWER(u.username) ASC;
+            """,
+            (int(block_number),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def get_price(block_number: int, player_id: str) -> Optional[float]:
     ensure_fantasy_team_tables_exist()
     conn = get_conn()
