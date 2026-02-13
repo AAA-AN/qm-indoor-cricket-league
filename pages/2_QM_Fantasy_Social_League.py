@@ -14,7 +14,7 @@ from src.guard import (
     render_logout_button,
 )
 from src.dropbox_api import get_access_token, download_file, upload_file, ensure_folder
-from src.excel_io import load_league_workbook_from_bytes
+from src.excel_io import load_league_workbook_from_bytes, load_named_table_from_bytes
 from src.db import (
     rebuild_blocks_from_fixtures_if_missing,
     get_current_block_number,
@@ -48,6 +48,8 @@ render_sidebar_header()
 render_logout_button()
 
 st.title("QM Fantasy Social League")
+FANTASY_SQUAD_SIZE = 8
+FANTASY_BUDGET = 60.0
 
 
 def _get_secret(name: str) -> str:
@@ -62,6 +64,32 @@ def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbo
     access_token = get_access_token(app_key, app_secret, refresh_token)
     xbytes = download_file(access_token, dropbox_path)
     return load_league_workbook_from_bytes(xbytes)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_optional_scoring_table_from_dropbox(
+    app_key: str,
+    app_secret: str,
+    refresh_token: str,
+    dropbox_path: str,
+) -> tuple[pd.DataFrame, str | None]:
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+    xbytes = download_file(access_token, dropbox_path)
+    for table_name in [
+        "Fantasy_Scoring",
+        "Scoring",
+        "Points_System",
+        "Fantasy_Points_System",
+    ]:
+        try:
+            df = load_named_table_from_bytes(xbytes, table_name, drop_empty_columns=True)
+            if df is not None and not df.empty:
+                df = df.copy()
+                df.columns = [str(c).strip() for c in df.columns]
+                return df, table_name
+        except Exception:
+            continue
+    return pd.DataFrame(), None
 
 
 def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
@@ -441,7 +469,9 @@ st.session_state[last_block_key] = int(current_block)
 editing = bool(st.session_state.get(editing_key))
 
 st.markdown("---")
-tab_team, tab_results, tab_leaderboard = st.tabs(["Team selector", "Results", "Leaderboard"])
+tab_team, tab_results, tab_leaderboard, tab_rules = st.tabs(
+    ["Team selector", "Results", "Leaderboard", "Fantasy Rules"]
+)
 with tab_team:
     st.subheader("Team selector")
 
@@ -1229,3 +1259,74 @@ with tab_leaderboard:
                     width="stretch",
                     hide_index=True,
                 )
+
+with tab_rules:
+    st.markdown("## Fantasy Rules")
+    st.markdown(
+        """
+### What is Fantasy League?
+- Pick your own fantasy squad of real players.
+- Your squad scores points based on how those players perform in real matches.
+- Your fantasy total is the sum of points from your selected players.
+- Leaderboards rank teams by total fantasy points.
+        """
+    )
+
+    st.divider()
+    st.markdown(
+        f"""
+### Picking your team
+- Select your players while staying within the budget shown in the app.
+- Player prices change over time based on performance.
+- Squad size: **{FANTASY_SQUAD_SIZE}** players.
+- Budget: **{FANTASY_BUDGET:.1f}**.
+        """
+    )
+
+    st.divider()
+    st.markdown(
+        """
+### When can I make changes?
+- You can edit your team up until the weekly lock time.
+- Weekly lock time is the scheduled start time of the first fixture in that week.
+- After the week locks, teams cannot be changed until the next week.
+        """
+    )
+
+    st.divider()
+    st.markdown(
+        """
+### How do points work?
+- Each player earns **Fantasy Points** each week from match performance.
+- Your weekly team score is the total of your selected players' Fantasy Points for that week.
+- If a player does not play, they score **0** for that week.
+        """
+    )
+
+    st.divider()
+    st.markdown(
+        """
+### How are Fantasy Points calculated?
+- Batting contributions (runs, boundaries, milestones, and related outcomes).
+- Bowling contributions (wickets, maidens, economy/discipline outcomes).
+- Fielding contributions (catches, run outs, stumpings).
+- Confirmed penalties:
+  - Duck: **-3**
+  - Golden duck: **-5**
+        """
+    )
+
+    scoring_df = pd.DataFrame()
+    scoring_table_name = None
+    try:
+        scoring_df, scoring_table_name = _load_optional_scoring_table_from_dropbox(
+            app_key, app_secret, refresh_token, dropbox_path
+        )
+    except Exception:
+        scoring_df, scoring_table_name = pd.DataFrame(), None
+
+    if scoring_table_name and scoring_df is not None and not scoring_df.empty:
+        st.divider()
+        st.markdown("### Scoring Table")
+        st.caption("These are the rules used to calculate Fantasy Points.")
+        st.dataframe(scoring_df, width="stretch", hide_index=True)
