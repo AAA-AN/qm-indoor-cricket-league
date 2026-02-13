@@ -1,10 +1,10 @@
 from datetime import datetime
-from pathlib import Path
 import logging
-import re
+from io import BytesIO
 
 import streamlit as st
 import pandas as pd
+from openpyxl import load_workbook
 
 from src.guard import (
     APP_TITLE,
@@ -28,6 +28,11 @@ render_logout_button()
 
 st.title("QM Social League")
 logger = logging.getLogger(__name__)
+SEASON_SHEETS = {
+    "Current Season": "League_Data",
+    "Sem A 25/26": "Sem_A_25-26_Stats",
+    "Sem B 24/25": "Sem_B_24-25_Stats",
+}
 
 
 def _get_secret(name: str) -> str:
@@ -42,6 +47,12 @@ def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbo
     access_token = get_access_token(app_key, app_secret, refresh_token)
     xbytes = download_file(access_token, dropbox_path)
     return load_league_workbook_from_bytes(xbytes)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _download_workbook_bytes(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str) -> bytes:
+    access_token = get_access_token(app_key, app_secret, refresh_token)
+    return download_file(access_token, dropbox_path)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -181,98 +192,63 @@ def _extract_teams_df(excel_result) -> pd.DataFrame | None:
     return teams_df
 
 
-def _season_sort_key(label: str) -> tuple[int, int, str]:
-    lbl = str(label).strip()
-    m = re.search(r"(20\d{2})\D+(20\d{2}|\d{2})", lbl)
-    if m:
-        y1 = int(m.group(1))
-        y2_raw = m.group(2)
-        y2 = int(y2_raw[-2:]) if len(y2_raw) == 4 else int(y2_raw)
-        return (y1, y2, lbl.casefold())
-    m = re.search(r"(20\d{2})", lbl)
-    if m:
-        return (int(m.group(1)), 0, lbl.casefold())
-    return (0, 0, lbl.casefold())
-
-
-def _parse_season_label(filename: str) -> str:
-    stem = Path(filename).stem.strip()
-    match_range = re.search(r"(20\d{2})\D+(20\d{2}|\d{2})", stem)
-    if match_range:
-        start = match_range.group(1)
-        end_raw = match_range.group(2)
-        end = end_raw[-2:] if len(end_raw) == 4 else end_raw
-        return f"{start}-{end}"
-
-    match_year = re.search(r"(20\d{2})", stem)
-    if match_year:
-        return match_year.group(1)
-    return stem or filename
+@st.cache_data(ttl=300, show_spinner=False)
+def discover_seasons() -> dict[str, str]:
+    return dict(SEASON_SHEETS)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def discover_season_files() -> list[tuple[str, str]]:
-    project_root = Path(__file__).resolve().parent.parent
-    local_seasons_dir = project_root / "data" / "seasons"
-    local_seasons_dir.mkdir(parents=True, exist_ok=True)
-    search_dirs = [
-        Path("/mnt/data/seasons"),
-        local_seasons_dir,
-        project_root / "data",
-    ]
-
-    files: list[Path] = []
-    for directory in search_dirs:
-        if not directory.exists() or not directory.is_dir():
-            continue
-        for pattern in ("*.xlsm", "*.xlsx", "*.xls"):
-            files.extend(directory.glob(pattern))
-
-    deduped: dict[str, Path] = {}
-    for fp in files:
-        deduped[str(fp.resolve())] = fp
-
-    discovered: list[tuple[str, str]] = []
-    for fp in deduped.values():
-        label = _parse_season_label(fp.name)
-        discovered.append((label, str(fp)))
-
-    discovered.sort(key=lambda item: _season_sort_key(item[0]), reverse=True)
-    return discovered
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def load_season_stats(filepath: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _worksheet_to_df(workbook_bytes: bytes, sheet_name: str) -> pd.DataFrame:
     try:
-        with open(filepath, "rb") as f:
-            workbook = load_league_workbook_from_bytes(f.read())
+        wb = load_workbook(BytesIO(workbook_bytes), data_only=True)
     except Exception as exc:
-        logger.warning("Skipping season workbook '%s': failed to load (%s)", filepath, exc)
-        return pd.DataFrame(), pd.DataFrame()
+        logger.warning("Failed to open workbook bytes for sheet '%s': %s", sheet_name, exc)
+        return pd.DataFrame()
 
-    league_df = getattr(workbook, "league_data", None)
-    teams_df = _extract_teams_df(workbook)
+    if sheet_name not in wb.sheetnames:
+        logger.warning("Sheet '%s' not found in workbook", sheet_name)
+        return pd.DataFrame()
 
-    if league_df is None or league_df.empty:
-        logger.warning("Skipping season workbook '%s': missing League_Data_Stats table", filepath)
-        return pd.DataFrame(), pd.DataFrame()
+    ws = wb[sheet_name]
+    rows: list[list[object]] = []
+    if ws.tables:
+        table_name = "League_Data_Stats" if "League_Data_Stats" in ws.tables else next(iter(ws.tables.keys()))
+        ref = ws.tables[table_name].ref
+        for row in ws[ref]:
+            rows.append([cell.value for cell in row])
+    else:
+        for row in ws.iter_rows(values_only=True):
+            rows.append(list(row))
 
-    league = league_df.copy()
+    if len(rows) < 2:
+        return pd.DataFrame()
+
+    headers = [str(h).strip() if h is not None else "" for h in rows[0]]
+    data_rows = rows[1:]
+    df = pd.DataFrame(data_rows, columns=headers)
+    blank_cols = [c for c in df.columns if str(c).strip() == ""]
+    if blank_cols:
+        df = df.drop(columns=blank_cols)
+    if not df.empty:
+        df = df.dropna(axis=1, how="all")
+        df = df.dropna(axis=0, how="all")
+    return df
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_stats_for_sheet(workbook_bytes: bytes, sheet_name: str) -> pd.DataFrame:
+    league = _worksheet_to_df(workbook_bytes, sheet_name)
+    if league is None or league.empty:
+        return pd.DataFrame()
     league.columns = [str(c).strip() for c in league.columns]
     if _find_col(league, ["Name", "Player", "Player Name"]) is None:
-        logger.warning("Skipping season workbook '%s': missing player name column", filepath)
-        return pd.DataFrame(), pd.DataFrame()
-
-    teams = pd.DataFrame()
-    if teams_df is not None and not teams_df.empty:
-        teams = teams_df.copy()
-        teams.columns = [str(c).strip() for c in teams.columns]
-
-    return league, teams
+        logger.warning("Skipping sheet '%s': missing player name column", sheet_name)
+        return pd.DataFrame()
+    return league
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def build_all_stats(season_dfs: tuple[pd.DataFrame, ...]) -> pd.DataFrame:
+def aggregate_player_stats(season_dfs: tuple[pd.DataFrame, ...]) -> pd.DataFrame:
     if not season_dfs:
         return pd.DataFrame()
 
@@ -427,6 +403,19 @@ def build_all_stats(season_dfs: tuple[pd.DataFrame, ...]) -> pd.DataFrame:
     return _normalize_playerid_for_display(result[output_cols])
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def load_all_stats(workbook_bytes: bytes) -> pd.DataFrame:
+    season_map = discover_seasons()
+    dfs: list[pd.DataFrame] = []
+    for sheet_name in season_map.values():
+        df = load_stats_for_sheet(workbook_bytes, sheet_name)
+        if df is not None and not df.empty:
+            dfs.append(df)
+    if not dfs:
+        return pd.DataFrame()
+    return aggregate_player_stats(tuple(dfs))
+
+
 def render_player_stats_ui(
     df: pd.DataFrame,
     enable_team_filter: bool,
@@ -463,9 +452,6 @@ def render_player_stats_ui(
         league["Team"] = league[team_id_col_league].map(team_id_to_name)
     elif "Team" not in league.columns:
         league["Team"] = None
-
-    if not current_season and season_label and season_label != "All Stats":
-        league["Season"] = season_label
 
     numeric_cols = [
         "Runs Scored",
@@ -631,9 +617,6 @@ def render_player_stats_ui(
         fixed_cols.append("Name")
     elif name_col and name_col in filtered.columns:
         fixed_cols.append(name_col)
-    if "Season" in filtered.columns:
-        fixed_cols.append("Season")
-
     display_cols: list[str] = []
     for c in fixed_cols:
         if c and c in filtered.columns and c not in display_cols:
@@ -684,7 +667,8 @@ except Exception as e:
 # ---- Load workbook from Dropbox ----
 with st.spinner("Loading latest league workbook from Dropbox..."):
     try:
-        data = _load_from_dropbox(app_key, app_secret, refresh_token, dropbox_path)
+        workbook_bytes = _download_workbook_bytes(app_key, app_secret, refresh_token, dropbox_path)
+        data = load_league_workbook_from_bytes(workbook_bytes)
     except Exception as e:
         st.error(f"Failed to load workbook from Dropbox: {e}")
         st.stop()
@@ -1548,76 +1532,55 @@ if selected_tab == "Player Stats":
     st.subheader("Player Stats")
     current_league_df = getattr(data, "league_data", None)
     current_teams_df = _extract_teams_df(data)
-
-    current_label = _parse_season_label(Path(str(dropbox_path)).name) if dropbox_path else "Current Season"
-    if not current_label:
-        current_label = "Current Season"
-
-    discovered_files = discover_season_files()
-    season_path_map: dict[str, str] = {}
-    season_options: list[str] = ["All Stats", current_label]
-
-    for label, filepath in discovered_files:
-        if label == current_label:
-            continue
-        display_label = label
-        if display_label in season_options:
-            display_label = f"{label} ({Path(filepath).stem})"
-        season_options.append(display_label)
-        season_path_map[display_label] = filepath
-
+    season_map = discover_seasons()
+    season_options = list(season_map.keys()) + ["All Stats"]
     selected_season = st.selectbox("Season", season_options, key="season_select")
 
-    if selected_season == current_label:
-        if current_league_df is None or current_league_df.empty:
-            st.info("No player stats found yet (League_Data_Stats table not loaded).")
+    if selected_season == "Current Season":
+        current_sheet_df = load_stats_for_sheet(workbook_bytes, season_map["Current Season"])
+        if (current_sheet_df is None or current_sheet_df.empty) and current_league_df is not None and not current_league_df.empty:
+            current_sheet_df = current_league_df.copy()
+        if current_sheet_df is None or current_sheet_df.empty:
+            st.warning("Sheet 'League_Data' is missing or has no player stats.")
         else:
             render_player_stats_ui(
-                df=current_league_df,
+                df=current_sheet_df,
                 enable_team_filter=True,
                 current_season=True,
                 teams_df=current_teams_df,
-                season_label=current_label,
+                season_label=selected_season,
             )
     elif selected_season == "All Stats":
-        all_season_frames: list[pd.DataFrame] = []
-        if current_league_df is not None and not current_league_df.empty:
-            all_season_frames.append(current_league_df.copy())
-
-        for label, filepath in discovered_files:
-            if label == current_label:
-                continue
-            season_df, _ = load_season_stats(filepath)
-            if season_df is not None and not season_df.empty:
-                all_season_frames.append(season_df)
-
-        all_stats_df = build_all_stats(tuple(all_season_frames))
+        all_stats_df = load_all_stats(workbook_bytes)
         if all_stats_df is None or all_stats_df.empty:
-            st.info("No season data files found for All Stats aggregation.")
+            st.warning("No valid season sheets found for All Stats.")
         else:
+            missing_labels: list[str] = []
+            for season_label, sheet_name in season_map.items():
+                if load_stats_for_sheet(workbook_bytes, sheet_name).empty:
+                    missing_labels.append(f"{season_label} ({sheet_name})")
+            if missing_labels:
+                st.warning(f"Missing/invalid season sheets skipped: {', '.join(missing_labels)}")
             render_player_stats_ui(
                 df=all_stats_df,
                 enable_team_filter=False,
                 current_season=False,
                 teams_df=None,
-                season_label="All Stats",
+                season_label=selected_season,
             )
     else:
-        selected_path = season_path_map.get(selected_season)
-        if not selected_path:
-            st.info("Selected season file could not be located.")
+        sheet_name = season_map.get(selected_season, "")
+        season_df = load_stats_for_sheet(workbook_bytes, sheet_name) if sheet_name else pd.DataFrame()
+        if season_df is None or season_df.empty:
+            st.warning(f"Sheet '{sheet_name}' is missing or has no valid player stats.")
         else:
-            season_df, season_teams_df = load_season_stats(selected_path)
-            if season_df is None or season_df.empty:
-                st.info("Selected season has no player stats table available.")
-            else:
-                render_player_stats_ui(
-                    df=season_df,
-                    enable_team_filter=False,
-                    current_season=False,
-                    teams_df=season_teams_df if season_teams_df is not None and not season_teams_df.empty else None,
-                    season_label=selected_season,
-                )
+            render_player_stats_ui(
+                df=season_df,
+                enable_team_filter=False,
+                current_season=False,
+                teams_df=None,
+                season_label=selected_season,
+            )
 # ============================
 # TAB 5: SCORECARDS
 # ============================
