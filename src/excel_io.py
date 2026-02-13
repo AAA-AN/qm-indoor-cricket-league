@@ -100,6 +100,24 @@ def _read_named_table_any_sheet(
     raise ValueError(f"Table '{table_name}' not found in any worksheet.")
 
 
+def load_named_table_from_bytes(
+    xlsm_bytes: bytes,
+    table_name: str,
+    *,
+    drop_empty_columns: bool = True,
+) -> pd.DataFrame:
+    """
+    Load a named Excel table from workbook bytes by searching all sheets.
+    """
+    bio = BytesIO(xlsm_bytes)
+    wb = load_workbook(bio, data_only=True)
+    return _read_named_table_any_sheet(
+        wb,
+        table_name=table_name,
+        drop_empty_columns=drop_empty_columns,
+    )
+
+
 def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     """
     Load the league workbook from bytes and return key tables.

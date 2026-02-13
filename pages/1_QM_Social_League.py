@@ -15,7 +15,7 @@ from src.guard import (
     render_logout_button,
 )
 from src.dropbox_api import get_access_token, download_file, get_temporary_link
-from src.excel_io import load_league_workbook_from_bytes
+from src.excel_io import load_league_workbook_from_bytes, load_named_table_from_bytes
 from src.db import list_scorecards, list_scorecard_match_ids
 
 st.set_page_config(page_title=f"{APP_TITLE} - QM Social League", layout="wide")
@@ -293,179 +293,13 @@ def load_stats_for_sheet(workbook_bytes: bytes, sheet_name: str) -> pd.DataFrame
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def aggregate_player_stats(season_dfs: tuple[pd.DataFrame, ...]) -> pd.DataFrame:
-    if not season_dfs:
+def load_combined_stats_table(workbook_bytes: bytes, table_name: str = "Combined_Stats") -> pd.DataFrame:
+    df = load_named_table_from_bytes(workbook_bytes, table_name, drop_empty_columns=True)
+    if df is None or df.empty:
         return pd.DataFrame()
-
-    frames: list[pd.DataFrame] = []
-    for df in season_dfs:
-        if df is None or df.empty:
-            continue
-        tmp = _filter_valid_players(df)
-        if tmp is None or tmp.empty:
-            continue
-        tmp.columns = [str(c).strip() for c in tmp.columns]
-        name_col = _find_col(tmp, ["Name", "Player", "Player Name"])
-        if not name_col:
-            continue
-        tmp["_name"] = tmp[name_col].astype(str).str.strip()
-        tmp["_norm_name"] = tmp["_name"].str.casefold()
-        if "Team" in tmp.columns:
-            tmp["_team"] = tmp["Team"].astype(str).str.strip()
-        else:
-            tmp["_team"] = ""
-        if "PlayerID" in tmp.columns:
-            tmp["_player_id"] = tmp["PlayerID"].astype(str).str.strip()
-        elif "Player Id" in tmp.columns:
-            tmp["_player_id"] = tmp["Player Id"].astype(str).str.strip()
-        elif "Player ID" in tmp.columns:
-            tmp["_player_id"] = tmp["Player ID"].astype(str).str.strip()
-        else:
-            tmp["_player_id"] = ""
-        frames.append(tmp[tmp["_norm_name"] != ""])
-
-    if not frames:
-        return pd.DataFrame()
-
-    combined = pd.concat(frames, ignore_index=True)
-
-    sum_cols = [
-        "Runs Scored",
-        "Balls Faced",
-        "6s",
-        "Retirements",
-        "Innings Played",
-        "Not Out's",
-        "Total Overs",
-        "Overs",
-        "Balls Bowled",
-        "Maidens",
-        "Runs Conceded",
-        "Wickets",
-        "Wides",
-        "No Balls",
-        "Catches",
-        "Run Outs",
-        "Stumpings",
-        "Fantasy Points",
-    ]
-    max_cols = ["Highest Score"]
-    first_text_cols = ["Best Figures"]
-
-    for col in sum_cols + max_cols:
-        if col in combined.columns:
-            combined[col] = pd.to_numeric(combined[col], errors="coerce")
-
-    grouped = combined.groupby("_norm_name", dropna=False)
-    result = pd.DataFrame(index=grouped.size().index).reset_index()
-    result["Name"] = grouped["_name"].agg(
-        lambda s: s.dropna().astype(str).str.strip().mode().iat[0] if not s.dropna().empty else ""
-    ).values
-
-    if (combined["_team"] != "").any():
-        result["Team"] = grouped["_team"].agg(
-            lambda s: s[s.astype(str).str.strip() != ""].mode().iat[0]
-            if not s[s.astype(str).str.strip() != ""].empty
-            else ""
-        ).values
-
-    if (combined["_player_id"] != "").any():
-        result["PlayerID"] = grouped["_player_id"].agg(
-            lambda s: s[s.astype(str).str.strip() != ""].iat[0]
-            if not s[s.astype(str).str.strip() != ""].empty
-            else ""
-        ).values
-
-    for col in sum_cols:
-        if col in combined.columns:
-            result[col] = grouped[col].sum(min_count=1).values
-
-    for col in max_cols:
-        if col in combined.columns:
-            result[col] = grouped[col].max().values
-
-    for col in first_text_cols:
-        if col in combined.columns:
-            result[col] = grouped[col].agg(
-                lambda s: s[s.astype(str).str.strip() != ""].iat[0]
-                if not s[s.astype(str).str.strip() != ""].empty
-                else ""
-            ).values
-
-    if "Runs Scored" in result.columns and "Balls Faced" in result.columns:
-        bf = pd.to_numeric(result["Balls Faced"], errors="coerce")
-        rs = pd.to_numeric(result["Runs Scored"], errors="coerce")
-        result["Batting Strike Rate"] = (rs / bf.where(bf > 0, pd.NA)) * 100
-
-    if {"Runs Scored", "Innings Played", "Not Out's"}.issubset(result.columns):
-        rs = pd.to_numeric(result["Runs Scored"], errors="coerce").fillna(0.0)
-        inns = pd.to_numeric(result["Innings Played"], errors="coerce").fillna(0.0)
-        not_outs = pd.to_numeric(result["Not Out's"], errors="coerce").fillna(0.0)
-        outs = (inns - not_outs).where((inns - not_outs) > 0, 1.0)
-        result["Batting Average"] = rs / outs
-
-    if {"Runs Conceded", "Wickets"}.issubset(result.columns):
-        rc = pd.to_numeric(result["Runs Conceded"], errors="coerce")
-        wk = pd.to_numeric(result["Wickets"], errors="coerce")
-        result["Bowling Average"] = rc / wk.where(wk > 0, pd.NA)
-
-    if {"Balls Bowled", "Wickets"}.issubset(result.columns):
-        bb = pd.to_numeric(result["Balls Bowled"], errors="coerce")
-        wk = pd.to_numeric(result["Wickets"], errors="coerce")
-        result["Bowling Strike Rate"] = bb / wk.where(wk > 0, pd.NA)
-
-    if "Runs Conceded" in result.columns:
-        rc = pd.to_numeric(result["Runs Conceded"], errors="coerce")
-        if "Overs" in result.columns:
-            ov = pd.to_numeric(result["Overs"], errors="coerce")
-            result["Economy"] = rc / ov.where(ov > 0, pd.NA)
-        elif "Balls Bowled" in result.columns:
-            bb = pd.to_numeric(result["Balls Bowled"], errors="coerce")
-            overs = bb / 6.0
-            result["Economy"] = rc / overs.where(overs > 0, pd.NA)
-
-    if "Fantasy Points" in result.columns:
-        try:
-            result = result.sort_values(by="Fantasy Points", ascending=False)
-        except Exception:
-            pass
-
-    output_cols: list[str] = []
-    for col in ["PlayerID", "Name", "Team"]:
-        if col in result.columns and col not in output_cols:
-            output_cols.append(col)
-    for col in sum_cols + max_cols + first_text_cols + [
-        "Batting Strike Rate",
-        "Batting Average",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-    ]:
-        if col in result.columns and col not in output_cols:
-            output_cols.append(col)
-    for col in result.columns:
-        if col not in output_cols and col != "_norm_name":
-            output_cols.append(col)
-
-    return _normalize_playerid_for_display(result[output_cols])
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def build_all_stats(season_dfs: tuple[pd.DataFrame, ...]) -> pd.DataFrame:
-    return aggregate_player_stats(season_dfs)
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def load_all_stats(workbook_bytes: bytes) -> pd.DataFrame:
-    season_map = discover_seasons()
-    dfs: list[pd.DataFrame] = []
-    for sheet_name in season_map.values():
-        df = load_stats_for_sheet(workbook_bytes, sheet_name)
-        if df is not None and not df.empty:
-            dfs.append(df)
-    if not dfs:
-        return pd.DataFrame()
-    return build_all_stats(tuple(dfs))
+    df.columns = [str(c).strip() for c in df.columns]
+    df = _filter_valid_players(df)
+    return df if df is not None else pd.DataFrame()
 
 
 def render_player_stats_ui(
@@ -1603,16 +1437,13 @@ if selected_tab == "Player Stats":
                 season_label=selected_season,
             )
     elif selected_season == "All Stats":
-        all_stats_df = load_all_stats(workbook_bytes)
-        if all_stats_df is None or all_stats_df.empty:
-            st.warning("No valid season sheets found for All Stats.")
-        else:
-            missing_labels: list[str] = []
-            for season_label, sheet_name in season_map.items():
-                if load_stats_for_sheet(workbook_bytes, sheet_name).empty:
-                    missing_labels.append(f"{season_label} ({sheet_name})")
-            if missing_labels:
-                st.warning(f"Missing/invalid season sheets skipped: {', '.join(missing_labels)}")
+        try:
+            all_stats_df = load_combined_stats_table(workbook_bytes, table_name="Combined_Stats")
+        except Exception:
+            st.error("Combined_Stats table not found in workbook")
+            all_stats_df = pd.DataFrame()
+
+        if all_stats_df is not None and not all_stats_df.empty:
             render_player_stats_ui(
                 df=all_stats_df,
                 enable_team_filter=False,
@@ -1620,6 +1451,8 @@ if selected_tab == "Player Stats":
                 teams_df=None,
                 season_label=selected_season,
             )
+        elif all_stats_df is not None and all_stats_df.empty:
+            st.info("Combined_Stats table is empty or contains no valid players.")
     else:
         sheet_name = season_map.get(selected_season, "")
         season_df = load_stats_for_sheet(workbook_bytes, sheet_name) if sheet_name else pd.DataFrame()
