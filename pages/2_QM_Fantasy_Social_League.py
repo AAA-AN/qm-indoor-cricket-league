@@ -487,8 +487,8 @@ st.session_state[last_block_key] = int(current_block)
 editing = bool(st.session_state.get(editing_key))
 
 st.markdown("---")
-tab_team, tab_results, tab_leaderboard, tab_rules = st.tabs(
-    ["Team selector", "Results", "Leaderboard", "Fantasy Rules"]
+tab_rules, tab_team, tab_results, tab_leaderboard = st.tabs(
+    ["Fantasy Rules", "Team selector", "Results", "Leaderboard"]
 )
 with tab_team:
     st.subheader("Team selector")
