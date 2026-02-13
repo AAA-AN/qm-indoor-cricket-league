@@ -1282,7 +1282,7 @@ with tab_rules:
     st.markdown("## Fantasy Rules")
     st.markdown(
         """
-### What is Fantasy League?
+### What is the Fantasy Cricket Social League?
 - Pick your own fantasy squad of real players.
 - Your squad scores points based on how those players perform in real matches.
 - Your total fantasy score is the sum of your selected players' points.
@@ -1297,7 +1297,7 @@ with tab_rules:
 - Select players while staying within the budget shown in the app.
 - Player prices change over time based on performance.
 - Squad size: **{FANTASY_SQUAD_SIZE}** players.
-- Budget: **{FANTASY_BUDGET:.1f}**.
+- Budget: **{FANTASY_BUDGET:.1f}**
         """
     )
 
