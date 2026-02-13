@@ -426,7 +426,6 @@ def render_player_stats_ui(
         "Not Out's",
     ]
     BOWLING_STATS = [
-        "Total Overs",
         "Overs",
         "Balls Bowled",
         "Maidens",
@@ -557,6 +556,18 @@ def render_player_stats_ui(
     elif name_col and name_col in view.columns:
         col_config[name_col] = st.column_config.TextColumn(pinned=True)
     for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
+        if c in view.columns:
+            col_config[c] = st.column_config.NumberColumn(format="%.2f")
+    avg_fantasy_ppm_cols = [
+        "Average Fantasy Points per Match",
+        "Average Fantasy Points",
+        "Avg Fantasy Points",
+        "Ave Fantasy Points",
+        "Average Points Per Match",
+        "Avg Points Per Match",
+        "Ave Points Per Match",
+    ]
+    for c in avg_fantasy_ppm_cols:
         if c in view.columns:
             col_config[c] = st.column_config.NumberColumn(format="%.2f")
     if "Fantasy Points" in view.columns:
