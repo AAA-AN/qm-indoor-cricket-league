@@ -1311,6 +1311,38 @@ with tab_fantasy_blocks:
                     if not current_prices:
                         current_prices = {pid: 7.5 for pid in played_players}
 
+                    def _valid_pid_for_pricing(pid: object) -> bool:
+                        s = str(pid or "").strip()
+                        return bool(s) and s.casefold() != "missing"
+
+                    pricing_universe: set[str] = set(
+                        str(pid).strip() for pid in current_prices.keys() if _valid_pid_for_pricing(pid)
+                    )
+                    pricing_universe.update(
+                        str(pid).strip() for pid in played_players if _valid_pid_for_pricing(pid)
+                    )
+
+                    roster_df = pd.DataFrame()
+                    if "workbook_data" in locals():
+                        roster_df = getattr(workbook_data, "league_data", None)
+                        if roster_df is None:
+                            roster_df = pd.DataFrame()
+                    if roster_df is not None and not roster_df.empty:
+                        roster_tmp = roster_df.copy()
+                        roster_tmp.columns = [str(c).strip() for c in roster_tmp.columns]
+                        roster_tmp = _filter_valid_player_rows(
+                            roster_tmp,
+                            id_candidates=["PlayerID", "Player Id", "Player ID"],
+                            name_candidates=["Name", "Player", "Player Name"],
+                        )
+                        roster_pid_col = _find_col(roster_tmp, ["PlayerID", "Player Id", "Player ID"])
+                        if roster_pid_col:
+                            pricing_universe.update(
+                                str(v).strip()
+                                for v in roster_tmp[roster_pid_col].tolist()
+                                if _valid_pid_for_pricing(v)
+                            )
+
                     appm_by_pid: dict[str, float] = {}
                     matches_by_pid: dict[str, float] = {}
                     if not combined_stats_df.empty:
@@ -1366,6 +1398,11 @@ with tab_fantasy_blocks:
 
                                 appm_by_pid[pid_val] = float(appm)
                                 matches_by_pid[pid_val] = float(matches)
+                        pricing_universe.update(
+                            str(pid).strip() for pid in appm_by_pid.keys() if _valid_pid_for_pricing(pid)
+                        )
+
+                    ordered_universe = sorted(pricing_universe)
 
                     if played_players:
                         appm_vals = [float(appm_by_pid[p]) for p in played_players if p in appm_by_pid]
@@ -1381,29 +1418,33 @@ with tab_fantasy_blocks:
 
                     k = 0.5
                     next_prices: dict[str, float] = {}
-                    for pid in played_players:
+                    for pid in ordered_universe:
                         current_price = float(current_prices.get(pid, 7.5))
                         delta_raw = 0.0
-                        new_appm = _safe_float(appm_by_pid.get(pid))
-                        matches = _safe_float(matches_by_pid.get(pid))
-                        match_points = _safe_float(points_by_player.get(pid))
-                        if (
-                            new_appm is not None
-                            and matches is not None
-                            and matches > 0
-                            and match_points is not None
-                        ):
-                            if matches > 1:
-                                old_total = (new_appm * matches) - match_points
-                                old_appm = old_total / (matches - 1)
-                            else:
-                                old_appm = 0.0
-                            delta_appm = new_appm - old_appm
-                            denom = max(iqr_appm, 1.0)
-                            delta_raw = k * delta_appm / denom
-                        delta_capped = _clamp(delta_raw, -1.0, 1.0)
-                        delta = _round_to_0_5(delta_capped)
-                        price_next = _clamp(_round_to_0_5(current_price + delta), 5.0, 10.0)
+                        if pid in points_by_player:
+                            new_appm = _safe_float(appm_by_pid.get(pid))
+                            matches = _safe_float(matches_by_pid.get(pid))
+                            match_points = _safe_float(points_by_player.get(pid))
+                            if (
+                                new_appm is not None
+                                and matches is not None
+                                and matches > 0
+                                and match_points is not None
+                            ):
+                                if matches > 1:
+                                    old_total = (new_appm * matches) - match_points
+                                    old_appm = old_total / (matches - 1)
+                                else:
+                                    old_appm = 0.0
+                                delta_appm = new_appm - old_appm
+                                denom = max(iqr_appm, 1.0)
+                                delta_raw = k * delta_appm / denom
+                            delta_capped = _clamp(delta_raw, -1.0, 1.0)
+                            delta = _round_to_0_5(delta_capped)
+                            price_next = _clamp(_round_to_0_5(current_price + delta), 5.0, 10.0)
+                        else:
+                            # Player did not play this week: keep current price unchanged.
+                            price_next = _clamp(_round_to_0_5(current_price), 5.0, 10.0)
                         next_prices[pid] = float(price_next)
 
                     if next_prices:

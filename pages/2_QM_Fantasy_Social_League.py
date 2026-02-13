@@ -323,8 +323,6 @@ if not prices:
         player_ids=player_ids,
         history_dfs=[
             combined_stats_for_prices,
-            getattr(data, "history_A_25_26", None),
-            getattr(data, "history_B_24_25", None),
         ],
         default_price=7.5,
     )

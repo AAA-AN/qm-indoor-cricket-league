@@ -1311,50 +1311,30 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 
 
 def compute_starting_prices_from_history(
-    points_by_player: Dict[str, float],
+    appm_by_player: Dict[str, float],
     *,
     default_price: float = 7.5,
 ) -> Dict[str, float]:
     """
-    Derive starting prices from historical points using the same framework
-    as the admin price adjustment (median/iqr scaling and 0.5 rounding).
+    Derive starting prices from APPM using linear scaling across 5.0..10.0
+    with 0.5 rounding.
     """
-    if not points_by_player:
+    if not appm_by_player:
         return {}
 
-    pts = [float(v) for v in points_by_player.values()]
-    median = float(statistics.median(pts))
-    if len(pts) >= 2:
-        q1, q2, q3 = statistics.quantiles(pts, n=4, method="inclusive")
-        iqr = float(q3 - q1)
-    else:
-        iqr = 0.0
-
-    k = 0.5
-    base_prices: Dict[str, float] = {}
-    denom = max(iqr, 1.0)
-    for pid, pts_val in points_by_player.items():
-        delta_raw = k * (float(pts_val) - median) / denom
-        delta_capped = _clamp(delta_raw, -1.0, 1.0)
-        delta = _round_to_0_5(delta_capped)
-        price = _clamp(_round_to_0_5(default_price + delta), 5.0, 10.0)
-        base_prices[str(pid)] = float(price)
-
-    min_price = 5.0
-    current_max_price = max(base_prices.values())
-    min_pts = min(pts)
-    max_pts = max(pts)
+    vals = [float(v) for v in appm_by_player.values()]
+    min_appm = min(vals)
+    max_appm = max(vals)
     prices: Dict[str, float] = {}
-    if max_pts == min_pts:
-        for pid in points_by_player.keys():
-            prices[str(pid)] = float(min_price)
+    if max_appm == min_appm:
+        flat_price = _clamp(_round_to_0_5(default_price), 5.0, 10.0)
+        for pid in appm_by_player.keys():
+            prices[str(pid)] = float(flat_price)
         return prices
 
-    scale = (current_max_price - min_price) / (max_pts - min_pts)
-    for pid, pts_val in points_by_player.items():
-        scaled = min_price + (float(pts_val) - min_pts) * scale
-        price = _round_to_half(scaled)
-        price = _clamp(price, min_price, current_max_price)
+    for pid, appm_val in appm_by_player.items():
+        raw = 5.0 + 5.0 * ((float(appm_val) - min_appm) / (max_appm - min_appm))
+        price = _clamp(_round_to_half(raw), 5.0, 10.0)
         prices[str(pid)] = float(price)
 
     return prices
@@ -1415,6 +1395,9 @@ def ensure_block_prices_from_history_or_default(
     matches_by_pid: dict[str, float] = {}
 
     appm_cols = [
+        "Ave Fantasy Points",
+        "Avg Fantasy Points",
+        "Average Fantasy Points",
         "Ave Points Per Match",
         "Avg Points Per Match",
         "Average Points Per Match",
@@ -1438,6 +1421,20 @@ def ensure_block_prices_from_history_or_default(
         points_col = _find_col(tmp, points_cols)
         if appm_col is None and points_col is None:
             continue
+
+        if pid_col and pid_col in tmp.columns:
+            pid_raw = tmp[pid_col]
+            pid_str = pid_raw.astype(str).str.strip()
+            pid_invalid = pid_raw.isna() | (pid_str == "") | (pid_str.str.casefold() == "missing")
+        else:
+            pid_invalid = pd.Series(False, index=tmp.index)
+        if name_col_hist and name_col_hist in tmp.columns:
+            name_raw = tmp[name_col_hist]
+            name_invalid = name_raw.isna() | (name_raw.astype(str).str.strip() == "")
+        else:
+            name_invalid = pd.Series(False, index=tmp.index)
+        tmp = tmp[~(pid_invalid | name_invalid)].copy()
+
         if appm_col is not None:
             tmp[appm_col] = pd.to_numeric(tmp[appm_col], errors="coerce")
         if matches_col is not None:
@@ -1487,6 +1484,8 @@ def ensure_block_prices_from_history_or_default(
             average_price = None
             if returning_prices:
                 average_price = _round_to_0_5(float(statistics.mean(returning_prices)))
+            else:
+                average_price = _round_to_0_5(float(default_price))
 
             final_prices: dict[str, float] = {}
             for pid in player_ids:
