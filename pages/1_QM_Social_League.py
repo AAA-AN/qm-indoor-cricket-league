@@ -531,12 +531,6 @@ def render_player_stats_ui(
     selected_columns = resolved_batting + resolved_bowling + resolved_fielding + resolved_other
 
     fixed_cols: list[str] = []
-    if "PlayerID" in filtered.columns:
-        fixed_cols.append("PlayerID")
-    elif "Player Id" in filtered.columns:
-        fixed_cols.append("Player Id")
-    elif "Player ID" in filtered.columns:
-        fixed_cols.append("Player ID")
     if "Name" in filtered.columns:
         fixed_cols.append("Name")
     elif name_col and name_col in filtered.columns:
