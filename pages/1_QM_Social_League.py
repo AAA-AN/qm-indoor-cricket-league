@@ -110,6 +110,50 @@ def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
     return None
 
 
+def _find_col_case_insensitive(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    lookup = {str(c).strip().casefold(): c for c in df.columns}
+    for c in candidates:
+        found = lookup.get(str(c).strip().casefold())
+        if found is not None:
+            return str(found)
+    return None
+
+
+def _filter_valid_players(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keep only real player rows.
+    Drops rows where:
+    - PlayerID is blank/null or equals "missing" (case-insensitive), OR
+    - Player name is blank/null.
+    If one column is absent, filter using whichever identity column is available.
+    """
+    if df is None or df.empty:
+        return df
+
+    out = df.copy()
+    id_col = _find_col_case_insensitive(out, ["PlayerID", "player_id", "Player Id", "Player ID"])
+    name_col = _find_col_case_insensitive(out, ["Player", "Player Name", "Name"])
+
+    invalid_mask = pd.Series(False, index=out.index)
+
+    if id_col and id_col in out.columns:
+        id_raw = out[id_col]
+        id_str = id_raw.astype(str).str.strip()
+        id_invalid = id_raw.isna() | (id_str == "") | (id_str.str.casefold() == "missing")
+        invalid_mask = invalid_mask | id_invalid
+
+    if name_col and name_col in out.columns:
+        name_raw = out[name_col]
+        name_str = name_raw.astype(str).str.strip()
+        name_invalid = name_raw.isna() | (name_str == "")
+        invalid_mask = invalid_mask | name_invalid
+
+    if not (id_col or name_col):
+        return out
+
+    return out[~invalid_mask].copy()
+
+
 def _normalize_playerid_for_display(df: pd.DataFrame) -> pd.DataFrame:
     """
     Streamlit uses Arrow; mixed types in object columns (int + str) can cause ArrowInvalid.
@@ -244,7 +288,8 @@ def load_stats_for_sheet(workbook_bytes: bytes, sheet_name: str) -> pd.DataFrame
     if _find_col(league, ["Name", "Player", "Player Name"]) is None:
         logger.warning("Skipping sheet '%s': missing player name column", sheet_name)
         return pd.DataFrame()
-    return league
+    league = _filter_valid_players(league)
+    return league if league is not None else pd.DataFrame()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -256,7 +301,9 @@ def aggregate_player_stats(season_dfs: tuple[pd.DataFrame, ...]) -> pd.DataFrame
     for df in season_dfs:
         if df is None or df.empty:
             continue
-        tmp = df.copy()
+        tmp = _filter_valid_players(df)
+        if tmp is None or tmp.empty:
+            continue
         tmp.columns = [str(c).strip() for c in tmp.columns]
         name_col = _find_col(tmp, ["Name", "Player", "Player Name"])
         if not name_col:
@@ -404,6 +451,11 @@ def aggregate_player_stats(season_dfs: tuple[pd.DataFrame, ...]) -> pd.DataFrame
 
 
 @st.cache_data(ttl=300, show_spinner=False)
+def build_all_stats(season_dfs: tuple[pd.DataFrame, ...]) -> pd.DataFrame:
+    return aggregate_player_stats(season_dfs)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def load_all_stats(workbook_bytes: bytes) -> pd.DataFrame:
     season_map = discover_seasons()
     dfs: list[pd.DataFrame] = []
@@ -413,7 +465,7 @@ def load_all_stats(workbook_bytes: bytes) -> pd.DataFrame:
             dfs.append(df)
     if not dfs:
         return pd.DataFrame()
-    return aggregate_player_stats(tuple(dfs))
+    return build_all_stats(tuple(dfs))
 
 
 def render_player_stats_ui(
