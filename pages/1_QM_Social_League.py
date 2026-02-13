@@ -1127,7 +1127,6 @@ if selected_tab == "Teams":
             "Batting Average",
         ]
         TEAM_BOWLING_STATS = [
-            "Total Overs",
             "Overs",
             "Balls Bowled",
             "Maidens",
