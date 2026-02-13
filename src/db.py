@@ -314,9 +314,62 @@ def _parse_iso_datetime(dt_str: Optional[str]) -> Optional[datetime]:
     return dt
 
 
+def _get_week_value(row: Dict[str, Any]) -> Any:
+    return (
+        row.get("Week")
+        or row.get("week")
+        or row.get("Round")
+        or row.get("round")
+    )
+
+
+def _week_sort_key(week_val: Any) -> tuple[int, Any]:
+    s = str(week_val).strip()
+    try:
+        return (0, float(s))
+    except Exception:
+        return (1, s.casefold())
+
+
+def _fixture_sort_key(row: Dict[str, Any]) -> tuple:
+    start_at = row.get("start_at")
+    fixture_date = row.get("fixture_date")
+    row_index = int(row.get("_row_index", 0))
+    if isinstance(start_at, datetime):
+        return (0, start_at, row_index)
+    if isinstance(fixture_date, date):
+        return (1, fixture_date, row_index)
+    return (2, row_index)
+
+
+def _group_fixtures_without_week(fixtures: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    # Preferred fallback: one block per calendar date.
+    dated_groups: Dict[date, List[Dict[str, Any]]] = {}
+    no_date_rows: List[Dict[str, Any]] = []
+    for fx in fixtures:
+        d = fx.get("fixture_date")
+        if isinstance(d, date):
+            dated_groups.setdefault(d, []).append(fx)
+        else:
+            no_date_rows.append(fx)
+
+    grouped: List[List[Dict[str, Any]]] = []
+    for d in sorted(dated_groups.keys()):
+        g = sorted(dated_groups[d], key=_fixture_sort_key)
+        if g:
+            grouped.append(g)
+
+    # Last resort: sequential one-fixture blocks for rows with no date.
+    for fx in sorted(no_date_rows, key=_fixture_sort_key):
+        grouped.append([fx])
+
+    return grouped
+
+
 def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
     """
-    Build fantasy blocks (groups of 3 fixtures) if no blocks exist yet.
+    Build fantasy blocks if no blocks exist yet.
+    Preferred grouping uses Week/Round fields; fallback groups by date.
     Returns the number of blocks created.
     """
     ensure_fantasy_block_tables_exist()
@@ -331,30 +384,62 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
     else:
         raise ValueError("Fixtures must be a list of dicts or a DataFrame-like object.")
 
-    fixtures_with_dt = []
+    fixtures_rows: List[Dict[str, Any]] = []
     for idx, r in enumerate(rows):
         if not isinstance(r, dict):
             continue
+        fixture_date = _parse_fixture_date(r.get("Date"))
         start_at = _fixture_start_at_london(r.get("Date"), r.get("Time"))
-        if not start_at:
-            continue
         match_id = str(r.get("MatchID") or r.get("Match Id") or "").strip()
         if not match_id:
             match_id = f"fixture_{idx + 1}"
-        fixtures_with_dt.append(
+        fixtures_rows.append(
             {
                 "match_id": match_id,
                 "start_at": start_at,
+                "fixture_date": fixture_date,
+                "week": _get_week_value(r),
+                "_row_index": idx,
             }
         )
 
     now_local = datetime.now(ZoneInfo("Europe/London"))
-    fixtures_with_dt = [fx for fx in fixtures_with_dt if fx["start_at"] >= now_local]
-    fixtures_with_dt.sort(key=lambda x: x["start_at"])
+    today_local = now_local.date()
+    filtered_rows: List[Dict[str, Any]] = []
+    for fx in fixtures_rows:
+        start_at = fx.get("start_at")
+        fixture_date = fx.get("fixture_date")
+        if isinstance(start_at, datetime) and start_at < now_local:
+            continue
+        if start_at is None and isinstance(fixture_date, date) and fixture_date < today_local:
+            continue
+        filtered_rows.append(fx)
 
-    total = len(fixtures_with_dt)
-    if total < 3:
+    total = len(filtered_rows)
+    if total < 1:
         return 0
+
+    week_groups: Dict[Any, List[Dict[str, Any]]] = {}
+    has_any_week = False
+    missing_week_rows: List[Dict[str, Any]] = []
+    for fx in filtered_rows:
+        wk = fx.get("week")
+        if wk is None or str(wk).strip() == "":
+            missing_week_rows.append(fx)
+            continue
+        has_any_week = True
+        week_groups.setdefault(wk, []).append(fx)
+
+    grouped_blocks: List[List[Dict[str, Any]]] = []
+    if has_any_week:
+        for wk in sorted(week_groups.keys(), key=_week_sort_key):
+            grouped = sorted(week_groups[wk], key=_fixture_sort_key)
+            if grouped:
+                grouped_blocks.append(grouped)
+        if missing_week_rows:
+            grouped_blocks.extend(_group_fixtures_without_week(missing_week_rows))
+    else:
+        grouped_blocks = _group_fixtures_without_week(filtered_rows)
 
     conn = get_conn()
     try:
@@ -364,12 +449,27 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
 
         created = 0
         now_iso = datetime.now(timezone.utc).isoformat()
-
-        for i in range(0, total - (total % 3), 3):
-            group = fixtures_with_dt[i : i + 3]
-            block_number = (i // 3) + 1
-            first_start_at = min(fx["start_at"] for fx in group)
-            lock_at = first_start_at - timedelta(hours=1)
+        block_number = 0
+        for group in grouped_blocks:
+            if not group:
+                continue
+            block_number += 1
+            start_candidates = [fx["start_at"] for fx in group if isinstance(fx.get("start_at"), datetime)]
+            if start_candidates:
+                first_start_at_dt = min(start_candidates)
+                first_start_at = first_start_at_dt.isoformat()
+                lock_at = (first_start_at_dt - timedelta(hours=1)).isoformat()
+            else:
+                date_candidates = [fx["fixture_date"] for fx in group if isinstance(fx.get("fixture_date"), date)]
+                if date_candidates:
+                    first_date = min(date_candidates)
+                    first_start_at = datetime.combine(first_date, time.min).replace(
+                        tzinfo=ZoneInfo("Europe/London")
+                    ).isoformat()
+                    lock_at = first_start_at
+                else:
+                    first_start_at = ""
+                    lock_at = ""
 
             conn.execute(
                 """
@@ -379,13 +479,14 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
                 """,
                 (
                     block_number,
-                    first_start_at.isoformat(),
-                    lock_at.isoformat(),
+                    first_start_at,
+                    lock_at,
                     now_iso,
                 ),
             )
 
             for j, fx in enumerate(group, start=1):
+                fixture_start = fx["start_at"].isoformat() if isinstance(fx.get("start_at"), datetime) else ""
                 conn.execute(
                     """
                     INSERT INTO fantasy_block_fixtures
@@ -396,7 +497,7 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
                         block_number,
                         j,
                         fx["match_id"],
-                        fx["start_at"].isoformat(),
+                        fixture_start,
                     ),
                 )
             created += 1
