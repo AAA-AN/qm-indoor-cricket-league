@@ -23,6 +23,7 @@ class ExcelLoadResult:
     league_data: Optional[pd.DataFrame] = None
     history_A_25_26: Optional[pd.DataFrame] = None
     history_B_24_25: Optional[pd.DataFrame] = None
+    combined_stats: Optional[pd.DataFrame] = None
 
 
 def _read_named_table(
@@ -142,6 +143,7 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     league_data = None
     history_A_25_26 = None
     history_B_24_25 = None
+    combined_stats = None
 
     # League table (pre-calculated in Excel)
     try:
@@ -185,6 +187,13 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     except Exception:
         history_B_24_25 = None
 
+    try:
+        combined_stats = _read_named_table_any_sheet(
+            wb, table_name="Combined_Stats", drop_empty_columns=True
+        )
+    except Exception:
+        combined_stats = None
+
     return ExcelLoadResult(
         fixture_results=fixture_results,
         league_table=league_table,
@@ -193,4 +202,5 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
         league_data=league_data,
         history_A_25_26=history_A_25_26,
         history_B_24_25=history_B_24_25,
+        combined_stats=combined_stats,
     )

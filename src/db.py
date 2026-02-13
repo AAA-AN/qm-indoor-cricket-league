@@ -1372,7 +1372,7 @@ def ensure_block_prices_from_history_or_default(
     """
     Ensure prices exist for a block using historical APPM when available.
     - Does not rely on page-level mappings.
-    - New players get the median of returning prices (rounded to nearest 0.5).
+    - New players get the average of returning prices (rounded to nearest 0.5).
     """
     prices = get_block_prices(block_number)
     if prices:
@@ -1484,9 +1484,9 @@ def ensure_block_prices_from_history_or_default(
                 combined_appm, default_price=default_price
             )
             returning_prices = list(base_prices.values())
-            median_price = None
+            average_price = None
             if returning_prices:
-                median_price = _round_to_0_5(float(statistics.median(returning_prices)))
+                average_price = _round_to_0_5(float(statistics.mean(returning_prices)))
 
             final_prices: dict[str, float] = {}
             for pid in player_ids:
@@ -1495,7 +1495,7 @@ def ensure_block_prices_from_history_or_default(
                     final_prices[pid_str] = float(base_prices[pid_str])
                 else:
                     final_prices[pid_str] = (
-                        median_price if median_price is not None else default_price
+                        average_price if average_price is not None else default_price
                     )
 
             upsert_block_prices_from_dict(block_number, final_prices)

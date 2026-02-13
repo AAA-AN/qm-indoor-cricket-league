@@ -72,6 +72,29 @@ def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
     return None
 
 
+def _filter_valid_player_rows_for_pricing(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    out.columns = [str(c).strip() for c in out.columns]
+    pid_col = _find_col(out, ["PlayerID", "Player Id", "Player ID"])
+    name_col = _find_col(out, ["Name", "Player", "Player Name"])
+    invalid_mask = pd.Series(False, index=out.index)
+    if pid_col and pid_col in out.columns:
+        pid_raw = out[pid_col]
+        pid_str = pid_raw.astype(str).str.strip()
+        pid_invalid = pid_raw.isna() | (pid_str == "") | (pid_str.str.casefold() == "missing")
+        invalid_mask = invalid_mask | pid_invalid
+    if name_col and name_col in out.columns:
+        name_raw = out[name_col]
+        name_str = name_raw.astype(str).str.strip()
+        name_invalid = name_raw.isna() | (name_str == "")
+        invalid_mask = invalid_mask | name_invalid
+    if not (pid_col or name_col):
+        return out
+    return out[~invalid_mask].copy()
+
+
 def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
     if dt_val is None:
         return None
@@ -291,6 +314,7 @@ player_ids = league[player_id_col].astype(str).str.strip().tolist()
 
 prices = get_block_prices(current_block)
 if not prices:
+    combined_stats_for_prices = _filter_valid_player_rows_for_pricing(getattr(data, "combined_stats", None))
     prices = ensure_block_prices_from_history_or_default(
         block_number=current_block,
         current_league_df=league,
@@ -298,6 +322,7 @@ if not prices:
         name_col=name_col,
         player_ids=player_ids,
         history_dfs=[
+            combined_stats_for_prices,
             getattr(data, "history_A_25_26", None),
             getattr(data, "history_B_24_25", None),
         ],

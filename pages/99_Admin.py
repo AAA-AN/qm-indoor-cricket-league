@@ -105,19 +105,19 @@ def _load_workbook_fixture_results(app_key: str, app_secret: str, refresh_token:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _load_workbook_league_data(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str) -> pd.DataFrame:
+def _load_workbook_combined_stats(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str) -> pd.DataFrame:
     """
-    Loads the league workbook from Dropbox and returns the League_Data_Stats dataframe.
+    Loads the league workbook from Dropbox and returns the Combined_Stats dataframe.
     Cached briefly to keep Admin UI responsive.
     """
     access_token = get_access_token(app_key, app_secret, refresh_token)
     xbytes = download_file(access_token, dropbox_path)
     data = load_league_workbook_from_bytes(xbytes)
-    if data.league_data is None:
+    if getattr(data, "combined_stats", None) is None:
         return pd.DataFrame()
-    league_data = data.league_data.copy()
-    league_data.columns = [str(c).strip() for c in league_data.columns]
-    return league_data
+    combined_stats = data.combined_stats.copy()
+    combined_stats.columns = [str(c).strip() for c in combined_stats.columns]
+    return combined_stats
 
 
 def _utc_now_iso() -> str:
@@ -211,6 +211,35 @@ def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
         if c in cols:
             return c
     return None
+
+
+def _filter_valid_player_rows(
+    df: pd.DataFrame,
+    id_candidates: list[str],
+    name_candidates: list[str],
+) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    id_col = _find_col(out, id_candidates)
+    name_col = _find_col(out, name_candidates)
+    invalid_mask = pd.Series(False, index=out.index)
+
+    if id_col and id_col in out.columns:
+        id_raw = out[id_col]
+        id_str = id_raw.astype(str).str.strip()
+        id_invalid = id_raw.isna() | (id_str == "") | (id_str.str.casefold() == "missing")
+        invalid_mask = invalid_mask | id_invalid
+
+    if name_col and name_col in out.columns:
+        name_raw = out[name_col]
+        name_str = name_raw.astype(str).str.strip()
+        name_invalid = name_raw.isna() | (name_str == "")
+        invalid_mask = invalid_mask | name_invalid
+
+    if not (id_col or name_col):
+        return out
+    return out[~invalid_mask].copy()
 
 
 def _app_backup_folder(dropbox_file_path: str) -> str:
@@ -1260,14 +1289,22 @@ with tab_fantasy_blocks:
                     upsert_block_user_points(current_block, user_points, london_now_iso)
                     mark_block_scored(current_block, london_now_iso)
 
-                    league_data_df = pd.DataFrame()
-                    if app_key and app_secret and refresh_token and dropbox_file_path:
-                        try:
-                            league_data_df = _load_workbook_league_data(
-                                app_key, app_secret, refresh_token, dropbox_file_path
-                            )
-                        except Exception:
-                            league_data_df = pd.DataFrame()
+                    combined_stats_df = pd.DataFrame()
+                    try:
+                        workbook_data = load_league_workbook_from_bytes(xbytes)
+                        combined_stats_df = getattr(workbook_data, "combined_stats", None)
+                        if combined_stats_df is None:
+                            combined_stats_df = pd.DataFrame()
+                        else:
+                            combined_stats_df = combined_stats_df.copy()
+                            combined_stats_df.columns = [str(c).strip() for c in combined_stats_df.columns]
+                    except Exception:
+                        combined_stats_df = pd.DataFrame()
+
+                    if combined_stats_df.empty:
+                        st.error(
+                            "Combined_Stats table not found in workbook. Continuing scoring with no price movement for this block."
+                        )
 
                     played_players = list(points_by_player.keys())
                     current_prices = get_block_prices(current_block)
@@ -1276,25 +1313,32 @@ with tab_fantasy_blocks:
 
                     appm_by_pid: dict[str, float] = {}
                     matches_by_pid: dict[str, float] = {}
-                    if not league_data_df.empty:
-                        tmp = league_data_df.copy()
+                    if not combined_stats_df.empty:
+                        tmp = combined_stats_df.copy()
                         tmp.columns = [str(c).strip() for c in tmp.columns]
-                        pid_col = _find_col(tmp, ["PlayerID", "Player Id", "Player ID"])
+                        pid_candidates = ["PlayerID", "Player Id", "Player ID"]
+                        name_candidates = ["Name", "Player", "Player Name"]
+                        matches_candidates = ["Matches Played", "Match Played", "Games Played", "Played"]
+                        appm_candidates = [
+                            "Ave Fantasy Points",
+                            "Avg Fantasy Points",
+                            "Average Fantasy Points",
+                            "Ave Points Per Match",
+                            "Avg Points Per Match",
+                            "Average Points Per Match",
+                            "Ave Pts Per Match",
+                            "Avg Pts Per Match",
+                        ]
+                        points_candidates = ["Fantasy Points", "Total Points", "Points", "Pts"]
+
+                        tmp = _filter_valid_player_rows(tmp, id_candidates=pid_candidates, name_candidates=name_candidates)
+
+                        pid_col = _find_col(tmp, pid_candidates)
                         appm_col = _find_col(
-                            tmp,
-                            [
-                                "Ave Points Per Match",
-                                "Avg Points Per Match",
-                                "Average Points Per Match",
-                                "Ave Pts Per Match",
-                                "Avg Pts Per Match",
-                            ],
+                            tmp, appm_candidates
                         )
-                        matches_col = _find_col(
-                            tmp,
-                            ["Matches Played", "Match Played", "Games Played", "Played"],
-                        )
-                        points_col = _find_col(tmp, ["Fantasy Points", "Total Points", "Points", "Pts"])
+                        matches_col = _find_col(tmp, matches_candidates)
+                        points_col = _find_col(tmp, points_candidates)
 
                         if pid_col and matches_col:
                             if appm_col:
