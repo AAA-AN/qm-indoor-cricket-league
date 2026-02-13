@@ -999,22 +999,28 @@ with tab_scorecards:
 with tab_fantasy_blocks:
     st.subheader("Fantasy")
 
-    if st.session_state.get("admin_fantasy_msg"):
-        msg = st.session_state.pop("admin_fantasy_msg")
-        try:
-            st.toast(msg, icon="✅")
-        except Exception:
-            st.success(msg)
+    fantasy_action_msg = st.session_state.pop("admin_fantasy_msg", None)
+    fantasy_action_section = "current_block"
+    if fantasy_action_msg:
+        msg_l = fantasy_action_msg.lower()
+        if "scored" in msg_l:
+            fantasy_action_section = "scoring"
+        elif "locked" in msg_l or "unlocked" in msg_l or "override" in msg_l:
+            fantasy_action_section = "locking"
+        elif "reset" in msg_l:
+            fantasy_action_section = "reset"
 
     app_key = app_secret = refresh_token = dropbox_file_path = None
     backup_path = None
+    diagnostics_error = None
+    diagnostics_info = None
+    diagnostics_success = None
     try:
         app_key = _get_secret("DROPBOX_APP_KEY")
         app_secret = _get_secret("DROPBOX_APP_SECRET")
         refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
         dropbox_file_path = _get_secret("DROPBOX_FILE_PATH")
         backup_path = _fantasy_backup_path(dropbox_file_path)
-        users_backup_path = _users_backup_path(dropbox_file_path)
     except Exception:
         pass
 
@@ -1024,9 +1030,9 @@ with tab_fantasy_blocks:
         )
         st.session_state["fantasy_restore_attempted"] = True
         if err:
-            st.error(f"Fantasy restore failed: {err}")
+            diagnostics_error = f"Fantasy restore failed: {err}"
         elif restored:
-            st.info("Fantasy data restored from backup.")
+            diagnostics_info = "Fantasy data restored from backup."
 
     blocks = list_blocks_with_fixtures()
     if not blocks:
@@ -1049,15 +1055,14 @@ with tab_fantasy_blocks:
 
         created_blocks = rebuild_blocks_from_fixtures_if_missing(fixtures_df)
         if created_blocks:
-            st.success(f"Created {created_blocks} fantasy block(s) from fixtures.")
+            diagnostics_success = f"Created {created_blocks} fantasy block(s) from fixtures."
 
         blocks = list_blocks_with_fixtures()
 
     london_now = datetime.now(ZoneInfo("Europe/London"))
     london_now_iso = london_now.isoformat()
-    if not blocks:
-        st.info("No fantasy blocks found.")
-    else:
+    blocks_df = pd.DataFrame()
+    if blocks:
         rows = []
         for b in blocks:
             open_at = get_block_open_at(b.get("block_number"), london_now)
@@ -1080,131 +1085,91 @@ with tab_fantasy_blocks:
                     "fixtures": ", ".join(fixtures_list),
                 }
             )
-
-        st.dataframe(
-            pd.DataFrame(rows),
-            width="stretch",
-            hide_index=True,
-        )
-
-    st.markdown("---")
-    st.markdown("### Current Block Controls")
+        blocks_df = pd.DataFrame(rows)
 
     current_block = get_current_block_number()
-    if current_block is None:
-        st.info("All blocks are scored.")
-    else:
+    current_state = None
+    current_scored_at = None
+    if current_block is not None:
         current_state = get_effective_block_state(current_block, london_now)
-        current_scored_at = None
         for b in blocks:
             if int(b.get("block_number") or 0) == int(current_block):
                 current_scored_at = b.get("scored_at")
                 break
-        st.write(f"**Current block:** {current_block} (state: {current_state})")
 
-        status_rows = list_fantasy_submission_status_for_block(current_block)
-        if status_rows:
-            status_df = pd.DataFrame(status_rows)
-            status_df["Full Name"] = (
-                status_df["first_name"].fillna("").astype(str).str.strip()
-                + " "
-                + status_df["last_name"].fillna("").astype(str).str.strip()
-            ).str.strip()
-            status_df["Submitted"] = status_df["submitted_at"].notna().map(
-                {True: "✅", False: ""}
-            )
-            submitted_london = pd.to_datetime(
-                status_df["submitted_at"], errors="coerce", utc=True
-            ).dt.tz_convert("Europe/London")
-            status_df["Submitted At (London)"] = submitted_london.dt.strftime(
-                "%d-%b-%Y %H:%M"
-            )
-            status_df["Submitted At (London)"] = status_df[
-                "Submitted At (London)"
-            ].fillna("")
+    with st.expander("Current Block", expanded=True):
+        if fantasy_action_msg and fantasy_action_section == "current_block":
+            st.success(fantasy_action_msg)
 
-            st.dataframe(
-                status_df[
-                    ["username", "Full Name", "Submitted", "Submitted At (London)"]
-                ].rename(columns={"username": "Username"}),
-                width="stretch",
-                hide_index=True,
-            )
+        if current_block is None:
+            st.info("All blocks are scored.")
         else:
-            st.info("No active players found.")
+            st.write(f"**Current block:** {current_block} (state: {current_state})")
 
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            if st.button(
-                "Lock now",
-                width="stretch",
-                key="fantasy_block_lock_now",
-                disabled=current_state == "SCORED",
-            ):
-                set_block_override(current_block, "LOCKED", override_until=None)
-                if backup_path and app_key and app_secret and refresh_token:
-                    try:
-                        _fantasy_backup_to_dropbox(
-                            app_key, app_secret, refresh_token, backup_path
-                        )
-                    except Exception as e:
-                        st.error(f"Fantasy backup failed: {e}")
-                st.session_state["admin_fantasy_msg"] = f"Block {current_block} locked."
-            if st.button(
-                "Backup fantasy now",
-                width="stretch",
-                key="fantasy_backup_now",
-            ):
-                if backup_path and app_key and app_secret and refresh_token:
-                    try:
-                        _fantasy_backup_to_dropbox(
-                            app_key, app_secret, refresh_token, backup_path
-                        )
-                        st.success("Fantasy backup uploaded.")
+    with st.expander("Block Locking / Unlocking", expanded=False):
+        if fantasy_action_msg and fantasy_action_section == "locking":
+            st.success(fantasy_action_msg)
+
+        if current_block is None:
+            st.info("All blocks are scored.")
+        else:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button(
+                    "Lock now",
+                    width="stretch",
+                    key="fantasy_block_lock_now",
+                    disabled=current_state == "SCORED",
+                ):
+                    set_block_override(current_block, "LOCKED", override_until=None)
+                    if backup_path and app_key and app_secret and refresh_token:
                         try:
-                            access_token = get_access_token(app_key, app_secret, refresh_token)
-                            raw = download_file(access_token, backup_path)
-                            json.loads(raw.decode("utf-8"))
-                            st.success("Backup verified (download + parse OK).")
+                            _fantasy_backup_to_dropbox(
+                                app_key, app_secret, refresh_token, backup_path
+                            )
                         except Exception as e:
-                            st.warning(f"Backup verification failed: {e}")
-                    except Exception as e:
-                        st.error(f"Fantasy backup failed: {e}")
-                else:
-                    st.error("Dropbox configuration is missing.")
-        with col2:
-            if st.button(
-                "Unlock now",
-                width="stretch",
-                key="fantasy_block_unlock_now",
-                disabled=current_state == "SCORED",
-            ):
-                set_block_override(current_block, "OPEN", override_until=None)
-                if backup_path and app_key and app_secret and refresh_token:
-                    try:
-                        _fantasy_backup_to_dropbox(
-                            app_key, app_secret, refresh_token, backup_path
-                        )
-                    except Exception as e:
-                        st.error(f"Fantasy backup failed: {e}")
-                st.session_state["admin_fantasy_msg"] = f"Block {current_block} unlocked."
-        with col3:
-            if st.button(
-                "Clear override",
-                width="stretch",
-                key="fantasy_block_clear_override",
-                disabled=current_state == "SCORED",
-            ):
-                clear_block_override(current_block)
-                if backup_path and app_key and app_secret and refresh_token:
-                    try:
-                        _fantasy_backup_to_dropbox(
-                            app_key, app_secret, refresh_token, backup_path
-                        )
-                    except Exception as e:
-                        st.error(f"Fantasy backup failed: {e}")
-                st.session_state["admin_fantasy_msg"] = f"Block {current_block} override cleared."
-        with col4:
+                            st.error(f"Fantasy backup failed: {e}")
+                    st.session_state["admin_fantasy_msg"] = f"Block {current_block} locked."
+            with col2:
+                if st.button(
+                    "Unlock now",
+                    width="stretch",
+                    key="fantasy_block_unlock_now",
+                    disabled=current_state == "SCORED",
+                ):
+                    set_block_override(current_block, "OPEN", override_until=None)
+                    if backup_path and app_key and app_secret and refresh_token:
+                        try:
+                            _fantasy_backup_to_dropbox(
+                                app_key, app_secret, refresh_token, backup_path
+                            )
+                        except Exception as e:
+                            st.error(f"Fantasy backup failed: {e}")
+                    st.session_state["admin_fantasy_msg"] = f"Block {current_block} unlocked."
+            with col3:
+                if st.button(
+                    "Clear override",
+                    width="stretch",
+                    key="fantasy_block_clear_override",
+                    disabled=current_state == "SCORED",
+                ):
+                    clear_block_override(current_block)
+                    if backup_path and app_key and app_secret and refresh_token:
+                        try:
+                            _fantasy_backup_to_dropbox(
+                                app_key, app_secret, refresh_token, backup_path
+                            )
+                        except Exception as e:
+                            st.error(f"Fantasy backup failed: {e}")
+                    st.session_state["admin_fantasy_msg"] = f"Block {current_block} override cleared."
+
+    with st.expander("Scoring / Finalise Block", expanded=False):
+        if fantasy_action_msg and fantasy_action_section == "scoring":
+            st.success(fantasy_action_msg)
+
+        if current_block is None:
+            st.info("All blocks are scored.")
+        else:
             confirm_key = f"fantasy_block_confirm_week_{current_block}"
             confirm_text = f"I confirm Week {current_block} Stats is complete"
             confirm_ok = st.checkbox(
@@ -1497,61 +1462,140 @@ with tab_fantasy_blocks:
 
                     st.session_state["admin_fantasy_msg"] = f"Block {current_block} scored."
 
-    if st.session_state.get("admin_fantasy_leaderboard"):
-        st.markdown("### Block Leaderboard")
-        lb_rows = st.session_state["admin_fantasy_leaderboard"]
-        display_rows = []
-        for r in lb_rows:
-            row = dict(r)
-            if "calculated_at" in row:
-                row["calculated_at"] = _format_dt_dd_mmm_hhmm(row.get("calculated_at"))
-            display_rows.append(row)
-        st.dataframe(
-            pd.DataFrame(display_rows),
-            width="stretch",
-            hide_index=True,
-        )
+        if st.session_state.get("admin_fantasy_leaderboard"):
+            st.markdown("---")
+            st.markdown("### Block Leaderboard")
+            lb_rows = st.session_state["admin_fantasy_leaderboard"]
+            display_rows = []
+            for r in lb_rows:
+                row = dict(r)
+                if "calculated_at" in row:
+                    row["calculated_at"] = _format_dt_dd_mmm_hhmm(row.get("calculated_at"))
+                display_rows.append(row)
+            st.dataframe(
+                pd.DataFrame(display_rows),
+                width="stretch",
+                hide_index=True,
+            )
+
+    with st.expander("Fantasy Team Submissions (Current Block)", expanded=False):
+        if current_block is None:
+            st.info("All blocks are scored.")
+        else:
+            status_rows = list_fantasy_submission_status_for_block(current_block)
+            if status_rows:
+                status_df = pd.DataFrame(status_rows)
+                status_df["Full Name"] = (
+                    status_df["first_name"].fillna("").astype(str).str.strip()
+                    + " "
+                    + status_df["last_name"].fillna("").astype(str).str.strip()
+                ).str.strip()
+                status_df["Submitted"] = status_df["submitted_at"].notna().map(
+                    {True: "✅", False: ""}
+                )
+                submitted_london = pd.to_datetime(
+                    status_df["submitted_at"], errors="coerce", utc=True
+                ).dt.tz_convert("Europe/London")
+                status_df["Submitted At (London)"] = submitted_london.dt.strftime(
+                    "%d-%b-%Y %H:%M"
+                )
+                status_df["Submitted At (London)"] = status_df[
+                    "Submitted At (London)"
+                ].fillna("")
+
+                st.dataframe(
+                    status_df[
+                        ["username", "Full Name", "Submitted", "Submitted At (London)"]
+                    ].rename(columns={"username": "Username"}),
+                    width="stretch",
+                    hide_index=True,
+                )
+            else:
+                st.info("No active players found.")
 
     st.markdown("---")
-    st.subheader("Reset Fantasy League")
-    st.warning(
-        "This will permanently delete ALL fantasy data (blocks, entries, prices, and results). "
-        "This cannot be undone."
-    )
-    confirm_reset = st.checkbox(
-        "I understand this will delete all fantasy data",
-        key="fantasy_reset_confirm",
-    )
-    reset_pw = st.text_input(
-        "Re-enter your password to confirm",
-        type="password",
-        key="fantasy_reset_password",
-    )
-    if st.button("Reset Fantasy League", type="primary", width="stretch"):
-        if not confirm_reset:
-            st.error("Please confirm you understand the reset.")
-        else:
-            current_user = st.session_state.get("user") or {}
-            username = str(current_user.get("username") or "").strip()
-            if not username:
-                st.error("Unable to identify current user.")
+    with st.expander("Reset Fantasy", expanded=False):
+        if fantasy_action_msg and fantasy_action_section == "reset":
+            st.success(fantasy_action_msg)
+
+        st.warning(
+            "This will permanently delete ALL fantasy data (blocks, entries, prices, and results). "
+            "This cannot be undone."
+        )
+        confirm_reset = st.checkbox(
+            "I understand this will delete all fantasy data",
+            key="fantasy_reset_confirm",
+        )
+        reset_pw = st.text_input(
+            "Re-enter your password to confirm",
+            type="password",
+            key="fantasy_reset_password",
+        )
+        if st.button("Reset Fantasy League", type="primary", width="stretch"):
+            if not confirm_reset:
+                st.error("Please confirm you understand the reset.")
             else:
-                user_row = get_user_by_username(username)
-                if not user_row or not verify_password(reset_pw, user_row.get("password_hash", "")):
-                    st.error("Password confirmation failed.")
+                current_user = st.session_state.get("user") or {}
+                username = str(current_user.get("username") or "").strip()
+                if not username:
+                    st.error("Unable to identify current user.")
                 else:
-                    wipe_all_fantasy_data()
-                    if backup_path and app_key and app_secret and refresh_token:
-                        try:
-                            _fantasy_backup_to_dropbox(
-                                app_key, app_secret, refresh_token, backup_path
-                            )
-                        except Exception:
-                            pass
-                    for k in list(st.session_state.keys()):
-                        if k.startswith("fantasy_editing_block_"):
-                            st.session_state.pop(k, None)
-                    st.session_state.pop("fantasy_last_block_number", None)
-                    st.session_state.pop("fantasy_restore_attempted", None)
-                    st.session_state.pop("admin_fantasy_leaderboard", None)
-                    st.success("Fantasy league reset.")
+                    user_row = get_user_by_username(username)
+                    if not user_row or not verify_password(reset_pw, user_row.get("password_hash", "")):
+                        st.error("Password confirmation failed.")
+                    else:
+                        wipe_all_fantasy_data()
+                        if backup_path and app_key and app_secret and refresh_token:
+                            try:
+                                _fantasy_backup_to_dropbox(
+                                    app_key, app_secret, refresh_token, backup_path
+                                )
+                            except Exception:
+                                pass
+                        for k in list(st.session_state.keys()):
+                            if k.startswith("fantasy_editing_block_"):
+                                st.session_state.pop(k, None)
+                        st.session_state.pop("fantasy_last_block_number", None)
+                        st.session_state.pop("fantasy_restore_attempted", None)
+                        st.session_state.pop("admin_fantasy_leaderboard", None)
+                        st.success("Fantasy league reset.")
+
+    with st.expander("Diagnostics", expanded=False):
+        if diagnostics_error:
+            st.error(diagnostics_error)
+        if diagnostics_info:
+            st.info(diagnostics_info)
+        if diagnostics_success:
+            st.success(diagnostics_success)
+
+        if blocks_df.empty:
+            st.info("No fantasy blocks found.")
+        else:
+            st.dataframe(
+                blocks_df,
+                width="stretch",
+                hide_index=True,
+            )
+
+        if st.button(
+            "Backup fantasy now",
+            width="stretch",
+            key="fantasy_backup_now",
+        ):
+            if backup_path and app_key and app_secret and refresh_token:
+                try:
+                    _fantasy_backup_to_dropbox(
+                        app_key, app_secret, refresh_token, backup_path
+                    )
+                    st.success("Fantasy backup uploaded.")
+                    try:
+                        access_token = get_access_token(app_key, app_secret, refresh_token)
+                        raw = download_file(access_token, backup_path)
+                        json.loads(raw.decode("utf-8"))
+                        st.success("Backup verified (download + parse OK).")
+                    except Exception as e:
+                        st.warning(f"Backup verification failed: {e}")
+                except Exception as e:
+                    st.error(f"Fantasy backup failed: {e}")
+            else:
+                st.error("Dropbox configuration is missing.")
