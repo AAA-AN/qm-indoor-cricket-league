@@ -68,77 +68,27 @@ def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbo
 
 def _fantasy_points_breakdown_df() -> pd.DataFrame:
     rows = [
-        {"Category": "Batting", "Event": "Runs", "Points": 1, "Notes": "+1 per run"},
-        {"Category": "Batting", "Event": "Sixes", "Points": 2, "Notes": "+2 per six"},
-        {"Category": "Batting", "Event": "Retired bonus", "Points": 3, "Notes": "Applies if Retired = Yes"},
-        {
-            "Category": "Batting",
-            "Event": "Not Out bonus",
-            "Points": 2,
-            "Notes": "Applies if How Out is Not Out or Retired Not Out",
-        },
-        {
-            "Category": "Batting",
-            "Event": "Golden duck",
-            "Points": -5,
-            "Notes": "Applies if out, runs = 0, balls faced = 1",
-        },
-        {
-            "Category": "Batting",
-            "Event": "Duck",
-            "Points": -3,
-            "Notes": "Applies if out, runs = 0, balls faced >= 1, and not golden duck",
-        },
-        {"Category": "Bowling", "Event": "Maidens", "Points": 30, "Notes": "+30 per maiden"},
-        {"Category": "Bowling", "Event": "Wickets", "Points": 20, "Notes": "+20 per wicket"},
-        {"Category": "Bowling", "Event": "3+ wicket bonus", "Points": 20, "Notes": "Bonus if wickets >= 3"},
-        {
-            "Category": "Bowling",
-            "Event": "Economy adjustment",
-            "Points": -5,
-            "Notes": "If at least 1 ball bowled and economy >= 25",
-        },
-        {
-            "Category": "Bowling",
-            "Event": "Economy adjustment",
-            "Points": -3,
-            "Notes": "If at least 1 ball bowled and economy >= 20",
-        },
-        {
-            "Category": "Bowling",
-            "Event": "Economy adjustment",
-            "Points": -1,
-            "Notes": "If at least 1 ball bowled and economy >= 15",
-        },
-        {
-            "Category": "Bowling",
-            "Event": "Economy adjustment",
-            "Points": 0,
-            "Notes": "If at least 1 ball bowled and economy >= 12.5",
-        },
-        {
-            "Category": "Bowling",
-            "Event": "Economy adjustment",
-            "Points": 1,
-            "Notes": "If at least 1 ball bowled and economy >= 10",
-        },
-        {
-            "Category": "Bowling",
-            "Event": "Economy adjustment",
-            "Points": 3,
-            "Notes": "If at least 1 ball bowled and economy >= 5",
-        },
-        {
-            "Category": "Bowling",
-            "Event": "Economy adjustment",
-            "Points": 5,
-            "Notes": "If at least 1 ball bowled and economy < 5",
-        },
-        {"Category": "Fielding", "Event": "Catch", "Points": 10, "Notes": "+10 each"},
-        {"Category": "Fielding", "Event": "Run Out", "Points": 10, "Notes": "+10 each"},
-        {"Category": "Fielding", "Event": "Stumping", "Points": 10, "Notes": "+10 each"},
+        {"Category": "Batting", "What Happens": "Score a run", "Points": "+1 per run", "When It Applies": "Every run your player scores"},
+        {"Category": "Batting", "What Happens": "Hit a six", "Points": "+2 per six", "When It Applies": "For each six your player hits"},
+        {"Category": "Batting", "What Happens": "Retire", "Points": "+3", "When It Applies": "When your player retires (retired out)"},
+        {"Category": "Batting", "What Happens": "Finish not out", "Points": "+2", "When It Applies": "When your player finishes the innings not out"},
+        {"Category": "Batting", "What Happens": "Golden duck", "Points": "-5", "When It Applies": "When your player is out for 0 off the first ball faced"},
+        {"Category": "Batting", "What Happens": "Duck", "Points": "-3", "When It Applies": "When your player is out for 0 (but not a golden duck)"},
+        {"Category": "Bowling", "What Happens": "Bowl a maiden over", "Points": "+30 per maiden", "When It Applies": "For each maiden over"},
+        {"Category": "Bowling", "What Happens": "Take a wicket", "Points": "+20 per wicket", "When It Applies": "For each wicket taken"},
+        {"Category": "Bowling", "What Happens": "Take 3 or more wickets", "Points": "+20", "When It Applies": "Bonus added when your player takes at least 3 wickets"},
+        {"Category": "Bowling", "What Happens": "Very expensive spell", "Points": "-5", "When It Applies": "Only if at least 1 ball bowled and economy is 25 or more"},
+        {"Category": "Bowling", "What Happens": "Expensive spell", "Points": "-3", "When It Applies": "Only if at least 1 ball bowled and economy is 20 to 24.99"},
+        {"Category": "Bowling", "What Happens": "Above-average economy", "Points": "-1", "When It Applies": "Only if at least 1 ball bowled and economy is 15 to 19.99"},
+        {"Category": "Bowling", "What Happens": "Neutral economy", "Points": "0", "When It Applies": "Only if at least 1 ball bowled and economy is 12.5 to 14.99"},
+        {"Category": "Bowling", "What Happens": "Good economy", "Points": "+1", "When It Applies": "Only if at least 1 ball bowled and economy is 10 to 12.49"},
+        {"Category": "Bowling", "What Happens": "Very good economy", "Points": "+3", "When It Applies": "Only if at least 1 ball bowled and economy is 5 to 9.99"},
+        {"Category": "Bowling", "What Happens": "Excellent economy", "Points": "+5", "When It Applies": "Only if at least 1 ball bowled and economy is below 5"},
+        {"Category": "Fielding", "What Happens": "Take a catch", "Points": "+10 per catch", "When It Applies": "For each catch"},
+        {"Category": "Fielding", "What Happens": "Make a run out", "Points": "+10 per run out", "When It Applies": "For each run out"},
+        {"Category": "Fielding", "What Happens": "Make a stumping", "Points": "+10 per stumping", "When It Applies": "For each stumping"},
     ]
-    return pd.DataFrame(rows, columns=["Category", "Event", "Points", "Notes"])
+    return pd.DataFrame(rows, columns=["Category", "What Happens", "Points", "When It Applies"])
 
 
 def _describe_bench_system() -> str:
