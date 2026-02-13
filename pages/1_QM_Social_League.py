@@ -444,17 +444,36 @@ def render_player_stats_ui(
     batting_options = [c for c in BATTING_STATS if c in filtered.columns]
     bowling_options = [c for c in BOWLING_STATS if c in filtered.columns]
     fielding_options = [c for c in FIELDING_STATS if c in filtered.columns]
+    other_aliases = {
+        "Fantasy Points": ["Fantasy Points", "Total Fantasy Points", "Fantasy Points Total", "Points"],
+        "Average Fantasy Points": [
+            "Average Fantasy Points",
+            "Avg Fantasy Points",
+            "Ave Fantasy Points",
+            "Ave Points Per Match",
+            "Avg Points Per Match",
+        ],
+        "Matches Played": ["Matches Played", "Match Played", "Games Played", "Played"],
+    }
+    other_display_to_actual: dict[str, str] = {}
+    for display_name, aliases in other_aliases.items():
+        mapped_col = _find_col(filtered, aliases)
+        if mapped_col and mapped_col in filtered.columns:
+            other_display_to_actual[display_name] = mapped_col
+    other_options = [d for d in ["Fantasy Points", "Average Fantasy Points", "Matches Played"] if d in other_display_to_actual]
 
     st.markdown("#### Select Stats To Display")
-    d1, d2, d3 = st.columns(3)
+    d1, d2, d3, d4 = st.columns(4)
 
     DEFAULT_BATTING = ["Runs Scored", "Batting Average"]
     DEFAULT_BOWLING = ["Wickets", "Economy"]
     DEFAULT_FIELDING: list[str] = []
+    DEFAULT_OTHER: list[str] = []
 
-    batting_select_key = "batting_cols_select"
-    bowling_select_key = "bowling_cols_select"
-    fielding_select_key = "fielding_cols_select"
+    batting_select_key = "ps_batting_cols"
+    bowling_select_key = "ps_bowling_cols"
+    fielding_select_key = "ps_fielding_cols"
+    other_select_key = "ps_other_cols"
 
     if f"__prev_{batting_select_key}" not in st.session_state:
         st.session_state[f"__prev_{batting_select_key}"] = DEFAULT_BATTING
@@ -462,6 +481,8 @@ def render_player_stats_ui(
         st.session_state[f"__prev_{bowling_select_key}"] = DEFAULT_BOWLING
     if f"__prev_{fielding_select_key}" not in st.session_state:
         st.session_state[f"__prev_{fielding_select_key}"] = DEFAULT_FIELDING
+    if f"__prev_{other_select_key}" not in st.session_state:
+        st.session_state[f"__prev_{other_select_key}"] = DEFAULT_OTHER
 
     with d1:
         st.multiselect(
@@ -487,18 +508,35 @@ def render_player_stats_ui(
             key=fielding_select_key,
             on_change=lambda: enforce_all_exclusive(fielding_select_key),
         )
+    with d4:
+        st.multiselect(
+            "Other",
+            options=[ALL] + other_options,
+            default=DEFAULT_OTHER,
+            key=other_select_key,
+            on_change=lambda: enforce_all_exclusive(other_select_key),
+        )
 
     resolved_batting = _resolved_selection(batting_select_key, batting_options, DEFAULT_BATTING)
     resolved_bowling = _resolved_selection(bowling_select_key, bowling_options, DEFAULT_BOWLING)
     resolved_fielding = _resolved_selection(fielding_select_key, fielding_options, DEFAULT_FIELDING)
+    resolved_other_display = _resolved_selection(other_select_key, other_options, DEFAULT_OTHER)
+    resolved_other = [other_display_to_actual[d] for d in resolved_other_display if d in other_display_to_actual]
 
     st.session_state[f"__prev_{batting_select_key}"] = st.session_state.get(batting_select_key) or []
     st.session_state[f"__prev_{bowling_select_key}"] = st.session_state.get(bowling_select_key) or []
     st.session_state[f"__prev_{fielding_select_key}"] = st.session_state.get(fielding_select_key) or []
+    st.session_state[f"__prev_{other_select_key}"] = st.session_state.get(other_select_key) or []
 
-    selected_columns = resolved_batting + resolved_bowling + resolved_fielding
+    selected_columns = resolved_batting + resolved_bowling + resolved_fielding + resolved_other
 
     fixed_cols: list[str] = []
+    if "PlayerID" in filtered.columns:
+        fixed_cols.append("PlayerID")
+    elif "Player Id" in filtered.columns:
+        fixed_cols.append("Player Id")
+    elif "Player ID" in filtered.columns:
+        fixed_cols.append("Player ID")
     if "Name" in filtered.columns:
         fixed_cols.append("Name")
     elif name_col and name_col in filtered.columns:
@@ -510,8 +548,6 @@ def render_player_stats_ui(
     for c in selected_columns:
         if c in filtered.columns and c not in display_cols:
             display_cols.append(c)
-    if "Fantasy Points" in filtered.columns and "Fantasy Points" not in display_cols:
-        display_cols.append("Fantasy Points")
 
     view = filtered[display_cols].copy() if all(c in filtered.columns for c in display_cols) else filtered.copy()
     if "Fantasy Points" in view.columns:
