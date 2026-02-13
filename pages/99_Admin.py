@@ -1274,19 +1274,8 @@ with tab_fantasy_blocks:
                     if not current_prices:
                         current_prices = {pid: 7.5 for pid in played_players}
 
-                    if played_players:
-                        pts_series = pd.Series([float(points_by_player[p]) for p in played_players])
-                        median = float(pts_series.median())
-                        q25 = float(pts_series.quantile(0.25))
-                        q75 = float(pts_series.quantile(0.75))
-                        iqr = q75 - q25
-                    else:
-                        median = 0.0
-                        iqr = 0.0
-
                     appm_by_pid: dict[str, float] = {}
                     matches_by_pid: dict[str, float] = {}
-                    use_appm = False
                     if not league_data_df.empty:
                         tmp = league_data_df.copy()
                         tmp.columns = [str(c).strip() for c in tmp.columns]
@@ -1334,26 +1323,16 @@ with tab_fantasy_blocks:
                                 appm_by_pid[pid_val] = float(appm)
                                 matches_by_pid[pid_val] = float(matches)
 
-                            if appm_by_pid:
-                                use_appm = True
-
-                    if use_appm and played_players:
-                        appm_vals = [
-                            float(appm_by_pid[p])
-                            for p in played_players
-                            if p in appm_by_pid
-                        ]
+                    if played_players:
+                        appm_vals = [float(appm_by_pid[p]) for p in played_players if p in appm_by_pid]
                         if appm_vals:
                             appm_series = pd.Series(appm_vals)
-                            median_appm = float(appm_series.median())
                             q25_appm = float(appm_series.quantile(0.25))
                             q75_appm = float(appm_series.quantile(0.75))
                             iqr_appm = q75_appm - q25_appm
                         else:
-                            median_appm = 0.0
                             iqr_appm = 0.0
                     else:
-                        median_appm = 0.0
                         iqr_appm = 0.0
 
                     k = 0.5
@@ -1361,11 +1340,16 @@ with tab_fantasy_blocks:
                     for pid in played_players:
                         current_price = float(current_prices.get(pid, 7.5))
                         delta_raw = 0.0
-                        if use_appm and pid in appm_by_pid:
-                            matches = matches_by_pid.get(pid, 0.0)
-                            new_appm = float(appm_by_pid[pid])
-                            match_points = float(points_by_player.get(pid, 0.0))
-                            if matches and matches > 1:
+                        new_appm = _safe_float(appm_by_pid.get(pid))
+                        matches = _safe_float(matches_by_pid.get(pid))
+                        match_points = _safe_float(points_by_player.get(pid))
+                        if (
+                            new_appm is not None
+                            and matches is not None
+                            and matches > 0
+                            and match_points is not None
+                        ):
+                            if matches > 1:
                                 old_total = (new_appm * matches) - match_points
                                 old_appm = old_total / (matches - 1)
                             else:
@@ -1373,9 +1357,6 @@ with tab_fantasy_blocks:
                             delta_appm = new_appm - old_appm
                             denom = max(iqr_appm, 1.0)
                             delta_raw = k * delta_appm / denom
-                        elif pid in points_by_player:
-                            denom = max(iqr, 1.0)
-                            delta_raw = k * (float(points_by_player[pid]) - median) / denom
                         delta_capped = _clamp(delta_raw, -1.0, 1.0)
                         delta = _round_to_0_5(delta_capped)
                         price_next = _clamp(_round_to_0_5(current_price + delta), 5.0, 10.0)
