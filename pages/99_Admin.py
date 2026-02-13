@@ -29,6 +29,7 @@ from src.db import (
     count_admins,
     set_user_active,
     set_user_role,
+    update_username,
     delete_user,
     # Scorecard DB helpers (Step 1)
     add_scorecard,
@@ -492,6 +493,35 @@ with tab_users:
             return selected_role == "admin" and admins_total == 1
 
         st.markdown("### Actions")
+
+        with st.expander("Change username", expanded=False):
+            username_input_key = f"admin_new_username_{selected.get('user_id')}"
+            current_username = str(selected.get("username") or "").strip()
+            if username_input_key not in st.session_state:
+                st.session_state[username_input_key] = current_username
+
+            new_username = st.text_input(
+                "New username",
+                key=username_input_key,
+            )
+            if st.button("Save username", width="stretch", key="admin_save_username_btn"):
+                try:
+                    update_username(current_username, new_username)
+
+                    current_session_user = st.session_state.get("user") or {}
+                    current_session_username = str(current_session_user.get("username") or "").strip()
+                    if current_session_username == current_username:
+                        st.session_state["user"]["username"] = str(new_username or "").strip()
+
+                    st.session_state["admin_user_action_msg"] = (
+                        f"Updated username from '{current_username}' to '{str(new_username).strip()}'."
+                    )
+                    st.session_state["admin_scroll_to_users"] = True
+                    st.session_state["admin_user_select_ver"] += 1
+                    st.session_state["admin_selected_username"] = str(new_username or "").strip()
+                    st.session_state["_admin_force_rerun"] = True
+                except Exception as e:
+                    st.error(str(e))
 
         with st.expander("Enable / Disable user", expanded=False):
             desired_active = st.radio(

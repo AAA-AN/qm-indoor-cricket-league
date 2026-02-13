@@ -1715,6 +1715,46 @@ def set_user_role(username: str, role: str) -> None:
         conn.close()
 
 
+def update_username(old_username: str, new_username: str) -> None:
+    old_username = str(old_username or "").strip()
+    new_username = str(new_username or "").strip()
+
+    if not old_username:
+        raise ValueError("Old username is required.")
+    if not new_username:
+        raise ValueError("New username is required.")
+    if " " in new_username:
+        raise ValueError("Username cannot contain spaces.")
+    if "@" in new_username:
+        raise ValueError("Username cannot contain '@'.")
+    if old_username == new_username:
+        raise ValueError("New username must be different from the current username.")
+
+    conn = get_conn()
+    try:
+        old_row = conn.execute(
+            "SELECT user_id FROM users WHERE username = ?;",
+            (old_username,),
+        ).fetchone()
+        if not old_row:
+            raise ValueError("Selected user no longer exists.")
+
+        new_row = conn.execute(
+            "SELECT user_id FROM users WHERE LOWER(username) = LOWER(?);",
+            (new_username,),
+        ).fetchone()
+        if new_row:
+            raise ValueError("That username is already taken.")
+
+        conn.execute(
+            "UPDATE users SET username = ? WHERE username = ?;",
+            (new_username, old_username),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def update_password_hash(username: str, password_hash: str) -> None:
     conn = get_conn()
     try:
