@@ -1,4 +1,7 @@
 from datetime import datetime
+from pathlib import Path
+import logging
+import re
 
 import streamlit as st
 import pandas as pd
@@ -24,6 +27,7 @@ render_sidebar_header()
 render_logout_button()
 
 st.title("QM Social League")
+logger = logging.getLogger(__name__)
 
 
 def _get_secret(name: str) -> str:
@@ -168,6 +172,505 @@ def _init_or_sanitize_multiselect_state_allow_empty(key: str, options: list[str]
     st.session_state[key] = [c for c in current if c in options]
 
 
+def _extract_teams_df(excel_result) -> pd.DataFrame | None:
+    teams_df = getattr(excel_result, "teams_table", None)
+    if teams_df is None:
+        teams_df = getattr(excel_result, "teams", None)
+    if teams_df is None:
+        teams_df = getattr(excel_result, "teams_data", None)
+    return teams_df
+
+
+def _season_sort_key(label: str) -> tuple[int, int, str]:
+    lbl = str(label).strip()
+    m = re.search(r"(20\d{2})\D+(20\d{2}|\d{2})", lbl)
+    if m:
+        y1 = int(m.group(1))
+        y2_raw = m.group(2)
+        y2 = int(y2_raw[-2:]) if len(y2_raw) == 4 else int(y2_raw)
+        return (y1, y2, lbl.casefold())
+    m = re.search(r"(20\d{2})", lbl)
+    if m:
+        return (int(m.group(1)), 0, lbl.casefold())
+    return (0, 0, lbl.casefold())
+
+
+def _parse_season_label(filename: str) -> str:
+    stem = Path(filename).stem.strip()
+    match_range = re.search(r"(20\d{2})\D+(20\d{2}|\d{2})", stem)
+    if match_range:
+        start = match_range.group(1)
+        end_raw = match_range.group(2)
+        end = end_raw[-2:] if len(end_raw) == 4 else end_raw
+        return f"{start}-{end}"
+
+    match_year = re.search(r"(20\d{2})", stem)
+    if match_year:
+        return match_year.group(1)
+    return stem or filename
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def discover_season_files() -> list[tuple[str, str]]:
+    project_root = Path(__file__).resolve().parent.parent
+    local_seasons_dir = project_root / "data" / "seasons"
+    local_seasons_dir.mkdir(parents=True, exist_ok=True)
+    search_dirs = [
+        Path("/mnt/data/seasons"),
+        local_seasons_dir,
+        project_root / "data",
+    ]
+
+    files: list[Path] = []
+    for directory in search_dirs:
+        if not directory.exists() or not directory.is_dir():
+            continue
+        for pattern in ("*.xlsm", "*.xlsx", "*.xls"):
+            files.extend(directory.glob(pattern))
+
+    deduped: dict[str, Path] = {}
+    for fp in files:
+        deduped[str(fp.resolve())] = fp
+
+    discovered: list[tuple[str, str]] = []
+    for fp in deduped.values():
+        label = _parse_season_label(fp.name)
+        discovered.append((label, str(fp)))
+
+    discovered.sort(key=lambda item: _season_sort_key(item[0]), reverse=True)
+    return discovered
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_season_stats(filepath: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    try:
+        with open(filepath, "rb") as f:
+            workbook = load_league_workbook_from_bytes(f.read())
+    except Exception as exc:
+        logger.warning("Skipping season workbook '%s': failed to load (%s)", filepath, exc)
+        return pd.DataFrame(), pd.DataFrame()
+
+    league_df = getattr(workbook, "league_data", None)
+    teams_df = _extract_teams_df(workbook)
+
+    if league_df is None or league_df.empty:
+        logger.warning("Skipping season workbook '%s': missing League_Data_Stats table", filepath)
+        return pd.DataFrame(), pd.DataFrame()
+
+    league = league_df.copy()
+    league.columns = [str(c).strip() for c in league.columns]
+    if _find_col(league, ["Name", "Player", "Player Name"]) is None:
+        logger.warning("Skipping season workbook '%s': missing player name column", filepath)
+        return pd.DataFrame(), pd.DataFrame()
+
+    teams = pd.DataFrame()
+    if teams_df is not None and not teams_df.empty:
+        teams = teams_df.copy()
+        teams.columns = [str(c).strip() for c in teams.columns]
+
+    return league, teams
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def build_all_stats(season_dfs: tuple[pd.DataFrame, ...]) -> pd.DataFrame:
+    if not season_dfs:
+        return pd.DataFrame()
+
+    frames: list[pd.DataFrame] = []
+    for df in season_dfs:
+        if df is None or df.empty:
+            continue
+        tmp = df.copy()
+        tmp.columns = [str(c).strip() for c in tmp.columns]
+        name_col = _find_col(tmp, ["Name", "Player", "Player Name"])
+        if not name_col:
+            continue
+        tmp["_name"] = tmp[name_col].astype(str).str.strip()
+        tmp["_norm_name"] = tmp["_name"].str.casefold()
+        if "Team" in tmp.columns:
+            tmp["_team"] = tmp["Team"].astype(str).str.strip()
+        else:
+            tmp["_team"] = ""
+        if "PlayerID" in tmp.columns:
+            tmp["_player_id"] = tmp["PlayerID"].astype(str).str.strip()
+        elif "Player Id" in tmp.columns:
+            tmp["_player_id"] = tmp["Player Id"].astype(str).str.strip()
+        elif "Player ID" in tmp.columns:
+            tmp["_player_id"] = tmp["Player ID"].astype(str).str.strip()
+        else:
+            tmp["_player_id"] = ""
+        frames.append(tmp[tmp["_norm_name"] != ""])
+
+    if not frames:
+        return pd.DataFrame()
+
+    combined = pd.concat(frames, ignore_index=True)
+
+    sum_cols = [
+        "Runs Scored",
+        "Balls Faced",
+        "6s",
+        "Retirements",
+        "Innings Played",
+        "Not Out's",
+        "Total Overs",
+        "Overs",
+        "Balls Bowled",
+        "Maidens",
+        "Runs Conceded",
+        "Wickets",
+        "Wides",
+        "No Balls",
+        "Catches",
+        "Run Outs",
+        "Stumpings",
+        "Fantasy Points",
+    ]
+    max_cols = ["Highest Score"]
+    first_text_cols = ["Best Figures"]
+
+    for col in sum_cols + max_cols:
+        if col in combined.columns:
+            combined[col] = pd.to_numeric(combined[col], errors="coerce")
+
+    grouped = combined.groupby("_norm_name", dropna=False)
+    result = pd.DataFrame(index=grouped.size().index).reset_index()
+    result["Name"] = grouped["_name"].agg(
+        lambda s: s.dropna().astype(str).str.strip().mode().iat[0] if not s.dropna().empty else ""
+    ).values
+
+    if (combined["_team"] != "").any():
+        result["Team"] = grouped["_team"].agg(
+            lambda s: s[s.astype(str).str.strip() != ""].mode().iat[0]
+            if not s[s.astype(str).str.strip() != ""].empty
+            else ""
+        ).values
+
+    if (combined["_player_id"] != "").any():
+        result["PlayerID"] = grouped["_player_id"].agg(
+            lambda s: s[s.astype(str).str.strip() != ""].iat[0]
+            if not s[s.astype(str).str.strip() != ""].empty
+            else ""
+        ).values
+
+    for col in sum_cols:
+        if col in combined.columns:
+            result[col] = grouped[col].sum(min_count=1).values
+
+    for col in max_cols:
+        if col in combined.columns:
+            result[col] = grouped[col].max().values
+
+    for col in first_text_cols:
+        if col in combined.columns:
+            result[col] = grouped[col].agg(
+                lambda s: s[s.astype(str).str.strip() != ""].iat[0]
+                if not s[s.astype(str).str.strip() != ""].empty
+                else ""
+            ).values
+
+    if "Runs Scored" in result.columns and "Balls Faced" in result.columns:
+        bf = pd.to_numeric(result["Balls Faced"], errors="coerce")
+        rs = pd.to_numeric(result["Runs Scored"], errors="coerce")
+        result["Batting Strike Rate"] = (rs / bf.where(bf > 0, pd.NA)) * 100
+
+    if {"Runs Scored", "Innings Played", "Not Out's"}.issubset(result.columns):
+        rs = pd.to_numeric(result["Runs Scored"], errors="coerce").fillna(0.0)
+        inns = pd.to_numeric(result["Innings Played"], errors="coerce").fillna(0.0)
+        not_outs = pd.to_numeric(result["Not Out's"], errors="coerce").fillna(0.0)
+        outs = (inns - not_outs).where((inns - not_outs) > 0, 1.0)
+        result["Batting Average"] = rs / outs
+
+    if {"Runs Conceded", "Wickets"}.issubset(result.columns):
+        rc = pd.to_numeric(result["Runs Conceded"], errors="coerce")
+        wk = pd.to_numeric(result["Wickets"], errors="coerce")
+        result["Bowling Average"] = rc / wk.where(wk > 0, pd.NA)
+
+    if {"Balls Bowled", "Wickets"}.issubset(result.columns):
+        bb = pd.to_numeric(result["Balls Bowled"], errors="coerce")
+        wk = pd.to_numeric(result["Wickets"], errors="coerce")
+        result["Bowling Strike Rate"] = bb / wk.where(wk > 0, pd.NA)
+
+    if "Runs Conceded" in result.columns:
+        rc = pd.to_numeric(result["Runs Conceded"], errors="coerce")
+        if "Overs" in result.columns:
+            ov = pd.to_numeric(result["Overs"], errors="coerce")
+            result["Economy"] = rc / ov.where(ov > 0, pd.NA)
+        elif "Balls Bowled" in result.columns:
+            bb = pd.to_numeric(result["Balls Bowled"], errors="coerce")
+            overs = bb / 6.0
+            result["Economy"] = rc / overs.where(overs > 0, pd.NA)
+
+    if "Fantasy Points" in result.columns:
+        try:
+            result = result.sort_values(by="Fantasy Points", ascending=False)
+        except Exception:
+            pass
+
+    output_cols: list[str] = []
+    for col in ["PlayerID", "Name", "Team"]:
+        if col in result.columns and col not in output_cols:
+            output_cols.append(col)
+    for col in sum_cols + max_cols + first_text_cols + [
+        "Batting Strike Rate",
+        "Batting Average",
+        "Economy",
+        "Bowling Strike Rate",
+        "Bowling Average",
+    ]:
+        if col in result.columns and col not in output_cols:
+            output_cols.append(col)
+    for col in result.columns:
+        if col not in output_cols and col != "_norm_name":
+            output_cols.append(col)
+
+    return _normalize_playerid_for_display(result[output_cols])
+
+
+def render_player_stats_ui(
+    df: pd.DataFrame,
+    enable_team_filter: bool,
+    current_season: bool,
+    teams_df: pd.DataFrame | None = None,
+    season_label: str | None = None,
+) -> None:
+    league = df.copy()
+    league.columns = [str(c).strip() for c in league.columns]
+
+    team_id_col_league = _find_col(league, ["TeamID", "Team Id", "Team ID"])
+    name_col = _find_col(league, ["Name", "Player", "Player Name"])
+    if not name_col:
+        st.info("No player stats found yet (player name column is missing).")
+        return
+
+    team_id_to_name: dict[str, str] = {}
+    team_name_to_id: dict[str, str] = {}
+    if teams_df is not None and not teams_df.empty:
+        teams = teams_df.copy()
+        teams.columns = [str(c).strip() for c in teams.columns]
+        team_id_col_teams = _find_col(teams, ["TeamID", "Team Id", "Team ID"])
+        team_name_col_teams = _find_col(teams, ["Team Names", "Team Name", "Team"])
+        if team_id_col_teams and team_name_col_teams:
+            ttmp = teams[[team_id_col_teams, team_name_col_teams]].copy()
+            ttmp[team_id_col_teams] = ttmp[team_id_col_teams].astype(str).str.strip()
+            ttmp[team_name_col_teams] = ttmp[team_name_col_teams].astype(str).str.strip()
+            ttmp = ttmp[(ttmp[team_id_col_teams] != "") & (ttmp[team_name_col_teams] != "")].drop_duplicates()
+            team_id_to_name = dict(zip(ttmp[team_id_col_teams], ttmp[team_name_col_teams]))
+            team_name_to_id = dict(zip(ttmp[team_name_col_teams], ttmp[team_id_col_teams]))
+
+    if team_id_col_league and team_id_col_league in league.columns and team_id_to_name:
+        league[team_id_col_league] = league[team_id_col_league].astype(str).str.strip()
+        league["Team"] = league[team_id_col_league].map(team_id_to_name)
+    elif "Team" not in league.columns:
+        league["Team"] = None
+
+    if not current_season and season_label and season_label != "All Stats":
+        league["Season"] = season_label
+
+    numeric_cols = [
+        "Runs Scored",
+        "Balls Faced",
+        "6s",
+        "Retirements",
+        "Batting Strike Rate",
+        "Batting Average",
+        "Highest Score",
+        "Innings Played",
+        "Not Out's",
+        "Total Overs",
+        "Overs",
+        "Balls Bowled",
+        "Maidens",
+        "Runs Conceded",
+        "Wickets",
+        "Wides",
+        "No Balls",
+        "Economy",
+        "Bowling Strike Rate",
+        "Bowling Average",
+        "Catches",
+        "Run Outs",
+        "Stumpings",
+        "Fantasy Points",
+    ]
+    for col in numeric_cols:
+        if col in league.columns:
+            league[col] = pd.to_numeric(league[col], errors="coerce")
+
+    selected_team_id = None
+    if enable_team_filter:
+        team_names = sorted([t for t in team_name_to_id.keys() if str(t).strip() != ""]) if team_name_to_id else []
+        team_dropdown_options = ["All"] + team_names
+        c1, c2 = st.columns([2, 1])
+        with c2:
+            selected_team_name = st.selectbox(
+                "Team",
+                team_dropdown_options if team_dropdown_options else ["All"],
+                key="ps_team_name",
+            )
+        selected_team_id = team_name_to_id.get(selected_team_name) if selected_team_name != "All" else None
+    else:
+        c1 = st.container()
+
+    player_options_df = league
+    if selected_team_id is not None and team_id_col_league and team_id_col_league in league.columns:
+        player_options_df = league[
+            league[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()
+        ]
+
+    player_options = (
+        player_options_df[name_col].dropna().astype(str).map(str.strip)
+        if name_col and name_col in player_options_df.columns
+        else pd.Series(dtype=str)
+    )
+    player_options_list = sorted([p for p in player_options.unique().tolist() if p != ""])
+
+    current_players = st.session_state.get("ps_players", [])
+    current_players = [p for p in current_players if p in player_options_list]
+    st.session_state["ps_players"] = current_players
+
+    with c1:
+        selected_players = st.multiselect(
+            "Players - Leave blank for all players",
+            player_options_list,
+            key="ps_players",
+        )
+
+    filtered = league.copy()
+    if selected_team_id is not None and team_id_col_league and team_id_col_league in filtered.columns:
+        filtered = filtered[filtered[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()]
+    if name_col and name_col in filtered.columns and selected_players:
+        filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
+
+    BATTING_STATS = [
+        "Runs Scored",
+        "Balls Faced",
+        "6s",
+        "Retirements",
+        "Batting Strike Rate",
+        "Batting Average",
+        "Highest Score",
+        "Innings Played",
+        "Not Out's",
+    ]
+    BOWLING_STATS = [
+        "Total Overs",
+        "Overs",
+        "Balls Bowled",
+        "Maidens",
+        "Runs Conceded",
+        "Wickets",
+        "Wides",
+        "No Balls",
+        "Economy",
+        "Bowling Strike Rate",
+        "Bowling Average",
+        "Best Figures",
+    ]
+    FIELDING_STATS = ["Catches", "Run Outs", "Stumpings"]
+
+    batting_options = [c for c in BATTING_STATS if c in filtered.columns]
+    bowling_options = [c for c in BOWLING_STATS if c in filtered.columns]
+    fielding_options = [c for c in FIELDING_STATS if c in filtered.columns]
+
+    st.markdown("#### Select Stats To Display")
+    d1, d2, d3 = st.columns(3)
+
+    DEFAULT_BATTING = ["Runs Scored", "Batting Average"]
+    DEFAULT_BOWLING = ["Wickets", "Economy"]
+    DEFAULT_FIELDING: list[str] = []
+
+    batting_select_key = "batting_cols_select"
+    bowling_select_key = "bowling_cols_select"
+    fielding_select_key = "fielding_cols_select"
+
+    if f"__prev_{batting_select_key}" not in st.session_state:
+        st.session_state[f"__prev_{batting_select_key}"] = DEFAULT_BATTING
+    if f"__prev_{bowling_select_key}" not in st.session_state:
+        st.session_state[f"__prev_{bowling_select_key}"] = DEFAULT_BOWLING
+    if f"__prev_{fielding_select_key}" not in st.session_state:
+        st.session_state[f"__prev_{fielding_select_key}"] = DEFAULT_FIELDING
+
+    with d1:
+        st.multiselect(
+            "Batting stats",
+            options=[ALL] + batting_options,
+            default=DEFAULT_BATTING,
+            key=batting_select_key,
+            on_change=lambda: enforce_all_exclusive(batting_select_key),
+        )
+    with d2:
+        st.multiselect(
+            "Bowling stats",
+            options=[ALL] + bowling_options,
+            default=DEFAULT_BOWLING,
+            key=bowling_select_key,
+            on_change=lambda: enforce_all_exclusive(bowling_select_key),
+        )
+    with d3:
+        st.multiselect(
+            "Fielding stats",
+            options=[ALL] + fielding_options,
+            default=DEFAULT_FIELDING,
+            key=fielding_select_key,
+            on_change=lambda: enforce_all_exclusive(fielding_select_key),
+        )
+
+    resolved_batting = _resolved_selection(batting_select_key, batting_options, DEFAULT_BATTING)
+    resolved_bowling = _resolved_selection(bowling_select_key, bowling_options, DEFAULT_BOWLING)
+    resolved_fielding = _resolved_selection(fielding_select_key, fielding_options, DEFAULT_FIELDING)
+
+    st.session_state[f"__prev_{batting_select_key}"] = st.session_state.get(batting_select_key) or []
+    st.session_state[f"__prev_{bowling_select_key}"] = st.session_state.get(bowling_select_key) or []
+    st.session_state[f"__prev_{fielding_select_key}"] = st.session_state.get(fielding_select_key) or []
+
+    selected_columns = resolved_batting + resolved_bowling + resolved_fielding
+
+    fixed_cols: list[str] = []
+    if "Name" in filtered.columns:
+        fixed_cols.append("Name")
+    elif name_col and name_col in filtered.columns:
+        fixed_cols.append(name_col)
+    if "Season" in filtered.columns:
+        fixed_cols.append("Season")
+
+    display_cols: list[str] = []
+    for c in fixed_cols:
+        if c and c in filtered.columns and c not in display_cols:
+            display_cols.append(c)
+    for c in selected_columns:
+        if c in filtered.columns and c not in display_cols:
+            display_cols.append(c)
+    if "Fantasy Points" in filtered.columns and "Fantasy Points" not in display_cols:
+        display_cols.append("Fantasy Points")
+
+    view = filtered[display_cols].copy() if all(c in filtered.columns for c in display_cols) else filtered.copy()
+    if "Fantasy Points" in view.columns:
+        try:
+            view = view.sort_values(by="Fantasy Points", ascending=False)
+        except Exception:
+            pass
+
+    col_config: dict = {}
+    if "Name" in view.columns:
+        col_config["Name"] = st.column_config.TextColumn(pinned=True)
+    elif name_col and name_col in view.columns:
+        col_config[name_col] = st.column_config.TextColumn(pinned=True)
+    for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
+        if c in view.columns:
+            col_config[c] = st.column_config.NumberColumn(format="%.2f")
+    if "Fantasy Points" in view.columns:
+        col_config["Fantasy Points"] = st.column_config.NumberColumn()
+
+    st.data_editor(
+        view,
+        width="stretch",
+        hide_index=True,
+        disabled=True,
+        column_config=col_config,
+    )
+
+
 # ---- Read secrets ----
 try:
     app_key = _get_secret("DROPBOX_APP_KEY")
@@ -203,7 +706,7 @@ else:
 # ----------------------------
 selected_tab = st.radio(
     label="Navigation Tabs",
-    options=["Fixtures & Results", "League Table", "Teams", "Player Stats", "Historical Stats", "Scorecards"],
+    options=["Fixtures & Results", "League Table", "Teams", "Player Stats", "Scorecards"],
     horizontal=True,
     key="main_tab",
     label_visibility="collapsed",
@@ -1043,778 +1546,80 @@ if selected_tab == "Teams":
 # ============================
 if selected_tab == "Player Stats":
     st.subheader("Player Stats")
-
-    league_df = data.league_data
-    if league_df is None or league_df.empty:
-        st.info("No player stats found yet (League_Data_Stats table not loaded).")
-        st.stop()
-
-    league = league_df.copy()
-    league.columns = [str(c).strip() for c in league.columns]
-
-    # -----------------------------
-    # Map TeamID -> Team Names via Teams_Table
-    # -----------------------------
-    teams_df = getattr(data, "teams_table", None)
-    if teams_df is None:
-        teams_df = getattr(data, "teams", None)
-    if teams_df is None:
-        teams_df = getattr(data, "teams_data", None)
-
-    team_id_col_league = _find_col(league, ["TeamID", "Team Id", "Team ID"])
-    name_col = _find_col(league, ["Name"])
-
-    team_id_to_name: dict[str, str] = {}
-    team_name_to_id: dict[str, str] = {}
-
-    if teams_df is not None and not teams_df.empty:
-        teams = teams_df.copy()
-        teams.columns = [str(c).strip() for c in teams.columns]
-
-        team_id_col_teams = _find_col(teams, ["TeamID"])
-        team_name_col_teams = _find_col(teams, ["Team Names"])
-
-        if team_id_col_teams and team_name_col_teams:
-            ttmp = teams[[team_id_col_teams, team_name_col_teams]].copy()
-            ttmp[team_id_col_teams] = ttmp[team_id_col_teams].astype(str).str.strip()
-            ttmp[team_name_col_teams] = ttmp[team_name_col_teams].astype(str).str.strip()
-            ttmp = ttmp[(ttmp[team_id_col_teams] != "") & (ttmp[team_name_col_teams] != "")].drop_duplicates()
-
-            team_id_to_name = dict(zip(ttmp[team_id_col_teams], ttmp[team_name_col_teams]))
-            team_name_to_id = dict(zip(ttmp[team_name_col_teams], ttmp[team_id_col_teams]))
-
-    # Team name helper column for filtering (TeamID never shown in UI)
-    if team_id_col_league and team_id_col_league in league.columns and team_id_to_name:
-        league[team_id_col_league] = league[team_id_col_league].astype(str).str.strip()
-        league["Team"] = league[team_id_col_league].map(team_id_to_name)
-    else:
-        if "Team" not in league.columns:
-            league["Team"] = None
-
-    # Coerce numeric columns so Streamlit sorts numerically (not as strings)
-    numeric_cols = [
-        "Runs Scored",
-        "Balls Faced",
-        "6s",
-        "Retirements",
-        "Batting Strike Rate",
-        "Batting Average",
-        "Highest Score",
-        "Innings Played",
-        "Not Out's",
-        "Total Overs",
-        "Overs",
-        "Balls Bowled",
-        "Maidens",
-        "Runs Conceded",
-        "Wickets",
-        "Wides",
-        "No Balls",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-        "Catches",
-        "Run Outs",
-        "Stumpings",
-        "Fantasy Points",
-    ]
-    for col in numeric_cols:
-        if col in league.columns:
-            league[col] = pd.to_numeric(league[col], errors="coerce")
-
-    # -----------------------------
-    # Filters (Team by name; Players optional and scoped by current team)
-    # -----------------------------
-    team_names = sorted([t for t in team_name_to_id.keys() if str(t).strip() != ""]) if team_name_to_id else []
-    team_dropdown_options = ["All"] + team_names
-
-    current_team_name = st.session_state.get("ps_team_name", "All")
-    current_team_id = team_name_to_id.get(current_team_name) if current_team_name != "All" else None
-
-    player_options_df = league
-    if current_team_id is not None and team_id_col_league and team_id_col_league in league.columns:
-        player_options_df = league[league[team_id_col_league].astype(str).str.strip() == str(current_team_id).strip()]
-
-    if name_col and name_col in league.columns:
-        player_options = player_options_df[name_col].dropna().astype(str).map(str.strip)
-        player_options = sorted([p for p in player_options.unique().tolist() if p != ""])
-    else:
-        player_options = []
-
-    # -----------------------------
-    # Filters (no Apply button)
-    # Team by name; Players optional and scoped by current team
-    # -----------------------------
-    team_names = sorted([t for t in team_name_to_id.keys() if str(t).strip() != ""]) if team_name_to_id else []
-    team_dropdown_options = ["All"] + team_names
-
-    c1, c2 = st.columns([2, 1])
-
-    with c2:
-        selected_team_name = st.selectbox(
-            "Team",
-            team_dropdown_options if team_dropdown_options else ["All"],
-            key="ps_team_name",
-        )
-
-    selected_team_id = team_name_to_id.get(selected_team_name) if selected_team_name != "All" else None
-
-    # Build player options based on currently selected team
-    player_options_df = league
-    if selected_team_id is not None and team_id_col_league and team_id_col_league in league.columns:
-        player_options_df = league[
-            league[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()
-        ]
-
-    if name_col and name_col in league.columns:
-        player_options = (
-            player_options_df[name_col]
-            .dropna()
-            .astype(str)
-            .map(str.strip)
-        )
-        player_options = sorted([p for p in player_options.unique().tolist() if p != ""])
-    else:
-        player_options = []
-
-    # Drop any previously selected players that are no longer valid for this team
-    current_players = st.session_state.get("ps_players", [])
-    current_players = [p for p in current_players if p in player_options]
-    st.session_state["ps_players"] = current_players
-
-    with c1:
-        selected_players = st.multiselect(
-    "Players – Leave blank for all players",
-    player_options,
-    key="ps_players",
-    )
-
-    filtered = league.copy()
-
-    if selected_team_id is not None and team_id_col_league and team_id_col_league in filtered.columns:
-        filtered = filtered[filtered[team_id_col_league].astype(str).str.strip() == str(selected_team_id).strip()]
-
-    if name_col and name_col in filtered.columns and selected_players:
-        filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
-
-    # -----------------------------
-    # Stat selectors (Batting / Bowling / Fielding)
-    # Name fixed; Fantasy Points always last column
-    # Defaults on first load: Runs Scored, Batting Average, Wickets, Economy
-    # Users can clear all stat selections.
-    # -----------------------------
-    BATTING_STATS = [
-        "Runs Scored",
-        "Balls Faced",
-        "6s",
-        "Retirements",
-        "Batting Strike Rate",
-        "Batting Average",
-        "Highest Score",
-        "Innings Played",
-        "Not Out's",
-    ]
-
-    BOWLING_STATS = [
-        "Total Overs",
-        "Overs",
-        "Balls Bowled",
-        "Maidens",
-        "Runs Conceded",
-        "Wickets",
-        "Wides",
-        "No Balls",
-        "Economy",
-        "Bowling Strike Rate",
-        "Bowling Average",
-        "Best Figures",
-    ]
-
-    FIELDING_STATS = [
-        "Catches",
-        "Run Outs",
-        "Stumpings",
-    ]
-
-    batting_options = [c for c in BATTING_STATS if c in filtered.columns]
-    bowling_options = [c for c in BOWLING_STATS if c in filtered.columns]
-    fielding_options = [c for c in FIELDING_STATS if c in filtered.columns]
-
-    default_batting = [c for c in ["Runs Scored", "Batting Average"] if c in batting_options]
-    default_bowling = [c for c in ["Wickets", "Economy"] if c in bowling_options]
-    default_fielding: list[str] = []
-
-    st.markdown("#### Select Stats To Display")
-    d1, d2, d3 = st.columns(3)
-
-    DEFAULT_BATTING = ["Runs Scored", "Batting Average"]
-    DEFAULT_BOWLING = ["Wickets", "Economy"]
-    DEFAULT_FIELDING: list[str] = []
-
-    batting_select_key = "batting_cols_select"
-    bowling_select_key = "bowling_cols_select"
-    fielding_select_key = "fielding_cols_select"
-
-    if f"__prev_{batting_select_key}" not in st.session_state:
-        st.session_state[f"__prev_{batting_select_key}"] = DEFAULT_BATTING
-    if f"__prev_{bowling_select_key}" not in st.session_state:
-        st.session_state[f"__prev_{bowling_select_key}"] = DEFAULT_BOWLING
-    if f"__prev_{fielding_select_key}" not in st.session_state:
-        st.session_state[f"__prev_{fielding_select_key}"] = DEFAULT_FIELDING
-
-    with d1:
-        batting_select_options = [ALL] + batting_options
-        selected_batting = st.multiselect(
-            "Batting stats",
-            options=batting_select_options,
-            default=DEFAULT_BATTING,
-            key=batting_select_key,
-            on_change=lambda: enforce_all_exclusive(batting_select_key),
-        )
-    with d2:
-        bowling_select_options = [ALL] + bowling_options
-        selected_bowling = st.multiselect(
-            "Bowling stats",
-            options=bowling_select_options,
-            default=DEFAULT_BOWLING,
-            key=bowling_select_key,
-            on_change=lambda: enforce_all_exclusive(bowling_select_key),
-        )
-    with d3:
-        fielding_select_options = [ALL] + fielding_options
-        selected_fielding = st.multiselect(
-            "Fielding stats",
-            options=fielding_select_options,
-            default=DEFAULT_FIELDING,
-            key=fielding_select_key,
-            on_change=lambda: enforce_all_exclusive(fielding_select_key),
-        )
-
-    resolved_batting = _resolved_selection(batting_select_key, batting_options, DEFAULT_BATTING)
-    resolved_bowling = _resolved_selection(bowling_select_key, bowling_options, DEFAULT_BOWLING)
-    resolved_fielding = _resolved_selection(fielding_select_key, fielding_options, DEFAULT_FIELDING)
-
-    st.session_state[f"__prev_{batting_select_key}"] = st.session_state.get(batting_select_key) or []
-    st.session_state[f"__prev_{bowling_select_key}"] = st.session_state.get(bowling_select_key) or []
-    st.session_state[f"__prev_{fielding_select_key}"] = st.session_state.get(fielding_select_key) or []
-
-    selected_columns = resolved_batting + resolved_bowling + resolved_fielding
-
-    # Fixed columns (Name first)
-    fixed_cols: list[str] = []
-    if "Name" in filtered.columns:
-        fixed_cols.append("Name")
-    elif name_col and name_col in filtered.columns:
-        fixed_cols.append(name_col)
-
-    # Assemble display columns (Fantasy Points appended last)
-    display_cols: list[str] = []
-    for c in fixed_cols:
-        if c and c in filtered.columns and c not in display_cols:
-            display_cols.append(c)
-
-    for c in selected_columns:
-        if c in filtered.columns and c not in display_cols:
-            display_cols.append(c)
-
-    if "Fantasy Points" in filtered.columns and "Fantasy Points" not in display_cols:
-        display_cols.append("Fantasy Points")
-
-    view = filtered[display_cols].copy() if all(c in filtered.columns for c in display_cols) else filtered.copy()
-
-    if "Fantasy Points" in view.columns:
-        try:
-            view = view.sort_values(by="Fantasy Points", ascending=False)
-        except Exception:
-            pass
-
-    def _col_config_for(df: pd.DataFrame) -> dict:
-        config: dict = {}
-        # Pin Name only (Fantasy Points not pinned so it stays at the far right)
-        if "Name" in df.columns:
-            config["Name"] = st.column_config.TextColumn(pinned=True)
-        elif name_col and name_col in df.columns:
-            config[name_col] = st.column_config.TextColumn(pinned=True)
-
-        for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
-            if c in df.columns:
-                config[c] = st.column_config.NumberColumn(format="%.2f")
-
-        # Do not pin Fantasy Points (ensures it stays the last visible column)
-        if "Fantasy Points" in df.columns:
-            config["Fantasy Points"] = st.column_config.NumberColumn()
-
-        return config
-
-    st.data_editor(
-        view,
-        width="stretch",
-        hide_index=True,
-        disabled=True,
-        column_config=_col_config_for(view),
-    )
-
-# ============================
-# TAB 5: HISTORICAL STATS
-# ============================
-if selected_tab == "Historical Stats":
-    st.subheader("Historical Stats")
-
-    hist_a = getattr(data, "history_A_25_26", None)
-    hist_b = getattr(data, "history_B_24_25", None)
-
-    if hist_a is None and hist_b is None:
-        st.info("No historical tables found in the workbook.")
-    else:
-        def _normalize_name(name: str) -> str:
-            return " ".join(str(name).split()).casefold()
-
-        # Combine by normalized name, sum counting stats, and recompute rate stats from base columns.
-        frames: list[pd.DataFrame] = []
-        name_cols: list[str] = []
-        pid_cols: list[str] = []
-
-        for df, source in [(hist_a, "A_25_26"), (hist_b, "B_24_25")]:
-            if df is None or df.empty:
-                continue
-            tmp = df.copy()
-            tmp.columns = [str(c).strip() for c in tmp.columns]
-            name_col = _find_col(tmp, ["Name", "Player", "Player Name"])
-            if not name_col:
-                continue
-            pid_col = _find_col(tmp, ["PlayerID", "Player Id", "Player ID"])
-            name_cols.append(name_col)
-            if pid_col:
-                pid_cols.append(pid_col)
-            tmp["_name"] = tmp[name_col].astype(str).str.strip()
-            tmp["_norm_name"] = tmp["_name"].apply(_normalize_name)
-            tmp["_player_id"] = tmp[pid_col].astype(str).str.strip() if pid_col else ""
-            tmp["_source"] = source
-            frames.append(tmp)
-
-        combined_view = None
-        if frames:
-            combined = pd.concat(frames, ignore_index=True)
-            combined = combined[combined["_norm_name"] != ""]
-
-            rate_keywords = ["avg", "average", "sr", "strike", "economy", "econ", "rate", "%"]
-            rate_cols = [
-                c for c in combined.columns if any(k in str(c).casefold() for k in rate_keywords)
-            ]
-
-            internal_cols = {"_name", "_norm_name", "_player_id", "_source"}
-            exclude_cols = set(name_cols + pid_cols) | internal_cols | set(rate_cols)
-
-            counting_cols: list[str] = []
-            for c in combined.columns:
-                if c in exclude_cols:
-                    continue
-                if any(k in str(c).casefold() for k in rate_keywords):
-                    continue
-                series = pd.to_numeric(combined[c], errors="coerce")
-                if series.notna().any():
-                    counting_cols.append(c)
-
-            grouped = combined.groupby("_norm_name", dropna=False)
-            summed = grouped[counting_cols].agg(
-                lambda s: pd.to_numeric(s, errors="coerce").sum(min_count=1)
-            )
-
-            name_display = grouped["_name"].agg(
-                lambda s: s.dropna().astype(str).str.strip().mode().iat[0]
-                if not s.dropna().empty
-                else ""
-            )
-
-            def _pick_player_id(sub: pd.DataFrame) -> str:
-                preferred = sub[sub["_source"] == "A_25_26"]["_player_id"]
-                for val in preferred:
-                    if val:
-                        return str(val).strip()
-                for val in sub["_player_id"]:
-                    if val:
-                        return str(val).strip()
-                return ""
-
-            pid_display = grouped.apply(_pick_player_id)
-
-            result = summed.reset_index().rename(columns={"_norm_name": "Norm Name"})
-            result["PlayerID"] = pid_display.values
-            result["Name"] = name_display.values
-
-            def _first_col(candidates: list[str]) -> str | None:
-                for c in candidates:
-                    if c in result.columns:
-                        return c
-                return None
-
-            runs_col = _first_col(["Runs Scored", "Runs"])
-            inns_col = _first_col(["Innings Played", "Innings"])
-            not_out_col = _first_col(["Not Out's", "Not Outs", "Not Out", "NO"])
-            balls_faced_col = _first_col(["Balls Faced", "Balls", "BF"])
-            runs_conceded_col = _first_col(["Runs Conceded"])
-            wickets_col = _first_col(["Wickets", "Wkts"])
-            overs_col = _first_col(["Overs", "Overs Bowled"])
-            balls_bowled_col = _first_col(["Balls Bowled", "Balls Bowled (Bowling)"])
-
-            if "Batting Average" in rate_cols:
-                if runs_col and inns_col and not_out_col:
-                    outs = (result[inns_col] - result[not_out_col]).fillna(0.0)
-                    outs = outs.where(outs > 0, 1.0)
-                    result["Batting Average"] = result[runs_col] / outs
-                else:
-                    result["Batting Average"] = pd.NA
-
-            if "Batting Strike Rate" in rate_cols:
-                if runs_col and balls_faced_col:
-                    denom = result[balls_faced_col].fillna(0.0)
-                    denom = denom.where(denom > 0, pd.NA)
-                    result["Batting Strike Rate"] = (result[runs_col] / denom) * 100
-                else:
-                    result["Batting Strike Rate"] = pd.NA
-
-            if "Bowling Average" in rate_cols:
-                if runs_conceded_col and wickets_col:
-                    denom = result[wickets_col].fillna(0.0)
-                    denom = denom.where(denom > 0, pd.NA)
-                    result["Bowling Average"] = result[runs_conceded_col] / denom
-                else:
-                    result["Bowling Average"] = pd.NA
-
-            if "Bowling Strike Rate" in rate_cols:
-                if balls_bowled_col and wickets_col:
-                    denom = result[wickets_col].fillna(0.0)
-                    denom = denom.where(denom > 0, pd.NA)
-                    result["Bowling Strike Rate"] = result[balls_bowled_col] / denom
-                else:
-                    result["Bowling Strike Rate"] = pd.NA
-
-            if "Economy" in rate_cols:
-                if runs_conceded_col and overs_col:
-                    denom = result[overs_col].fillna(0.0)
-                    denom = denom.where(denom > 0, pd.NA)
-                    result["Economy"] = result[runs_conceded_col] / denom
-                elif runs_conceded_col and balls_bowled_col:
-                    overs = result[balls_bowled_col] / 6.0
-                    denom = overs.fillna(0.0)
-                    denom = denom.where(denom > 0, pd.NA)
-                    result["Economy"] = result[runs_conceded_col] / denom
-                else:
-                    result["Economy"] = pd.NA
-
-            base_order: list[str] = []
-            for df in [hist_a, hist_b]:
-                if df is None or df.empty:
-                    continue
-                base_order.extend([str(c).strip() for c in df.columns])
-            ordered_cols: list[str] = []
-            if "PlayerID" in result.columns:
-                ordered_cols.append("PlayerID")
-            if "Name" in result.columns:
-                ordered_cols.append("Name")
-            for c in base_order:
-                if c in name_cols or c in pid_cols:
-                    continue
-                if c in result.columns and c not in ordered_cols:
-                    ordered_cols.append(c)
-            for c in result.columns:
-                if c not in ordered_cols and c not in {"Norm Name"}:
-                    ordered_cols.append(c)
-
-            combined_view = _normalize_playerid_for_display(result[ordered_cols])
-
-        datasets: dict[str, pd.DataFrame] = {}
-        if hist_a is not None and not hist_a.empty:
-            datasets["Sem A 25/26"] = _normalize_playerid_for_display(hist_a)
-        if hist_b is not None and not hist_b.empty:
-            datasets["Sem B 24/25"] = _normalize_playerid_for_display(hist_b)
-        if combined_view is not None and not combined_view.empty:
-            datasets["All-time"] = combined_view
-
-        if not datasets:
-            st.info("Historical tables are missing player names.")
+    current_league_df = getattr(data, "league_data", None)
+    current_teams_df = _extract_teams_df(data)
+
+    current_label = _parse_season_label(Path(str(dropbox_path)).name) if dropbox_path else "Current Season"
+    if not current_label:
+        current_label = "Current Season"
+
+    discovered_files = discover_season_files()
+    season_path_map: dict[str, str] = {}
+    season_options: list[str] = ["All Stats", current_label]
+
+    for label, filepath in discovered_files:
+        if label == current_label:
+            continue
+        display_label = label
+        if display_label in season_options:
+            display_label = f"{label} ({Path(filepath).stem})"
+        season_options.append(display_label)
+        season_path_map[display_label] = filepath
+
+    selected_season = st.selectbox("Season", season_options, key="season_select")
+
+    if selected_season == current_label:
+        if current_league_df is None or current_league_df.empty:
+            st.info("No player stats found yet (League_Data_Stats table not loaded).")
         else:
-            dataset_order = []
-            if "All-time" in datasets:
-                dataset_order.append("All-time")
-            for label in ["Sem A 25/26", "Sem B 24/25"]:
-                if label in datasets:
-                    dataset_order.append(label)
-            for label in datasets.keys():
-                if label not in dataset_order:
-                    dataset_order.append(label)
-
-            selected_dataset = st.selectbox(
-                "Historic Leagues",
-                dataset_order,
-                key="hs_dataset",
+            render_player_stats_ui(
+                df=current_league_df,
+                enable_team_filter=True,
+                current_season=True,
+                teams_df=current_teams_df,
+                season_label=current_label,
             )
-            league = datasets[selected_dataset].copy()
-            league.columns = [str(c).strip() for c in league.columns]
+    elif selected_season == "All Stats":
+        all_season_frames: list[pd.DataFrame] = []
+        if current_league_df is not None and not current_league_df.empty:
+            all_season_frames.append(current_league_df.copy())
 
-            name_col = _find_col(league, ["Name", "Player", "Player Name"])
-            if not name_col:
-                st.info("Historical tables do not include a Name column.")
+        for label, filepath in discovered_files:
+            if label == current_label:
+                continue
+            season_df, _ = load_season_stats(filepath)
+            if season_df is not None and not season_df.empty:
+                all_season_frames.append(season_df)
+
+        all_stats_df = build_all_stats(tuple(all_season_frames))
+        if all_stats_df is None or all_stats_df.empty:
+            st.info("No season data files found for All Stats aggregation.")
+        else:
+            render_player_stats_ui(
+                df=all_stats_df,
+                enable_team_filter=False,
+                current_season=False,
+                teams_df=None,
+                season_label="All Stats",
+            )
+    else:
+        selected_path = season_path_map.get(selected_season)
+        if not selected_path:
+            st.info("Selected season file could not be located.")
+        else:
+            season_df, season_teams_df = load_season_stats(selected_path)
+            if season_df is None or season_df.empty:
+                st.info("Selected season has no player stats table available.")
             else:
-                # Coerce numeric columns so Streamlit sorts numerically (not as strings)
-                numeric_cols = [
-                    "Runs Scored",
-                    "Balls Faced",
-                    "6s",
-                    "Retirements",
-                    "Batting Strike Rate",
-                    "Batting Average",
-                    "Highest Score",
-                    "Innings Played",
-                    "Not Out's",
-                    "Total Overs",
-                    "Overs",
-                    "Balls Bowled",
-                    "Maidens",
-                    "Runs Conceded",
-                    "Wickets",
-                    "Wides",
-                    "No Balls",
-                    "Economy",
-                    "Bowling Strike Rate",
-                    "Bowling Average",
-                    "Catches",
-                    "Run Outs",
-                    "Stumpings",
-                    "Fantasy Points",
-                ]
-                for col in numeric_cols:
-                    if col in league.columns:
-                        league[col] = pd.to_numeric(league[col], errors="coerce")
-
-                player_options = (
-                    league[name_col]
-                    .dropna()
-                    .astype(str)
-                    .map(str.strip)
-                )
-                player_options = sorted([p for p in player_options.unique().tolist() if p != ""])
-
-                current_players = st.session_state.get("hs_players", [])
-                current_players = [p for p in current_players if p in player_options]
-                st.session_state["hs_players"] = current_players
-
-                selected_players = st.multiselect(
-                    "Players – Leave blank for all players",
-                    player_options,
-                    key="hs_players",
-                )
-
-                filtered = league.copy()
-
-                if selected_players:
-                    filtered = filtered[filtered[name_col].astype(str).str.strip().isin(selected_players)]
-
-                BATTING_STATS = [
-                    "Runs Scored",
-                    "Balls Faced",
-                    "6s",
-                    "Retirements",
-                    "Batting Strike Rate",
-                    "Batting Average",
-                    "Highest Score",
-                    "Innings Played",
-                    "Not Out's",
-                ]
-
-                BOWLING_STATS = [
-                    "Total Overs",
-                    "Overs",
-                    "Balls Bowled",
-                    "Maidens",
-                    "Runs Conceded",
-                    "Wickets",
-                    "Wides",
-                    "No Balls",
-                    "Economy",
-                    "Bowling Strike Rate",
-                    "Bowling Average",
-                    "Best Figures",
-                ]
-
-                FIELDING_STATS = [
-                    "Catches",
-                    "Run Outs",
-                    "Stumpings",
-                ]
-
-                batting_options = [c for c in BATTING_STATS if c in filtered.columns]
-                bowling_options = [c for c in BOWLING_STATS if c in filtered.columns]
-                fielding_options = [c for c in FIELDING_STATS if c in filtered.columns]
-
-                default_batting = [c for c in ["Runs Scored", "Batting Average"] if c in batting_options]
-                default_bowling = [c for c in ["Wickets", "Economy"] if c in bowling_options]
-                default_fielding: list[str] = []
-
-                st.markdown("#### Select Stats To Display")
-                d1, d2, d3 = st.columns(3)
-
-                DEFAULT_BATTING = ["Runs Scored", "Batting Average"]
-                DEFAULT_BOWLING = ["Wickets", "Economy"]
-                DEFAULT_FIELDING: list[str] = []
-
-                hs_batting_key = "hs_batting_cols_select"
-                hs_bowling_key = "hs_bowling_cols_select"
-                hs_fielding_key = "hs_fielding_cols_select"
-
-                if f"__prev_{hs_batting_key}" not in st.session_state:
-                    st.session_state[f"__prev_{hs_batting_key}"] = DEFAULT_BATTING
-                if f"__prev_{hs_bowling_key}" not in st.session_state:
-                    st.session_state[f"__prev_{hs_bowling_key}"] = DEFAULT_BOWLING
-                if f"__prev_{hs_fielding_key}" not in st.session_state:
-                    st.session_state[f"__prev_{hs_fielding_key}"] = DEFAULT_FIELDING
-
-                with d1:
-                    hs_batting_options = [ALL] + batting_options
-                    selected_batting = st.multiselect(
-                        "Batting stats",
-                        options=hs_batting_options,
-                        default=DEFAULT_BATTING,
-                        key=hs_batting_key,
-                        on_change=lambda: enforce_all_exclusive(hs_batting_key),
-                    )
-                with d2:
-                    hs_bowling_options = [ALL] + bowling_options
-                    selected_bowling = st.multiselect(
-                        "Bowling stats",
-                        options=hs_bowling_options,
-                        default=DEFAULT_BOWLING,
-                        key=hs_bowling_key,
-                        on_change=lambda: enforce_all_exclusive(hs_bowling_key),
-                    )
-                with d3:
-                    hs_fielding_options = [ALL] + fielding_options
-                    selected_fielding = st.multiselect(
-                        "Fielding stats",
-                        options=hs_fielding_options,
-                        default=DEFAULT_FIELDING,
-                        key=hs_fielding_key,
-                        on_change=lambda: enforce_all_exclusive(hs_fielding_key),
-                    )
-
-                resolved_batting = _resolved_selection(hs_batting_key, batting_options, DEFAULT_BATTING)
-                resolved_bowling = _resolved_selection(hs_bowling_key, bowling_options, DEFAULT_BOWLING)
-                resolved_fielding = _resolved_selection(hs_fielding_key, fielding_options, DEFAULT_FIELDING)
-
-                st.session_state[f"__prev_{hs_batting_key}"] = st.session_state.get(hs_batting_key) or []
-                st.session_state[f"__prev_{hs_bowling_key}"] = st.session_state.get(hs_bowling_key) or []
-                st.session_state[f"__prev_{hs_fielding_key}"] = st.session_state.get(hs_fielding_key) or []
-
-                selected_columns = resolved_batting + resolved_bowling + resolved_fielding
-
-                fixed_cols: list[str] = []
-                if name_col in filtered.columns:
-                    fixed_cols.append(name_col)
-
-                display_cols: list[str] = []
-                for c in fixed_cols:
-                    if c and c in filtered.columns and c not in display_cols:
-                        display_cols.append(c)
-
-                for c in selected_columns:
-                    if c in filtered.columns and c not in display_cols:
-                        display_cols.append(c)
-
-                if "Fantasy Points" in filtered.columns and "Fantasy Points" not in display_cols:
-                    display_cols.append("Fantasy Points")
-
-                view = filtered[display_cols].copy() if all(c in filtered.columns for c in display_cols) else filtered.copy()
-
-                if "Fantasy Points" in view.columns:
-                    try:
-                        view = view.sort_values(by="Fantasy Points", ascending=False)
-                    except Exception:
-                        pass
-
-                col_config: dict = {}
-                if name_col in view.columns:
-                    col_config[name_col] = st.column_config.TextColumn(pinned=True)
-
-                for c in ["Batting Strike Rate", "Batting Average", "Economy", "Bowling Strike Rate", "Bowling Average"]:
-                    if c in view.columns:
-                        col_config[c] = st.column_config.NumberColumn(format="%.2f")
-
-                if "Fantasy Points" in view.columns:
-                    col_config["Fantasy Points"] = st.column_config.NumberColumn()
-
-                st.markdown("#### Player Stats")
-                st.data_editor(
-                    view,
-                    width="stretch",
-                    hide_index=True,
-                    disabled=True,
-                    column_config=col_config,
-                )
-
-                st.markdown("#### Totals")
-                base = filtered.copy()
-
-                def _sum(col: str) -> float | None:
-                    if col not in base.columns:
-                        return None
-                    s = pd.to_numeric(base[col], errors="coerce").fillna(0).sum()
-                    return float(s)
-
-                totals_row: dict = {}
-                totals_row[name_col] = "Totals"
-
-                for col in [
-                    "Runs Scored", "Balls Faced", "6s", "Retirements",
-                    "Innings Played", "Not Out's",
-                    "Total Overs", "Overs", "Balls Bowled", "Maidens", "Runs Conceded", "Wickets", "Wides", "No Balls",
-                    "Catches", "Run Outs", "Stumpings", "Fantasy Points",
-                ]:
-                    val = _sum(col)
-                    if val is not None and col in view.columns:
-                        totals_row[col] = val
-
-                if "Batting Strike Rate" in view.columns:
-                    rs = _sum("Runs Scored") or 0.0
-                    bf = _sum("Balls Faced") or 0.0
-                    totals_row["Batting Strike Rate"] = (rs / bf) * 100 if bf > 0 else pd.NA
-
-                if "Batting Average" in view.columns:
-                    rs = _sum("Runs Scored") or 0.0
-                    inn = _sum("Innings Played")
-                    no = _sum("Not Out's")
-                    if inn is not None and no is not None:
-                        outs = inn - no
-                        outs = outs if outs > 0 else 1.0
-                        totals_row["Batting Average"] = rs / outs
-                    else:
-                        totals_row["Batting Average"] = pd.NA
-
-                if "Economy" in view.columns:
-                    rc = _sum("Runs Conceded") or 0.0
-                    ov = _sum("Overs") or 0.0
-                    totals_row["Economy"] = (rc / ov) if ov > 0 else pd.NA
-
-                if "Bowling Strike Rate" in view.columns:
-                    bb = _sum("Balls Bowled") or 0.0
-                    wk = _sum("Wickets") or 0.0
-                    totals_row["Bowling Strike Rate"] = (bb / wk) if wk > 0 else pd.NA
-
-                if "Bowling Average" in view.columns:
-                    rc = _sum("Runs Conceded") or 0.0
-                    wk = _sum("Wickets") or 0.0
-                    totals_row["Bowling Average"] = (rc / wk) if wk > 0 else pd.NA
-
-                totals_df = pd.DataFrame([{c: totals_row.get(c, pd.NA) for c in view.columns}])
-
-                st.data_editor(
-                    totals_df,
-                    width="stretch",
-                    hide_index=True,
-                    disabled=True,
-                    column_config=col_config,
+                render_player_stats_ui(
+                    df=season_df,
+                    enable_team_filter=False,
+                    current_season=False,
+                    teams_df=season_teams_df if season_teams_df is not None and not season_teams_df.empty else None,
+                    season_label=selected_season,
                 )
 # ============================
-# TAB 6: SCORECARDS
+# TAB 5: SCORECARDS
 # ============================
 if selected_tab == "Scorecards":
     st.subheader("Scorecards")
