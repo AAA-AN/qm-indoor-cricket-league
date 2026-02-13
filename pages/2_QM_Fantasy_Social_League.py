@@ -14,7 +14,7 @@ from src.guard import (
     render_logout_button,
 )
 from src.dropbox_api import get_access_token, download_file, upload_file, ensure_folder
-from src.excel_io import load_league_workbook_from_bytes, load_named_table_from_bytes
+from src.excel_io import load_league_workbook_from_bytes
 from src.db import (
     rebuild_blocks_from_fixtures_if_missing,
     get_current_block_number,
@@ -66,30 +66,98 @@ def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbo
     return load_league_workbook_from_bytes(xbytes)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def _load_optional_scoring_table_from_dropbox(
-    app_key: str,
-    app_secret: str,
-    refresh_token: str,
-    dropbox_path: str,
-) -> tuple[pd.DataFrame, str | None]:
-    access_token = get_access_token(app_key, app_secret, refresh_token)
-    xbytes = download_file(access_token, dropbox_path)
-    for table_name in [
-        "Fantasy_Scoring",
-        "Scoring",
-        "Points_System",
-        "Fantasy_Points_System",
-    ]:
-        try:
-            df = load_named_table_from_bytes(xbytes, table_name, drop_empty_columns=True)
-            if df is not None and not df.empty:
-                df = df.copy()
-                df.columns = [str(c).strip() for c in df.columns]
-                return df, table_name
-        except Exception:
-            continue
-    return pd.DataFrame(), None
+def _fantasy_points_breakdown_df() -> pd.DataFrame:
+    rows = [
+        {"Category": "Batting", "Event": "Runs", "Points": 1, "Notes": "+1 per run"},
+        {"Category": "Batting", "Event": "Sixes", "Points": 2, "Notes": "+2 per six"},
+        {"Category": "Batting", "Event": "Retired bonus", "Points": 3, "Notes": "Applies if Retired = Yes"},
+        {
+            "Category": "Batting",
+            "Event": "Not Out bonus",
+            "Points": 2,
+            "Notes": "Applies if How Out is Not Out or Retired Not Out",
+        },
+        {
+            "Category": "Batting",
+            "Event": "Golden duck",
+            "Points": -5,
+            "Notes": "Applies if out, runs = 0, balls faced = 1",
+        },
+        {
+            "Category": "Batting",
+            "Event": "Duck",
+            "Points": -3,
+            "Notes": "Applies if out, runs = 0, balls faced >= 1, and not golden duck",
+        },
+        {"Category": "Bowling", "Event": "Maidens", "Points": 30, "Notes": "+30 per maiden"},
+        {"Category": "Bowling", "Event": "Wickets", "Points": 20, "Notes": "+20 per wicket"},
+        {"Category": "Bowling", "Event": "3+ wicket bonus", "Points": 20, "Notes": "Bonus if wickets >= 3"},
+        {
+            "Category": "Bowling",
+            "Event": "Economy adjustment",
+            "Points": -5,
+            "Notes": "If at least 1 ball bowled and economy >= 25",
+        },
+        {
+            "Category": "Bowling",
+            "Event": "Economy adjustment",
+            "Points": -3,
+            "Notes": "If at least 1 ball bowled and economy >= 20",
+        },
+        {
+            "Category": "Bowling",
+            "Event": "Economy adjustment",
+            "Points": -1,
+            "Notes": "If at least 1 ball bowled and economy >= 15",
+        },
+        {
+            "Category": "Bowling",
+            "Event": "Economy adjustment",
+            "Points": 0,
+            "Notes": "If at least 1 ball bowled and economy >= 12.5",
+        },
+        {
+            "Category": "Bowling",
+            "Event": "Economy adjustment",
+            "Points": 1,
+            "Notes": "If at least 1 ball bowled and economy >= 10",
+        },
+        {
+            "Category": "Bowling",
+            "Event": "Economy adjustment",
+            "Points": 3,
+            "Notes": "If at least 1 ball bowled and economy >= 5",
+        },
+        {
+            "Category": "Bowling",
+            "Event": "Economy adjustment",
+            "Points": 5,
+            "Notes": "If at least 1 ball bowled and economy < 5",
+        },
+        {"Category": "Fielding", "Event": "Catch", "Points": 10, "Notes": "+10 each"},
+        {"Category": "Fielding", "Event": "Run Out", "Points": 10, "Notes": "+10 each"},
+        {"Category": "Fielding", "Event": "Stumping", "Points": 10, "Notes": "+10 each"},
+    ]
+    return pd.DataFrame(rows, columns=["Category", "Event", "Points", "Notes"])
+
+
+def _describe_bench_system() -> str:
+    return (
+        "- You pick an 8-player squad each week: 6 starters and 2 bench players.\n"
+        "- Bench order matters: Bench 1 is used first, then Bench 2.\n"
+        "- If a starter does not appear in that week's stats, the app auto-subs from the bench in order.\n"
+        "- A bench player only scores if they are auto-subbed in for a missing starter.\n"
+        "- If no bench player is available to replace a missing starter, that spot scores 0."
+    )
+
+
+def _describe_multipliers() -> str:
+    return (
+        "- Captain is a **2x multiplier** (their points are added again).\n"
+        "- Vice-captain is a **1.5x multiplier** (an extra 0.5x is added).\n"
+        "- Captain and vice-captain must be selected from the starting 6.\n"
+        "- Multipliers apply to the final on-field team after any auto-subs."
+    )
 
 
 def _find_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
@@ -1267,7 +1335,7 @@ with tab_rules:
 ### What is Fantasy League?
 - Pick your own fantasy squad of real players.
 - Your squad scores points based on how those players perform in real matches.
-- Your fantasy total is the sum of points from your selected players.
+- Your total fantasy score is the sum of your selected players' points.
 - Leaderboards rank teams by total fantasy points.
         """
     )
@@ -1276,7 +1344,7 @@ with tab_rules:
     st.markdown(
         f"""
 ### Picking your team
-- Select your players while staying within the budget shown in the app.
+- Select players while staying within the budget shown in the app.
 - Player prices change over time based on performance.
 - Squad size: **{FANTASY_SQUAD_SIZE}** players.
 - Budget: **{FANTASY_BUDGET:.1f}**.
@@ -1304,29 +1372,13 @@ with tab_rules:
     )
 
     st.divider()
-    st.markdown(
-        """
-### How are Fantasy Points calculated?
-- Batting contributions (runs, boundaries, milestones, and related outcomes).
-- Bowling contributions (wickets, maidens, economy/discipline outcomes).
-- Fielding contributions (catches, run outs, stumpings).
-- Confirmed penalties:
-  - Duck: **-3**
-  - Golden duck: **-5**
-        """
-    )
+    st.markdown("### Points breakdown")
+    st.dataframe(_fantasy_points_breakdown_df(), use_container_width=True, hide_index=True)
 
-    scoring_df = pd.DataFrame()
-    scoring_table_name = None
-    try:
-        scoring_df, scoring_table_name = _load_optional_scoring_table_from_dropbox(
-            app_key, app_secret, refresh_token, dropbox_path
-        )
-    except Exception:
-        scoring_df, scoring_table_name = pd.DataFrame(), None
+    st.divider()
+    st.markdown("### Bench system")
+    st.markdown(_describe_bench_system())
 
-    if scoring_table_name and scoring_df is not None and not scoring_df.empty:
-        st.divider()
-        st.markdown("### Scoring Table")
-        st.caption("These are the rules used to calculate Fantasy Points.")
-        st.dataframe(scoring_df, width="stretch", hide_index=True)
+    st.divider()
+    st.markdown("### Multipliers")
+    st.markdown(_describe_multipliers())
