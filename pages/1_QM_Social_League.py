@@ -484,11 +484,15 @@ def render_player_stats_ui(
     if f"__prev_{other_select_key}" not in st.session_state:
         st.session_state[f"__prev_{other_select_key}"] = DEFAULT_OTHER
 
+    _init_or_sanitize_multiselect_state_allow_empty(batting_select_key, [ALL] + batting_options, DEFAULT_BATTING)
+    _init_or_sanitize_multiselect_state_allow_empty(bowling_select_key, [ALL] + bowling_options, DEFAULT_BOWLING)
+    _init_or_sanitize_multiselect_state_allow_empty(fielding_select_key, [ALL] + fielding_options, DEFAULT_FIELDING)
+    _init_or_sanitize_multiselect_state_allow_empty(other_select_key, [ALL] + other_options, DEFAULT_OTHER)
+
     with d1:
         st.multiselect(
             "Batting stats",
             options=[ALL] + batting_options,
-            default=DEFAULT_BATTING,
             key=batting_select_key,
             on_change=lambda: enforce_all_exclusive(batting_select_key),
         )
@@ -496,7 +500,6 @@ def render_player_stats_ui(
         st.multiselect(
             "Bowling stats",
             options=[ALL] + bowling_options,
-            default=DEFAULT_BOWLING,
             key=bowling_select_key,
             on_change=lambda: enforce_all_exclusive(bowling_select_key),
         )
@@ -504,7 +507,6 @@ def render_player_stats_ui(
         st.multiselect(
             "Fielding stats",
             options=[ALL] + fielding_options,
-            default=DEFAULT_FIELDING,
             key=fielding_select_key,
             on_change=lambda: enforce_all_exclusive(fielding_select_key),
         )
@@ -512,7 +514,6 @@ def render_player_stats_ui(
         st.multiselect(
             "Other",
             options=[ALL] + other_options,
-            default=DEFAULT_OTHER,
             key=other_select_key,
             on_change=lambda: enforce_all_exclusive(other_select_key),
         )
