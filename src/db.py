@@ -100,7 +100,7 @@ def ensure_fantasy_block_tables_exist() -> None:
             CREATE TABLE IF NOT EXISTS fantasy_blocks (
                 block_number INTEGER PRIMARY KEY,
                 first_start_at TEXT NOT NULL,
-                lock_at TEXT NOT NULL,
+                lock_at TEXT,
                 created_at TEXT NOT NULL,
                 scored_at TEXT,
                 override_state TEXT CHECK(override_state IN ('OPEN','LOCKED')),
@@ -284,6 +284,21 @@ def _fixture_start_at_london(date_val: Any, time_val: Any) -> Optional[datetime]
     return naive.replace(tzinfo=ZoneInfo("Europe/London"))
 
 
+def _fixture_kickoff_at_london(date_val: Any, time_val: Any) -> Optional[datetime]:
+    """
+    Build fixture kickoff datetime in league local time.
+    - Prefer Date + Time
+    - If Time is missing but Date exists, use 00:00 on that date
+    """
+    d = _parse_fixture_date(date_val)
+    if d is None:
+        return None
+    t = _parse_fixture_time(time_val)
+    if t is None:
+        t = time.min
+    return datetime.combine(d, t).replace(tzinfo=ZoneInfo("Europe/London"))
+
+
 def _normalize_datetime_for_storage(dt_val: Any) -> Optional[str]:
     if dt_val is None:
         return None
@@ -389,7 +404,7 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
         if not isinstance(r, dict):
             continue
         fixture_date = _parse_fixture_date(r.get("Date"))
-        start_at = _fixture_start_at_london(r.get("Date"), r.get("Time"))
+        start_at = _fixture_kickoff_at_london(r.get("Date"), r.get("Time"))
         match_id = str(r.get("MatchID") or r.get("Match Id") or "").strip()
         if not match_id:
             match_id = f"fixture_{idx + 1}"
@@ -445,6 +460,34 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
     try:
         existing = conn.execute("SELECT COUNT(*) AS n FROM fantasy_blocks;").fetchone()
         if int(existing["n"]) > 0:
+            # Refresh missing lock times for existing unscored blocks without rebuilding.
+            block_lock_map: Dict[int, str] = {}
+            block_num = 0
+            for group in grouped_blocks:
+                if not group:
+                    continue
+                block_num += 1
+                start_candidates = [fx["start_at"] for fx in group if isinstance(fx.get("start_at"), datetime)]
+                if start_candidates:
+                    block_lock_map[block_num] = min(start_candidates).isoformat()
+                else:
+                    date_candidates = [fx["fixture_date"] for fx in group if isinstance(fx.get("fixture_date"), date)]
+                    if date_candidates:
+                        block_lock_map[block_num] = datetime.combine(
+                            min(date_candidates), time.min
+                        ).replace(tzinfo=ZoneInfo("Europe/London")).isoformat()
+            if block_lock_map:
+                for bn, lock_iso in block_lock_map.items():
+                    conn.execute(
+                        """
+                        UPDATE fantasy_blocks
+                        SET lock_at = COALESCE(NULLIF(lock_at, ''), ?),
+                            first_start_at = COALESCE(NULLIF(first_start_at, ''), ?)
+                        WHERE block_number = ? AND scored_at IS NULL;
+                        """,
+                        (lock_iso, lock_iso, int(bn)),
+                    )
+                conn.commit()
             return 0
 
         created = 0
@@ -458,7 +501,7 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
             if start_candidates:
                 first_start_at_dt = min(start_candidates)
                 first_start_at = first_start_at_dt.isoformat()
-                lock_at = (first_start_at_dt - timedelta(hours=1)).isoformat()
+                lock_at = first_start_at_dt.isoformat()
             else:
                 date_candidates = [fx["fixture_date"] for fx in group if isinstance(fx.get("fixture_date"), date)]
                 if date_candidates:
@@ -469,7 +512,9 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
                     lock_at = first_start_at
                 else:
                     first_start_at = ""
-                    lock_at = ""
+                    lock_at = None
+
+            block_lock_store = lock_at if lock_at is not None else ""
 
             conn.execute(
                 """
@@ -480,7 +525,7 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
                 (
                     block_number,
                     first_start_at,
-                    lock_at,
+                    block_lock_store,
                     now_iso,
                 ),
             )

@@ -110,6 +110,25 @@ def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
         return str(dt_val)
 
 
+def _parse_iso_datetime(dt_val: str | None) -> datetime | None:
+    if dt_val is None:
+        return None
+    s = str(dt_val).strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("Europe/London"))
+    else:
+        dt = dt.astimezone(ZoneInfo("Europe/London"))
+    return dt
+
+
 def _is_active_value(v) -> bool:
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return False
@@ -202,6 +221,8 @@ current_block_row = next(
     None,
 )
 lock_at = current_block_row.get("lock_at") if current_block_row else None
+override_state = current_block_row.get("override_state") if current_block_row else None
+override_until = current_block_row.get("override_until") if current_block_row else None
 
 st.subheader(f"Current Block: {current_block}")
 
@@ -233,11 +254,18 @@ else:
 
 lock_at_fmt = _format_dt_dd_mmm_hhmm(lock_at)
 st.write(f"**Lock time:** {lock_at_fmt}")
-st.write(f"**Selections:** {state}")
-
-is_locked = state == "LOCKED"
+lock_at_dt = _parse_iso_datetime(lock_at)
+override_until_dt = _parse_iso_datetime(override_until)
+override_open_active = (
+    override_state == "OPEN" and (override_until_dt is None or now_london < override_until_dt)
+)
+locked_by_time = (lock_at_dt is not None) and (now_london >= lock_at_dt)
+locked_by_status = state == "LOCKED"
+is_locked = False if override_open_active else (locked_by_status or locked_by_time)
 is_scored = state == "SCORED"
 is_not_open = state == "NOT_OPEN"
+state_display = "SCORED" if is_scored else ("LOCKED" if is_locked else state)
+st.write(f"**Selections:** {state_display}")
 
 not_open_blocks_interaction = False
 if is_not_open:
