@@ -524,7 +524,7 @@ editing = bool(st.session_state.get(editing_key))
 
 st.markdown("---")
 tab_rules, tab_team, tab_results, tab_leaderboard = st.tabs(
-    ["Fantasy Rules", "Team selector", "Results", "Leaderboard"]
+    ["Fantasy Rules", "Team selector", "Results", "Leaderboards"]
 )
 with tab_team:
     st.subheader("Team selector")
