@@ -24,6 +24,7 @@ class ExcelLoadResult:
     history_A_25_26: Optional[pd.DataFrame] = None
     history_B_24_25: Optional[pd.DataFrame] = None
     combined_stats: Optional[pd.DataFrame] = None
+    top_performers: Optional[pd.DataFrame] = None
 
 
 def _read_named_table(
@@ -101,6 +102,42 @@ def _read_named_table_any_sheet(
     raise ValueError(f"Table '{table_name}' not found in any worksheet.")
 
 
+def _read_defined_name_range(wb, defined_name: str) -> pd.DataFrame:
+    """
+    Read an Excel defined name range and return a raw grid DataFrame.
+    Keeps blank rows/columns so sheet structure is preserved for custom renderers.
+    """
+    try:
+        dn = wb.defined_names[defined_name]
+    except Exception as e:
+        raise ValueError(f"Defined name '{defined_name}' not found.") from e
+
+    destinations = list(dn.destinations)
+    if not destinations:
+        raise ValueError(f"Defined name '{defined_name}' has no destinations.")
+
+    sheet_name, coord = destinations[0]
+    if sheet_name not in wb.sheetnames:
+        raise ValueError(
+            f"Defined name '{defined_name}' points to missing sheet '{sheet_name}'."
+        )
+
+    ws = wb[sheet_name]
+    cell_range = ws[coord]
+
+    if not isinstance(cell_range, tuple):
+        return pd.DataFrame([[cell_range.value]])
+
+    rows: List[List[object]] = []
+    for row in cell_range:
+        if isinstance(row, tuple):
+            rows.append([cell.value for cell in row])
+        else:
+            rows.append([row.value])
+
+    return pd.DataFrame(rows)
+
+
 def load_named_table_from_bytes(
     xlsm_bytes: bytes,
     table_name: str,
@@ -144,6 +181,7 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     history_A_25_26 = None
     history_B_24_25 = None
     combined_stats = None
+    top_performers = None
 
     # League table (pre-calculated in Excel)
     try:
@@ -194,6 +232,11 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
     except Exception:
         combined_stats = None
 
+    try:
+        top_performers = _read_defined_name_range(wb, "Top_Performers")
+    except Exception:
+        top_performers = None
+
     return ExcelLoadResult(
         fixture_results=fixture_results,
         league_table=league_table,
@@ -203,6 +246,7 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
         history_A_25_26=history_A_25_26,
         history_B_24_25=history_B_24_25,
         combined_stats=combined_stats,
+        top_performers=top_performers,
     )
 
 
