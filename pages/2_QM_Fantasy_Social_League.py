@@ -991,6 +991,17 @@ with tab_results:
     else:
         st.markdown(f"**Your rank:** - of {total_users}")
     st.markdown(f"**Blocks played:** {blocks_played}")
+    if history:
+        hist_rows = [
+            {"Block": int(h.get("block_number")), "Points": float(h.get("points_total") or 0.0)}
+            for h in history
+        ]
+        st.markdown("### Block-by-block History")
+        st.dataframe(
+            pd.DataFrame(hist_rows),
+            width="stretch",
+            hide_index=True,
+        )
     st.markdown("---")
 
     latest_block = get_latest_scored_block_number()
@@ -1211,19 +1222,6 @@ with tab_leaderboard:
             width="stretch",
             hide_index=True,
         )
-
-        history = get_user_block_points_history(int(user_id))
-        if history:
-            hist_rows = [
-                {"Block": int(h.get("block_number")), "Points": float(h.get("points_total") or 0.0)}
-                for h in history
-            ]
-            st.markdown("### Block-by-block History")
-            st.dataframe(
-                pd.DataFrame(hist_rows),
-                width="stretch",
-                hide_index=True,
-            )
     st.markdown("---")
     st.subheader("Block Leaderboards")
 
