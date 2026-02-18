@@ -1295,13 +1295,6 @@ with tab_leaderboard:
         key="fantasy_player_leaderboard_block_select",
     )
 
-    search_player = st.text_input(
-        "Search player",
-        value="",
-        key="fantasy_player_leaderboard_search",
-        placeholder="Type a player name...",
-    ).strip().lower()
-
     if not scored_player_blocks:
         st.info("No scored fantasy blocks yet.")
     else:
@@ -1328,10 +1321,15 @@ with tab_leaderboard:
                 )
 
             df_player_lb = pd.DataFrame(rows)
-            if search_player:
-                df_player_lb = df_player_lb[
-                    df_player_lb["Player"].astype(str).str.lower().str.contains(search_player, na=False)
-                ]
+            player_options = sorted(df_player_lb["Player"].astype(str).dropna().unique().tolist())
+            selected_players = st.multiselect(
+                "Players",
+                options=player_options,
+                default=[],
+                key="fantasy_player_leaderboard_players_select",
+            )
+            if selected_players:
+                df_player_lb = df_player_lb[df_player_lb["Player"].isin(selected_players)]
             if not df_player_lb.empty:
                 df_player_lb["Season total fantasy points"] = pd.to_numeric(
                     df_player_lb["Season total fantasy points"], errors="coerce"
@@ -1389,10 +1387,15 @@ with tab_leaderboard:
                 )
 
             df_player_lb = pd.DataFrame(rows)
-            if search_player:
-                df_player_lb = df_player_lb[
-                    df_player_lb["Player"].astype(str).str.lower().str.contains(search_player, na=False)
-                ]
+            player_options = sorted(df_player_lb["Player"].astype(str).dropna().unique().tolist())
+            selected_players = st.multiselect(
+                "Players",
+                options=player_options,
+                default=[],
+                key="fantasy_player_leaderboard_players_select",
+            )
+            if selected_players:
+                df_player_lb = df_player_lb[df_player_lb["Player"].isin(selected_players)]
             if not df_player_lb.empty:
                 df_player_lb["All-time average fantasy points"] = pd.to_numeric(
                     df_player_lb["All-time average fantasy points"], errors="coerce"
