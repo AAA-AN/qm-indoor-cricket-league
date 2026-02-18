@@ -358,8 +358,9 @@ with tab_users:
 
     df = pd.DataFrame(users)
     df_display = df.copy()
-    if "user_id" not in df_display.columns and "id" in df_display.columns:
-        df_display = df_display.rename(columns={"id": "user_id"})
+    if "user_id" not in df_display.columns:
+        st.error("Users data is missing 'user_id'.")
+        st.stop()
     df_display["is_active"] = df_display["is_active"].map({1: "Active", 0: "Disabled"})
 
     # NEW: format last_login_at for display as "16 Jan 2026 19:45"
@@ -432,7 +433,7 @@ with tab_users:
 
         suffix = ""
         if label_counts[base_label] > 1:
-            suffix = _safe_str(row.get("id")) or _safe_str(row.get("user_id")) or _safe_str(row.get("created_at"))
+            suffix = _safe_str(row.get("user_id")) or _safe_str(row.get("created_at"))
             if suffix:
                 suffix = f" [{suffix}]"
             else:

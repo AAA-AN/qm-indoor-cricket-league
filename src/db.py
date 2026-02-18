@@ -1735,7 +1735,7 @@ def list_users() -> List[Dict[str, Any]]:
                 must_reset_password,
                 last_login_at
             FROM users
-            ORDER BY created_at ASC, user_id ASC;
+            ORDER BY user_id ASC;
             """
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1944,7 +1944,7 @@ def export_users_backup_payload() -> Dict[str, Any]:
                 must_reset_password,
                 last_login_at
             FROM users
-            ORDER BY created_at ASC, user_id ASC;
+            ORDER BY user_id ASC;
             """
         ).fetchall()
         users = []
@@ -1953,7 +1953,7 @@ def export_users_backup_payload() -> Dict[str, Any]:
             if "user_id" not in row and "id" in row:
                 row["user_id"] = row.get("id")
             users.append(row)
-        return {"version": 2, "users": users}
+        return {"version": 3, "users": users}
     finally:
         conn.close()
 
@@ -2101,6 +2101,10 @@ def restore_users_from_backup_payload(
 
     Returns number of users inserted.
     """
+    payload_version = int(payload.get("version") or 0)
+    if payload_version not in (2, 3):
+        raise ValueError("Invalid backup payload version: expected 2 or 3.")
+
     users = payload.get("users") or []
     if not isinstance(users, list):
         raise ValueError("Invalid backup payload: users must be a list.")
@@ -2150,25 +2154,45 @@ def restore_users_from_backup_payload(
             elif force_reset:
                 must_reset_password = 1
 
-            cur = conn.execute(
-                """
-                INSERT OR IGNORE INTO users
-                    (user_id, first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password, last_login_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    user_id,
-                    first_name or " ",
-                    last_name or " ",
-                    username,
-                    password_hash,
-                    role,
-                    is_active,
-                    created_at,
-                    must_reset_password,
-                    last_login_at,
-                ),
-            )
+            if user_id is None:
+                cur = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO users
+                        (first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password, last_login_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        first_name or " ",
+                        last_name or " ",
+                        username,
+                        password_hash,
+                        role,
+                        is_active,
+                        created_at,
+                        must_reset_password,
+                        last_login_at,
+                    ),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO users
+                        (user_id, first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password, last_login_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        user_id,
+                        first_name or " ",
+                        last_name or " ",
+                        username,
+                        password_hash,
+                        role,
+                        is_active,
+                        created_at,
+                        must_reset_password,
+                        last_login_at,
+                    ),
+                )
             if cur.rowcount == 1:
                 inserted += 1
                 if user_id is not None:
@@ -2181,23 +2205,14 @@ def restore_users_from_backup_payload(
                     "SELECT COALESCE(MAX(user_id), 0) AS max_id FROM users;"
                 ).fetchone()["max_id"]
             )
-            has_seq = conn.execute(
-                "SELECT 1 FROM sqlite_sequence WHERE name = 'users';"
-            ).fetchone()
-            if has_seq:
-                conn.execute(
-                    """
-                    UPDATE sqlite_sequence
-                    SET seq = ?
-                    WHERE name = 'users';
-                    """,
-                    (max_id,),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO sqlite_sequence(name, seq) VALUES ('users', ?);",
-                    (max_id,),
-                )
+            conn.execute(
+                """
+                UPDATE sqlite_sequence
+                SET seq = ?
+                WHERE name = 'users';
+                """,
+                (max_id,),
+            )
         except sqlite3.OperationalError:
             # sqlite_sequence may not exist in edge cases; safe to ignore.
             pass
