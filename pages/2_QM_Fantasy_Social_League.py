@@ -35,7 +35,6 @@ from src.db import (
     get_user_block_points_history,
     list_scored_blocks,
     list_scored_fantasy_blocks,
-    get_player_all_time_avg_fantasy_points,
     get_player_block_fantasy_points,
     get_player_season_totals_and_avg,
     export_fantasy_backup_payload,
@@ -143,6 +142,39 @@ def _filter_valid_player_rows_for_pricing(df: pd.DataFrame | None) -> pd.DataFra
     if not (pid_col or name_col):
         return out
     return out[~invalid_mask].copy()
+
+
+def _combined_stats_all_time_avg_by_player_id(combined_stats_df: pd.DataFrame | None) -> dict[str, float]:
+    if combined_stats_df is None or combined_stats_df.empty:
+        return {}
+
+    df = combined_stats_df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+
+    pid_col = _find_col(df, ["PlayerID", "Player Id", "Player ID"])
+    avg_col = _find_col(
+        df,
+        [
+            "Average Fantasy Points",
+            "Avg Fantasy Points",
+            "Ave Fantasy Points",
+            "Average Fantasy Points per Match",
+            "Average Points Per Match",
+            "Avg Points Per Match",
+            "Ave Points Per Match",
+        ],
+    )
+    if not pid_col or not avg_col:
+        return {}
+
+    out = df[[pid_col, avg_col]].copy()
+    out[pid_col] = out[pid_col].astype(str).str.strip()
+    out = out[out[pid_col] != ""]
+    out[avg_col] = pd.to_numeric(out[avg_col], errors="coerce")
+    out = out.dropna(subset=[avg_col])
+    if out.empty:
+        return {}
+    return out.groupby(pid_col, as_index=True)[avg_col].mean().astype(float).to_dict()
 
 
 def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
@@ -1298,7 +1330,7 @@ with tab_leaderboard:
     if not scored_player_blocks:
         st.info("No scored fantasy blocks yet.")
     else:
-        all_time_avg = get_player_all_time_avg_fantasy_points()
+        all_time_avg = _combined_stats_all_time_avg_by_player_id(getattr(data, "combined_stats", None))
         player_pool: set[str] = set([str(pid) for pid in player_ids if str(pid).strip()])
         player_pool.update([str(pid) for pid in all_time_avg.keys() if str(pid).strip()])
 
