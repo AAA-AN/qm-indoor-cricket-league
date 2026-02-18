@@ -971,6 +971,28 @@ with tab_team:
 with tab_results:
     st.subheader("Results")
 
+    season_rows = get_season_user_totals()
+    history = get_user_block_points_history(int(user_id))
+    blocks_played = len(history)
+    total_users = len(season_rows)
+
+    user_rank = None
+    user_total = 0.0
+    for idx, r in enumerate(season_rows, start=1):
+        if int(r.get("user_id") or 0) == int(user_id):
+            user_rank = idx
+            user_total = float(r.get("total_points") or 0.0)
+            break
+
+    st.markdown("### My Season Summary")
+    st.markdown(f"**Your total:** {user_total:.1f}")
+    if user_rank is not None:
+        st.markdown(f"**Your rank:** {user_rank} of {total_users}")
+    else:
+        st.markdown(f"**Your rank:** - of {total_users}")
+    st.markdown(f"**Blocks played:** {blocks_played}")
+    st.markdown("---")
+
     latest_block = get_latest_scored_block_number()
     if latest_block is None:
         st.info("No results yet.")
@@ -1190,26 +1212,7 @@ with tab_leaderboard:
             hide_index=True,
         )
 
-        user_rank = None
-        user_total = 0.0
-        for idx, r in enumerate(season_rows, start=1):
-            if int(r.get("user_id") or 0) == int(user_id):
-                user_rank = idx
-                user_total = float(r.get("total_points") or 0.0)
-                break
-
         history = get_user_block_points_history(int(user_id))
-        blocks_played = len(history)
-        total_users = len(season_rows)
-
-        st.markdown("### My Season Summary")
-        st.markdown(f"**Your total:** {user_total:.1f}")
-        if user_rank is not None:
-            st.markdown(f"**Your rank:** {user_rank} of {total_users}")
-        else:
-            st.markdown(f"**Your rank:** - of {total_users}")
-        st.markdown(f"**Blocks played:** {blocks_played}")
-
         if history:
             hist_rows = [
                 {"Block": int(h.get("block_number")), "Points": float(h.get("points_total") or 0.0)}
