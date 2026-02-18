@@ -14,11 +14,7 @@ from src.guard import (
     render_logout_button,
 )
 from src.dropbox_api import get_access_token, download_file, upload_file, ensure_folder
-from src.excel_io import (
-    load_league_workbook_from_bytes,
-    load_week_stats_tables_from_bytes,
-    extract_week_fantasy_points_rows,
-)
+from src.excel_io import load_league_workbook_from_bytes
 from src.db import (
     rebuild_blocks_from_fixtures_if_missing,
     get_current_block_number,
@@ -38,6 +34,10 @@ from src.db import (
     get_season_user_totals,
     get_user_block_points_history,
     list_scored_blocks,
+    list_scored_fantasy_blocks,
+    get_player_all_time_avg_fantasy_points,
+    get_player_block_fantasy_points,
+    get_player_season_totals_and_avg,
     export_fantasy_backup_payload,
     restore_fantasy_from_backup_payload,
     fantasy_has_state,
@@ -67,7 +67,7 @@ def _get_secret(name: str) -> str:
 def _load_from_dropbox(app_key: str, app_secret: str, refresh_token: str, dropbox_path: str):
     access_token = get_access_token(app_key, app_secret, refresh_token)
     xbytes = download_file(access_token, dropbox_path)
-    return xbytes, load_league_workbook_from_bytes(xbytes)
+    return load_league_workbook_from_bytes(xbytes)
 
 
 def _fantasy_points_breakdown_df() -> pd.DataFrame:
@@ -143,74 +143,6 @@ def _filter_valid_player_rows_for_pricing(df: pd.DataFrame | None) -> pd.DataFra
     if not (pid_col or name_col):
         return out
     return out[~invalid_mask].copy()
-
-
-def _first_non_empty_str(series: pd.Series) -> str:
-    for v in series:
-        if pd.isna(v):
-            continue
-        s = str(v).strip()
-        if s:
-            return s
-    return ""
-
-
-@st.cache_data(ttl=60, show_spinner=False)
-def _build_player_fantasy_leaderboard_data(
-    workbook_bytes: bytes,
-    max_block: int = 10,
-) -> dict:
-    weeks = list(range(1, int(max_block) + 1))
-    week_tables = load_week_stats_tables_from_bytes(workbook_bytes, weeks=weeks, drop_empty_columns=True)
-
-    player_meta: dict[str, dict[str, str]] = {}
-    all_players: set[str] = set()
-    block_points: dict[int, dict[str, float]] = {w: {} for w in weeks}
-    block_played: dict[int, set[str]] = {w: set() for w in weeks}
-    all_time_total: dict[str, float] = {}
-    all_time_weeks_played: dict[str, int] = {}
-
-    for week in weeks:
-        week_df = week_tables.get(week)
-        if week_df is None or week_df.empty:
-            continue
-
-        table_name = f"Week{week}Stats"
-        week_rows = extract_week_fantasy_points_rows(week_df, week_table_name=table_name)
-        if week_rows.empty:
-            continue
-
-        grouped = week_rows.groupby("player_key", dropna=False, sort=False)
-        for key_raw, g in grouped:
-            key = str(key_raw).strip()
-            if not key:
-                continue
-
-            all_players.add(key)
-            block_played[week].add(key)
-
-            player_id = _first_non_empty_str(g["player_id"])
-            player_name = _first_non_empty_str(g["player_name"])
-            existing = player_meta.get(key, {})
-            player_meta[key] = {
-                "player_id": existing.get("player_id") or player_id,
-                "player_name": existing.get("player_name") or player_name,
-            }
-
-            points = float(pd.to_numeric(g["fantasy_points"], errors="coerce").fillna(0.0).sum())
-            block_points[week][key] = points
-            all_time_total[key] = all_time_total.get(key, 0.0) + points
-            all_time_weeks_played[key] = all_time_weeks_played.get(key, 0) + 1
-
-    return {
-        "weeks": weeks,
-        "all_players": sorted(all_players),
-        "player_meta": player_meta,
-        "block_points": block_points,
-        "block_played": {w: sorted(list(v)) for w, v in block_played.items()},
-        "all_time_total": all_time_total,
-        "all_time_weeks_played": all_time_weeks_played,
-    }
 
 
 def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
@@ -315,9 +247,7 @@ if not st.session_state.get("fantasy_restore_attempted"):
 
 with st.spinner("Loading latest league workbook from Dropbox..."):
     try:
-        workbook_bytes, data = _load_from_dropbox(
-            app_key, app_secret, refresh_token, dropbox_path
-        )
+        data = _load_from_dropbox(app_key, app_secret, refresh_token, dropbox_path)
     except Exception as e:
         st.error(f"Failed to load workbook from Dropbox: {e}")
         st.stop()
@@ -561,8 +491,8 @@ st.session_state[last_block_key] = int(current_block)
 editing = bool(st.session_state.get(editing_key))
 
 st.markdown("---")
-tab_rules, tab_team, tab_results, tab_player_fantasy_lb, tab_leaderboard = st.tabs(
-    ["Fantasy Rules", "Team selector", "Results", "Player Fantasy Leaderboard", "Leaderboard"]
+tab_rules, tab_team, tab_results, tab_leaderboard = st.tabs(
+    ["Fantasy Rules", "Team selector", "Results", "Leaderboard"]
 )
 with tab_team:
     st.subheader("Team selector")
@@ -1264,125 +1194,6 @@ with tab_results:
                 hide_index=True,
             )
 
-with tab_player_fantasy_lb:
-    st.subheader("Player Fantasy Leaderboard")
-
-    block_options = ["All Blocks"] + [f"Block {n}" for n in range(1, 11)]
-    selected_block_option = st.selectbox(
-        "Block",
-        options=block_options,
-        index=0,
-        key="fantasy_player_leaderboard_block_select",
-    )
-
-    try:
-        fantasy_lb_data = _build_player_fantasy_leaderboard_data(
-            workbook_bytes=workbook_bytes,
-            max_block=10,
-        )
-    except ValueError as err:
-        st.error(str(err))
-        fantasy_lb_data = None
-
-    if fantasy_lb_data is not None:
-        all_players = fantasy_lb_data.get("all_players", [])
-        player_meta = fantasy_lb_data.get("player_meta", {})
-        block_points = fantasy_lb_data.get("block_points", {})
-        block_played = {
-            int(w): set(players)
-            for w, players in fantasy_lb_data.get("block_played", {}).items()
-        }
-        all_time_total = fantasy_lb_data.get("all_time_total", {})
-        all_time_weeks_played = fantasy_lb_data.get("all_time_weeks_played", {})
-
-        if not all_players:
-            st.info("No Week1Stats..Week10Stats player rows found yet.")
-        else:
-            if selected_block_option == "All Blocks":
-                rows = []
-                for player_key in all_players:
-                    meta = player_meta.get(player_key, {})
-                    player_id = str(meta.get("player_id") or "").strip()
-                    player_name = str(meta.get("player_name") or "").strip()
-                    player_display = player_name or player_id or player_key
-
-                    season_total = 0.0
-                    season_weeks_played = 0
-                    for week in range(1, 11):
-                        season_total += float(block_points.get(week, {}).get(player_key, 0.0))
-                        if player_key in block_played.get(week, set()):
-                            season_weeks_played += 1
-
-                    season_avg = season_total / season_weeks_played if season_weeks_played > 0 else 0.0
-
-                    total_all_time = float(all_time_total.get(player_key, 0.0))
-                    weeks_all_time = int(all_time_weeks_played.get(player_key, 0))
-                    all_time_avg = total_all_time / weeks_all_time if weeks_all_time > 0 else 0.0
-
-                    rows.append(
-                        {
-                            "Player": player_display,
-                            "PlayerID": player_id,
-                            "Season total points": season_total,
-                            "Season average": season_avg,
-                            "All-time average fantasy points": all_time_avg,
-                        }
-                    )
-
-                df_lb = pd.DataFrame(rows)
-                if not df_lb.empty:
-                    numeric_cols = [
-                        "Season total points",
-                        "Season average",
-                        "All-time average fantasy points",
-                    ]
-                    for col in numeric_cols:
-                        df_lb[col] = pd.to_numeric(df_lb[col], errors="coerce").fillna(0.0).round(2)
-                    df_lb = df_lb.sort_values(
-                        by="Season total points",
-                        ascending=False,
-                        kind="mergesort",
-                    )
-                st.dataframe(df_lb, use_container_width=True, hide_index=True)
-            else:
-                block_number = int(selected_block_option.replace("Block ", "").strip())
-                block_points_map = block_points.get(block_number, {})
-
-                rows = []
-                for player_key in all_players:
-                    meta = player_meta.get(player_key, {})
-                    player_id = str(meta.get("player_id") or "").strip()
-                    player_name = str(meta.get("player_name") or "").strip()
-                    player_display = player_name or player_id or player_key
-
-                    total_all_time = float(all_time_total.get(player_key, 0.0))
-                    weeks_all_time = int(all_time_weeks_played.get(player_key, 0))
-                    all_time_avg = total_all_time / weeks_all_time if weeks_all_time > 0 else 0.0
-
-                    rows.append(
-                        {
-                            "Player": player_display,
-                            "PlayerID": player_id,
-                            "All-time average fantasy points": all_time_avg,
-                            f"Points in Block {block_number}": float(
-                                block_points_map.get(player_key, 0.0)
-                            ),
-                        }
-                    )
-
-                df_lb = pd.DataFrame(rows)
-                points_col = f"Points in Block {block_number}"
-                if not df_lb.empty:
-                    numeric_cols = [points_col, "All-time average fantasy points"]
-                    for col in numeric_cols:
-                        df_lb[col] = pd.to_numeric(df_lb[col], errors="coerce").fillna(0.0).round(2)
-                    df_lb = df_lb.sort_values(
-                        by=points_col,
-                        ascending=False,
-                        kind="mergesort",
-                    )
-                st.dataframe(df_lb, use_container_width=True, hide_index=True)
-
 with tab_leaderboard:
     st.subheader("Season")
 
@@ -1471,6 +1282,141 @@ with tab_leaderboard:
                     width="stretch",
                     hide_index=True,
                 )
+
+    st.markdown("---")
+    st.subheader("Player Fantasy Leaderboard")
+
+    scored_player_blocks = list_scored_fantasy_blocks()
+    block_options = ["All blocks"] + [f"Block {b}" for b in scored_player_blocks]
+    selected_player_block = st.selectbox(
+        "Block",
+        options=block_options,
+        index=0,
+        key="fantasy_player_leaderboard_block_select",
+    )
+
+    search_player = st.text_input(
+        "Search player",
+        value="",
+        key="fantasy_player_leaderboard_search",
+        placeholder="Type a player name...",
+    ).strip().lower()
+
+    if not scored_player_blocks:
+        st.info("No scored fantasy blocks yet.")
+    else:
+        all_time_avg = get_player_all_time_avg_fantasy_points()
+        player_pool: set[str] = set([str(pid) for pid in player_ids if str(pid).strip()])
+        player_pool.update([str(pid) for pid in all_time_avg.keys() if str(pid).strip()])
+
+        if selected_player_block == "All blocks":
+            season_metrics = get_player_season_totals_and_avg(scored_player_blocks)
+            player_pool.update([str(pid) for pid in season_metrics.keys() if str(pid).strip()])
+
+            rows = []
+            for pid in sorted(player_pool):
+                name = player_name_by_id.get(pid, pid)
+                metrics = season_metrics.get(pid, {})
+                rows.append(
+                    {
+                        "Player": name,
+                        "PlayerID": pid,
+                        "Season total fantasy points": float(metrics.get("season_total") or 0.0),
+                        "Season average fantasy points": float(metrics.get("season_avg") or 0.0),
+                        "All-time average fantasy points": float(all_time_avg.get(pid) or 0.0),
+                    }
+                )
+
+            df_player_lb = pd.DataFrame(rows)
+            if search_player:
+                df_player_lb = df_player_lb[
+                    df_player_lb["Player"].astype(str).str.lower().str.contains(search_player, na=False)
+                ]
+            if not df_player_lb.empty:
+                df_player_lb["Season total fantasy points"] = pd.to_numeric(
+                    df_player_lb["Season total fantasy points"], errors="coerce"
+                ).fillna(0.0).round(1)
+                df_player_lb["Season average fantasy points"] = pd.to_numeric(
+                    df_player_lb["Season average fantasy points"], errors="coerce"
+                ).fillna(0.0).round(2)
+                df_player_lb["All-time average fantasy points"] = pd.to_numeric(
+                    df_player_lb["All-time average fantasy points"], errors="coerce"
+                ).fillna(0.0).round(2)
+                df_player_lb = df_player_lb.sort_values(
+                    by="Season total fantasy points",
+                    ascending=False,
+                    kind="mergesort",
+                )
+
+            all_block_columns = [
+                "Player",
+                "PlayerID",
+                "Season total fantasy points",
+                "Season average fantasy points",
+                "All-time average fantasy points",
+            ]
+            selected_columns = st.multiselect(
+                "Columns",
+                options=all_block_columns,
+                default=[
+                    "Player",
+                    "Season total fantasy points",
+                    "Season average fantasy points",
+                    "All-time average fantasy points",
+                ],
+                key="fantasy_player_lb_cols_all_blocks",
+            )
+            if "Player" not in selected_columns:
+                selected_columns = ["Player"] + selected_columns
+            view = df_player_lb[selected_columns] if selected_columns else df_player_lb
+            st.dataframe(view, use_container_width=True, hide_index=True)
+        else:
+            selected_block_num = int(selected_player_block.replace("Block ", "").strip())
+            block_points = get_player_block_fantasy_points(selected_block_num)
+            player_pool.update([str(pid) for pid in block_points.keys() if str(pid).strip()])
+            points_col = f"Points scored in Block {selected_block_num}"
+
+            rows = []
+            for pid in sorted(player_pool):
+                name = player_name_by_id.get(pid, pid)
+                rows.append(
+                    {
+                        "Player": name,
+                        "PlayerID": pid,
+                        "All-time average fantasy points": float(all_time_avg.get(pid) or 0.0),
+                        points_col: float(block_points.get(pid) or 0.0),
+                    }
+                )
+
+            df_player_lb = pd.DataFrame(rows)
+            if search_player:
+                df_player_lb = df_player_lb[
+                    df_player_lb["Player"].astype(str).str.lower().str.contains(search_player, na=False)
+                ]
+            if not df_player_lb.empty:
+                df_player_lb["All-time average fantasy points"] = pd.to_numeric(
+                    df_player_lb["All-time average fantasy points"], errors="coerce"
+                ).fillna(0.0).round(2)
+                df_player_lb[points_col] = pd.to_numeric(
+                    df_player_lb[points_col], errors="coerce"
+                ).fillna(0.0).round(1)
+                df_player_lb = df_player_lb.sort_values(
+                    by=points_col,
+                    ascending=False,
+                    kind="mergesort",
+                )
+
+            block_columns = ["Player", "PlayerID", "All-time average fantasy points", points_col]
+            selected_columns = st.multiselect(
+                "Columns",
+                options=block_columns,
+                default=["Player", "All-time average fantasy points", points_col],
+                key=f"fantasy_player_lb_cols_block_{selected_block_num}",
+            )
+            if "Player" not in selected_columns:
+                selected_columns = ["Player"] + selected_columns
+            view = df_player_lb[selected_columns] if selected_columns else df_player_lb
+            st.dataframe(view, use_container_width=True, hide_index=True)
 
 with tab_rules:
     st.markdown("## Fantasy Rules")

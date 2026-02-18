@@ -851,6 +851,103 @@ def list_scored_blocks() -> List[int]:
         conn.close()
 
 
+def list_scored_fantasy_blocks() -> List[int]:
+    """
+    Return fantasy block numbers that have been scored.
+    Uses the same scored_at gating as existing block leaderboards.
+    """
+    return list_scored_blocks()
+
+
+def get_player_block_fantasy_points(block_number: int) -> Dict[str, float]:
+    """
+    Return player fantasy points for a scored block.
+    If the block is not scored (or has no points), returns an empty dict.
+    """
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT p.player_id, SUM(p.points) AS points_total
+            FROM fantasy_block_player_points p
+            JOIN fantasy_blocks b ON b.block_number = p.block_number
+            WHERE p.block_number = ? AND b.scored_at IS NOT NULL
+            GROUP BY p.player_id
+            ORDER BY p.player_id ASC;
+            """,
+            (int(block_number),),
+        ).fetchall()
+        return {str(r["player_id"]): float(r["points_total"] or 0.0) for r in rows}
+    finally:
+        conn.close()
+
+
+def get_player_all_time_avg_fantasy_points() -> Dict[str, float]:
+    """
+    Return each player's all-time average fantasy points across scored blocks
+    where that player has a recorded block points row.
+    """
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT p.player_id, AVG(p.points) AS avg_points
+            FROM fantasy_block_player_points p
+            JOIN fantasy_blocks b ON b.block_number = p.block_number
+            WHERE b.scored_at IS NOT NULL
+            GROUP BY p.player_id
+            ORDER BY p.player_id ASC;
+            """
+        ).fetchall()
+        return {str(r["player_id"]): float(r["avg_points"] or 0.0) for r in rows}
+    finally:
+        conn.close()
+
+
+def get_player_season_totals_and_avg(scored_blocks: List[int]) -> Dict[str, Dict[str, float]]:
+    """
+    Return season totals and averages for players across the provided scored blocks.
+    season_avg is calculated as:
+      season_total / number_of_scored_blocks_where_player_has_data
+    """
+    blocks = [int(b) for b in (scored_blocks or [])]
+    if not blocks:
+        return {}
+
+    ensure_fantasy_scoring_tables_exist()
+    conn = get_conn()
+    try:
+        placeholders = ",".join(["?"] * len(blocks))
+        rows = conn.execute(
+            f"""
+            SELECT
+                p.player_id,
+                SUM(p.points) AS season_total,
+                COUNT(DISTINCT p.block_number) AS blocks_with_data
+            FROM fantasy_block_player_points p
+            JOIN fantasy_blocks b ON b.block_number = p.block_number
+            WHERE b.scored_at IS NOT NULL
+              AND p.block_number IN ({placeholders})
+            GROUP BY p.player_id
+            ORDER BY p.player_id ASC;
+            """,
+            tuple(blocks),
+        ).fetchall()
+
+        out: Dict[str, Dict[str, float]] = {}
+        for r in rows:
+            pid = str(r["player_id"])
+            season_total = float(r["season_total"] or 0.0)
+            blocks_with_data = int(r["blocks_with_data"] or 0)
+            season_avg = season_total / blocks_with_data if blocks_with_data > 0 else 0.0
+            out[pid] = {"season_total": season_total, "season_avg": season_avg}
+        return out
+    finally:
+        conn.close()
+
+
 def get_season_user_totals() -> List[Dict[str, Any]]:
     ensure_fantasy_scoring_tables_exist()
     conn = get_conn()
