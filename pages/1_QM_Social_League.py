@@ -877,7 +877,6 @@ st.markdown(
 # TAB: TOP PERFORMERS
 # ============================
 if selected_tab == "Top Performers":
-    st.subheader("Top Performers")
 
     df_raw = getattr(data, "top_performers", None)
     if df_raw is None or df_raw.empty:
