@@ -1393,7 +1393,7 @@ with tab_leaderboard:
                 ],
                 key="fantasy_player_lb_cols_all_blocks",
             )
-            view = df_player_lb[["Player", "PlayerID"] + selected_columns]
+            view = df_player_lb[["Player"] + selected_columns]
             st.dataframe(view, use_container_width=True, hide_index=True)
         else:
             selected_block_num = int(selected_player_block.replace("Block ", "").strip())
@@ -1443,7 +1443,7 @@ with tab_leaderboard:
                 default=["All-time average fantasy points", points_col],
                 key=f"fantasy_player_lb_cols_block_{selected_block_num}",
             )
-            view = df_player_lb[["Player", "PlayerID"] + selected_columns]
+            view = df_player_lb[["Player"] + selected_columns]
             st.dataframe(view, use_container_width=True, hide_index=True)
 
 with tab_rules:
