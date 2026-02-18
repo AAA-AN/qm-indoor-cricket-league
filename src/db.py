@@ -1932,12 +1932,27 @@ def export_users_backup_payload() -> Dict[str, Any]:
     try:
         rows = conn.execute(
             """
-            SELECT first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password, last_login_at
+            SELECT
+                user_id,
+                first_name,
+                last_name,
+                username,
+                password_hash,
+                role,
+                is_active,
+                created_at,
+                must_reset_password,
+                last_login_at
             FROM users
             ORDER BY created_at ASC, user_id ASC;
             """
         ).fetchall()
-        users = [dict(r) for r in rows]
+        users = []
+        for r in rows:
+            row = dict(r)
+            if "user_id" not in row and "id" in row:
+                row["user_id"] = row.get("id")
+            users.append(row)
         return {"version": 2, "users": users}
     finally:
         conn.close()
@@ -2098,7 +2113,13 @@ def restore_users_from_backup_payload(
             return 0
 
         now_iso = datetime.now(timezone.utc).isoformat()
+        seen_user_ids: set[int] = set()
         for u in users:
+            raw_user_id = u.get("user_id", u.get("id"))
+            try:
+                user_id = int(raw_user_id)
+            except Exception:
+                user_id = None
             first_name = str(u.get("first_name", "")).strip()
             last_name = str(u.get("last_name", "")).strip()
             username = str(u.get("username", "")).strip()
@@ -2110,6 +2131,10 @@ def restore_users_from_backup_payload(
             last_login_at = str(u.get("last_login_at", "")).strip() or None
 
             if not username:
+                continue
+            if user_id is not None and user_id <= 0:
+                user_id = None
+            if user_id is not None and user_id in seen_user_ids:
                 continue
             if role not in ("admin", "player"):
                 role = "player"
@@ -2125,13 +2150,14 @@ def restore_users_from_backup_payload(
             elif force_reset:
                 must_reset_password = 1
 
-            conn.execute(
+            cur = conn.execute(
                 """
-                INSERT INTO users
-                    (first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password, last_login_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                INSERT OR IGNORE INTO users
+                    (user_id, first_name, last_name, username, password_hash, role, is_active, created_at, must_reset_password, last_login_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
+                    user_id,
                     first_name or " ",
                     last_name or " ",
                     username,
@@ -2143,7 +2169,38 @@ def restore_users_from_backup_payload(
                     last_login_at,
                 ),
             )
-            inserted += 1
+            if cur.rowcount == 1:
+                inserted += 1
+                if user_id is not None:
+                    seen_user_ids.add(user_id)
+
+        # Keep AUTOINCREMENT in sync after explicit user_id inserts.
+        try:
+            max_id = int(
+                conn.execute(
+                    "SELECT COALESCE(MAX(user_id), 0) AS max_id FROM users;"
+                ).fetchone()["max_id"]
+            )
+            has_seq = conn.execute(
+                "SELECT 1 FROM sqlite_sequence WHERE name = 'users';"
+            ).fetchone()
+            if has_seq:
+                conn.execute(
+                    """
+                    UPDATE sqlite_sequence
+                    SET seq = ?
+                    WHERE name = 'users';
+                    """,
+                    (max_id,),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO sqlite_sequence(name, seq) VALUES ('users', ?);",
+                    (max_id,),
+                )
+        except sqlite3.OperationalError:
+            # sqlite_sequence may not exist in edge cases; safe to ignore.
+            pass
 
         conn.commit()
         return inserted

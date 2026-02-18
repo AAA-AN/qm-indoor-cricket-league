@@ -358,6 +358,8 @@ with tab_users:
 
     df = pd.DataFrame(users)
     df_display = df.copy()
+    if "user_id" not in df_display.columns and "id" in df_display.columns:
+        df_display = df_display.rename(columns={"id": "user_id"})
     df_display["is_active"] = df_display["is_active"].map({1: "Active", 0: "Disabled"})
 
     # NEW: format last_login_at for display as "16 Jan 2026 19:45"
@@ -373,9 +375,9 @@ with tab_users:
     with st.expander("All users", expanded=False):
         st.dataframe(
             df_display[
-                ["username", "first_name", "last_name", "role", "is_active", "created_at", "last_login_at"]
+                ["user_id", "username", "first_name", "last_name", "role", "is_active", "created_at", "last_login_at"]
             ],
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
 
