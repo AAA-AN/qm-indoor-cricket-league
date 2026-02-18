@@ -1,3 +1,5 @@
+"""QM Fantasy Social League page: team selection, scoring views, and fantasy backups."""
+
 import streamlit as st
 import pandas as pd
 import json

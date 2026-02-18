@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Dropbox API helpers used by the app for workbook, backup, and scorecard I/O.
+
 import json
 import requests
 

@@ -1,3 +1,5 @@
+"""Admin page for user management, scorecards, and fantasy operational controls."""
+
 import streamlit as st
 import pandas as pd
 import posixpath

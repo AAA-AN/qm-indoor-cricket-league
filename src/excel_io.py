@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Workbook loading helpers for tables and defined-name ranges used by Streamlit pages.
+
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Optional, List

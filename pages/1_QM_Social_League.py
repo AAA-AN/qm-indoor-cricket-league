@@ -1,3 +1,5 @@
+"""QM Social League page: fixtures, stats, scorecards, and top performers views."""
+
 from datetime import datetime
 import logging
 from io import BytesIO

@@ -1,3 +1,5 @@
+"""SQLite data layer for users, fantasy state, scoring, and backup/restore helpers."""
+
 import sqlite3
 from datetime import datetime, timezone, date, time, timedelta
 import statistics

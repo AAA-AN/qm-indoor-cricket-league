@@ -1,3 +1,5 @@
+"""Shared Streamlit guard and sidebar helpers for login/admin routing."""
+
 import streamlit as st
 
 from src.db import init_db

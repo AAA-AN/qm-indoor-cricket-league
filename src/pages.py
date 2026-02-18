@@ -1,3 +1,5 @@
+"""Reusable small page fragments used by the home/login flow."""
+
 import streamlit as st
 
 APP_TITLE = "QM Indoor Cricket League"
@@ -48,4 +50,3 @@ def page_fantasy_placeholder():
 def page_admin_placeholder():
     st.title("Admin")
     st.info("Admin tools will be added next (manage users, reset passwords).")
-

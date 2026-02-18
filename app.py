@@ -1,3 +1,5 @@
+"""Main Streamlit entrypoint for authentication and startup restore/backup flows."""
+
 import json
 import posixpath
 import streamlit as st

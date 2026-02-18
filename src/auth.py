@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Authentication helpers for signup, login verification, and password resets.
+
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
