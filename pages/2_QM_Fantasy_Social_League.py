@@ -1379,8 +1379,6 @@ with tab_leaderboard:
                 )
 
             all_block_columns = [
-                "Player",
-                "PlayerID",
                 "Season total fantasy points",
                 "Season average fantasy points",
                 "All-time average fantasy points",
@@ -1389,16 +1387,13 @@ with tab_leaderboard:
                 "Options",
                 options=all_block_columns,
                 default=[
-                    "Player",
                     "Season total fantasy points",
                     "Season average fantasy points",
                     "All-time average fantasy points",
                 ],
                 key="fantasy_player_lb_cols_all_blocks",
             )
-            if "Player" not in selected_columns:
-                selected_columns = ["Player"] + selected_columns
-            view = df_player_lb[selected_columns] if selected_columns else df_player_lb
+            view = df_player_lb[["Player", "PlayerID"] + selected_columns]
             st.dataframe(view, use_container_width=True, hide_index=True)
         else:
             selected_block_num = int(selected_player_block.replace("Block ", "").strip())
@@ -1441,16 +1436,14 @@ with tab_leaderboard:
                     kind="mergesort",
                 )
 
-            block_columns = ["Player", "PlayerID", "All-time average fantasy points", points_col]
+            block_columns = ["All-time average fantasy points", points_col]
             selected_columns = st.multiselect(
                 "Columns",
                 options=block_columns,
-                default=["Player", "All-time average fantasy points", points_col],
+                default=["All-time average fantasy points", points_col],
                 key=f"fantasy_player_lb_cols_block_{selected_block_num}",
             )
-            if "Player" not in selected_columns:
-                selected_columns = ["Player"] + selected_columns
-            view = df_player_lb[selected_columns] if selected_columns else df_player_lb
+            view = df_player_lb[["Player", "PlayerID"] + selected_columns]
             st.dataframe(view, use_container_width=True, hide_index=True)
 
 with tab_rules:
