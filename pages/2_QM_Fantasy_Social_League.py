@@ -1156,26 +1156,6 @@ with tab_results:
                 width="stretch",
                 hide_index=True,
             )
-        st.markdown("### My Season Summary")
-        st.markdown(f"**Your total:** {user_total:.1f}")
-        if user_rank is not None:
-            st.markdown(f"**Your rank:** {user_rank} of {total_users}")
-        else:
-            st.markdown(f"**Your rank:** - of {total_users}")
-        st.markdown(f"**Blocks played:** {blocks_played}")
-
-        if history:
-            hist_rows = [
-                {"Block": int(h.get("block_number")), "Points": float(h.get("points_total") or 0.0)}
-                for h in history
-            ]
-            st.markdown("### Block-by-block History")
-            st.dataframe(
-                pd.DataFrame(hist_rows),
-                width="stretch",
-                hide_index=True,
-            )
-    st.markdown("---")
 
 with tab_leaderboard:
     st.subheader("Season")
