@@ -490,6 +490,8 @@ st.markdown("---")
 tab_rules, tab_team, tab_results, tab_leaderboard = st.tabs(
     ["Fantasy Rules", "Team selector", "Results", "Leaderboard"]
 )
+
+# START TAB: Team selector
 with tab_team:
     st.subheader("Team selector")
 
@@ -968,6 +970,8 @@ with tab_team:
                     except ValueError as e:
                         st.error(str(e))
 
+# END TAB: Team selector
+# START TAB: Results
 with tab_results:
     st.subheader("Results")
 
@@ -1063,7 +1067,27 @@ with tab_results:
 
                 if auto_subs_applied:
                     st.caption("Auto-subs were applied based on DNP starters.")
+    st.markdown("---") 
+    
+    st.markdown("### My Season Summary")
+        st.markdown(f"**Your total:** {user_total:.1f}")
+        if user_rank is not None:
+            st.markdown(f"**Your rank:** {user_rank} of {total_users}")
+        else:
+            st.markdown(f"**Your rank:** - of {total_users}")
+        st.markdown(f"**Blocks played:** {blocks_played}")
 
+        if history:
+            hist_rows = [
+                {"Block": int(h.get("block_number")), "Points": float(h.get("points_total") or 0.0)}
+                for h in history
+            ]
+            st.markdown("### Block-by-block History")
+            st.dataframe(
+                pd.DataFrame(hist_rows),
+                width="stretch",
+                hide_index=True,)
+            
     st.markdown("---")
     st.subheader("My Past Teams")
 
@@ -1157,6 +1181,8 @@ with tab_results:
                 hide_index=True,
             )
 
+# END TAB: Results
+# START TAB: Leaderboard
 with tab_leaderboard:
     st.subheader("Season")
 
@@ -1202,25 +1228,6 @@ with tab_leaderboard:
         blocks_played = len(history)
         total_users = len(season_rows)
 
-        st.markdown("### My Season Summary")
-        st.markdown(f"**Your total:** {user_total:.1f}")
-        if user_rank is not None:
-            st.markdown(f"**Your rank:** {user_rank} of {total_users}")
-        else:
-            st.markdown(f"**Your rank:** - of {total_users}")
-        st.markdown(f"**Blocks played:** {blocks_played}")
-
-        if history:
-            hist_rows = [
-                {"Block": int(h.get("block_number")), "Points": float(h.get("points_total") or 0.0)}
-                for h in history
-            ]
-            st.markdown("### Block-by-block History")
-            st.dataframe(
-                pd.DataFrame(hist_rows),
-                width="stretch",
-                hide_index=True,
-            )
     st.markdown("---")
     st.subheader("Block Leaderboards")
 
@@ -1278,6 +1285,8 @@ with tab_leaderboard:
                     hide_index=True,
                 )
 
+# END TAB: Leaderboard
+# START TAB: Fantasy Rules
 with tab_rules:
     st.markdown("## Fantasy Rules")
     st.markdown(
@@ -1332,3 +1341,4 @@ with tab_rules:
     st.divider()
     st.markdown("### Multipliers")
     st.markdown(_describe_multipliers())
+# END TAB: Fantasy Rules
