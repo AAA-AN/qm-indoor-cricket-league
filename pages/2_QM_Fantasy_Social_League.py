@@ -1386,7 +1386,7 @@ with tab_leaderboard:
                 "All-time average fantasy points",
             ]
             selected_columns = st.multiselect(
-                "Columns",
+                "Options",
                 options=all_block_columns,
                 default=[
                     "Player",
