@@ -317,7 +317,6 @@ def _format_top_performer_value(metric: str, value: str) -> str:
 
 
 def render_top_performers_streamlit(parsed: dict) -> None:
-    st.caption("Automatically pulled from the workbook (Top_Performers).")
     section_names = ["Top Performers", "Top Performers - conditional"]
     available = [s for s in section_names if s in parsed]
     if not available:
@@ -338,8 +337,11 @@ def render_top_performers_streamlit(parsed: dict) -> None:
             if meta_line:
                 st.caption(meta_line)
 
-        tabs = st.tabs(["Batting", "Bowling", "Fielding"])
-        for tab, category in zip(tabs, ["Batting", "Bowling", "Fielding"]):
+        categories = ["Batting", "Bowling", "Fielding"]
+        if section_name == "Top Performers - conditional":
+            categories = ["Batting", "Bowling"]
+        tabs = st.tabs(categories)
+        for tab, category in zip(tabs, categories):
             with tab:
                 rows = section.get(category) or []
                 if not rows:
