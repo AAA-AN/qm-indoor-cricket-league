@@ -204,3 +204,144 @@ def load_league_workbook_from_bytes(xlsm_bytes: bytes) -> ExcelLoadResult:
         history_B_24_25=history_B_24_25,
         combined_stats=combined_stats,
     )
+
+
+def _canonical_col_name(name: str) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def _find_col_by_alias(df: pd.DataFrame, aliases: list[str]) -> str | None:
+    by_canonical = {_canonical_col_name(c): c for c in df.columns}
+    for alias in aliases:
+        match = by_canonical.get(_canonical_col_name(alias))
+        if match:
+            return match
+    return None
+
+
+def load_week_stats_table_from_bytes(
+    xlsm_bytes: bytes,
+    week_number: int,
+    *,
+    drop_empty_columns: bool = True,
+) -> pd.DataFrame | None:
+    """
+    Load a WeekNStats named table (e.g., Week1Stats) from workbook bytes.
+    Returns None when the table is missing.
+    """
+    bio = BytesIO(xlsm_bytes)
+    wb = load_workbook(bio, data_only=True)
+    table_name = f"Week{int(week_number)}Stats"
+    try:
+        df = _read_named_table_any_sheet(
+            wb,
+            table_name=table_name,
+            drop_empty_columns=drop_empty_columns,
+        )
+    except ValueError as err:
+        if "not found in any worksheet" in str(err):
+            return None
+        raise
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+
+def load_week_stats_tables_from_bytes(
+    xlsm_bytes: bytes,
+    weeks: list[int] | None = None,
+    *,
+    drop_empty_columns: bool = True,
+) -> dict[int, pd.DataFrame | None]:
+    """
+    Load WeekNStats tables for multiple weeks in one workbook pass.
+    Missing tables are returned as None.
+    """
+    week_list = weeks if weeks is not None else list(range(1, 11))
+    bio = BytesIO(xlsm_bytes)
+    wb = load_workbook(bio, data_only=True)
+
+    out: dict[int, pd.DataFrame | None] = {}
+    for week in week_list:
+        table_name = f"Week{int(week)}Stats"
+        try:
+            df = _read_named_table_any_sheet(
+                wb,
+                table_name=table_name,
+                drop_empty_columns=drop_empty_columns,
+            )
+            df.columns = [str(c).strip() for c in df.columns]
+            out[int(week)] = df
+        except ValueError as err:
+            if "not found in any worksheet" in str(err):
+                out[int(week)] = None
+            else:
+                raise
+    return out
+
+
+def extract_week_fantasy_points_rows(
+    week_df: pd.DataFrame,
+    *,
+    week_table_name: str,
+) -> pd.DataFrame:
+    """
+    Normalize a WeekNStats DataFrame to player + fantasy points rows.
+    Returns columns: player_key, player_id, player_name, fantasy_points.
+    """
+    if week_df is None or week_df.empty:
+        return pd.DataFrame(columns=["player_key", "player_id", "player_name", "fantasy_points"])
+
+    df = week_df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+
+    player_id_col = _find_col_by_alias(df, ["PlayerID", "Player Id", "Player ID"])
+    player_name_col = _find_col_by_alias(df, ["Name", "Player", "Player Name"])
+    fantasy_col = _find_col_by_alias(
+        df,
+        [
+            "Fantasy Points",
+            "FantasyPoints",
+            "Total Fantasy Points",
+            "Fantasy Points Total",
+            "Fantasy Total Points",
+            "Points",
+            "Total Points",
+            "Pts",
+        ],
+    )
+
+    available_cols = ", ".join([str(c) for c in df.columns]) if len(df.columns) else "(none)"
+
+    if fantasy_col is None:
+        raise ValueError(
+            f"{week_table_name} is missing a fantasy points column. Available columns: {available_cols}"
+        )
+    if player_id_col is None and player_name_col is None:
+        raise ValueError(
+            f"{week_table_name} is missing player identity columns. "
+            f"Expected PlayerID or player name. Available columns: {available_cols}"
+        )
+
+    if player_id_col is not None:
+        player_id = df[player_id_col].astype(str).str.strip()
+        player_id = player_id.mask(player_id == "", "")
+    else:
+        player_id = pd.Series([""] * len(df), index=df.index, dtype="object")
+
+    if player_name_col is not None:
+        player_name = df[player_name_col].astype(str).str.strip()
+        player_name = player_name.mask(player_name == "", "")
+    else:
+        player_name = pd.Series([""] * len(df), index=df.index, dtype="object")
+
+    player_key = player_id.where(player_id != "", player_name)
+    out = pd.DataFrame(
+        {
+            "player_key": player_key.astype(str).str.strip(),
+            "player_id": player_id.astype(str).str.strip(),
+            "player_name": player_name.astype(str).str.strip(),
+            "fantasy_points": pd.to_numeric(df[fantasy_col], errors="coerce"),
+        }
+    )
+    out = out[out["player_key"] != ""].copy()
+    return out
