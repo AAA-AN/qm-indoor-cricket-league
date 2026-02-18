@@ -1,7 +1,6 @@
 from datetime import datetime
 import logging
 from io import BytesIO
-from html import escape
 
 import streamlit as st
 import pandas as pd
@@ -237,195 +236,127 @@ def _extract_teams_df(excel_result) -> pd.DataFrame | None:
     return teams_df
 
 
-def render_top_performers(df_grid: pd.DataFrame) -> None:
-    if df_grid is None or df_grid.empty:
-        st.info("Top performers are not available yet.")
-        return
+def parse_top_performers_grid(df_grid: pd.DataFrame) -> dict:
+    grid = df_grid.fillna("").astype(str).values.tolist()
+    section_titles = ("Top Performers", "Top Performers - conditional")
+    categories = ("Batting", "Bowling", "Fielding")
 
-    rows_raw = df_grid.values.tolist()
-    if not rows_raw:
-        st.info("Top performers are not available yet.")
-        return
-
-    grid: list[list[str]] = []
-    for row in rows_raw:
-        out_row: list[str] = []
-        for cell in row:
-            if cell is None or (isinstance(cell, float) and pd.isna(cell)):
-                out_row.append("")
-            else:
-                out_row.append(str(cell))
-        grid.append(out_row)
-
-    ncols = max((len(r) for r in grid), default=0)
-    if ncols == 0:
-        st.info("Top performers are not available yet.")
-        return
-    for row in grid:
-        if len(row) < ncols:
-            row.extend([""] * (ncols - len(row)))
-
-    section_titles = {"Top Performers", "Top Performers - conditional"}
-
-    def _trim(s: str) -> str:
-        return str(s).strip()
-
-    category_map = {"batting": "batting", "bowling": "bowling", "fielding": "fielding"}
-    row_category: dict[int, str | None] = {}
+    parsed: dict[str, dict[str, list[dict[str, str]]]] = {}
+    current_section: str | None = None
     current_category: str | None = None
-    for idx, row in enumerate(grid):
-        if any(_trim(c) in section_titles for c in row):
-            current_category = None
-            row_category[idx] = None
-            continue
-        first = _trim(row[0]).lower() if ncols > 0 else ""
-        if first in category_map:
-            current_category = category_map[first]
-        elif all(_trim(c) == "" for c in row):
-            current_category = None
-        row_category[idx] = current_category
 
-    first_col_rowspan: dict[int, int] = {}
-    first_col_skip: set[int] = set()
-    for idx, row in enumerate(grid):
-        first = _trim(row[0]).lower() if ncols > 0 else ""
-        if first not in category_map:
-            continue
-        end = idx + 1
-        while end < len(grid):
-            next_row = grid[end]
-            if any(_trim(c) in section_titles for c in next_row):
-                break
-            next_first = _trim(next_row[0]).lower() if ncols > 0 else ""
-            if next_first in category_map:
-                break
-            if all(_trim(c) == "" for c in next_row):
-                break
-            end += 1
-        span = max(1, end - idx)
-        first_col_rowspan[idx] = span
-        for j in range(idx + 1, idx + span):
-            first_col_skip.add(j)
+    def _get_cell(row: list[str], idx: int) -> str:
+        if idx < 0 or idx >= len(row):
+            return ""
+        return str(row[idx]).strip()
 
-    html_rows: list[str] = []
-    for idx, row in enumerate(grid):
-        section_title = None
-        for c in row:
-            t = _trim(c)
-            if t in section_titles:
-                section_title = t
-                break
-        if section_title is not None:
-            html_rows.append(
-                f"<tr class='tp-section'><td colspan='{ncols}'>{escape(section_title)}</td></tr>"
+    def _ensure_section(name: str) -> None:
+        if name not in parsed:
+            parsed[name] = {
+                "Batting": [],
+                "Bowling": [],
+                "Fielding": [],
+                "Meta": [],
+            }
+
+    for row in grid:
+        cells = [str(c).strip() for c in row]
+        if not any(cells):
+            continue
+
+        section_hit = next((c for c in cells if c in section_titles), None)
+        if section_hit:
+            current_section = section_hit
+            _ensure_section(current_section)
+            current_category = None
+            continue
+
+        if not current_section:
+            continue
+
+        c0 = _get_cell(row, 0)
+        if c0 in categories:
+            current_category = c0
+
+        metric = _get_cell(row, 1)
+        value = _get_cell(row, 2)
+        player = _get_cell(row, 3)
+
+        if not metric:
+            continue
+
+        if metric.lower().startswith("minimum "):
+            meta_val = player or value
+            parsed[current_section]["Meta"].append(
+                {"label": metric.rstrip(":"), "value": meta_val}
             )
             continue
 
-        if all(_trim(c) == "" for c in row):
-            html_rows.append(f"<tr class='tp-spacer'><td colspan='{ncols}'>&nbsp;</td></tr>")
-            continue
-
-        band = row_category.get(idx)
-        row_class = "tp-row"
-        if band:
-            row_class += f" tp-{band}"
-        cells: list[str] = []
-
-        if idx in first_col_rowspan:
-            span = first_col_rowspan[idx]
-            label = _trim(row[0]) or row[0]
-            cells.append(
-                f"<td class='tp-vertical tp-{band}' rowspan='{span}'>{escape(label)}</td>"
+        if current_category in categories:
+            parsed[current_section][current_category].append(
+                {"metric": metric, "value": value, "player": player}
             )
-            start_col = 1
-        elif idx in first_col_skip:
-            start_col = 1
-        else:
-            cells.append(f"<td class='tp-cell'>{escape(_trim(row[0]))}</td>")
-            start_col = 1
 
-        metric_text = _trim(row[1]).lower() if ncols > 1 else ""
-        is_minimum_row = metric_text.startswith("minimum balls faced") or metric_text.startswith(
-            "minimum overs bowled"
-        )
-        if start_col <= 1 and is_minimum_row:
-            merged_text = " ".join(_trim(c) for c in row[1:] if _trim(c))
-            colspan = max(1, ncols - 1)
-            cells.append(f"<td class='tp-note' colspan='{colspan}'>{escape(merged_text)}</td>")
-        else:
-            for col_idx in range(start_col, ncols):
-                cells.append(f"<td class='tp-cell'>{escape(_trim(row[col_idx]))}</td>")
+    return parsed
 
-        html_rows.append(f"<tr class='{row_class}'>{''.join(cells)}</tr>")
 
-    html = f"""
-    <style>
-      .tp-wrap {{
-        width: 100%;
-        overflow-x: auto;
-        margin-top: 0.25rem;
-      }}
-      .tp-table {{
-        width: 100%;
-        border-collapse: collapse;
-        table-layout: fixed;
-        font-size: 0.95rem;
-      }}
-      .tp-table td {{
-        border: 1px solid #1f1f1f;
-        padding: 0.45rem 0.55rem;
-        text-align: center;
-        vertical-align: middle;
-        color: #222;
-        background: #fff;
-      }}
-      .tp-section td {{
-        background: #cfe6fb !important;
-        font-weight: 700;
-      }}
-      .tp-batting td {{ background: #f9e2d3; }}
-      .tp-bowling td {{ background: #eadff8; }}
-      .tp-fielding td {{ background: #f8efbf; }}
-      .tp-vertical {{
-        writing-mode: vertical-rl;
-        transform: rotate(180deg);
-        font-weight: 700;
-        letter-spacing: 0.02em;
-        min-width: 1.8rem;
-      }}
-      .tp-note {{
-        font-weight: 600;
-      }}
-      .tp-spacer td {{
-        background: #ffffff;
-        height: 0.65rem;
-      }}
-      @media (prefers-color-scheme: dark) {{
-        .tp-table td {{
-          border-color: #a9b0bb;
-          color: #edf1f7;
-          background: #17202a;
-        }}
-        .tp-section td {{
-          background: #21445f !important;
-        }}
-        .tp-batting td {{ background: #5a3f35; }}
-        .tp-bowling td {{ background: #4a3f63; }}
-        .tp-fielding td {{ background: #5b5432; }}
-        .tp-spacer td {{
-          background: #11161d;
-        }}
-      }}
-    </style>
-    <div class="tp-wrap">
-      <table class="tp-table">
-        <tbody>
-          {''.join(html_rows)}
-        </tbody>
-      </table>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
+def _format_top_performer_value(metric: str, value: str) -> str:
+    metric_l = str(metric or "").strip().lower()
+    raw = str(value or "").strip()
+    if not raw or "-" in raw:
+        return raw
+    try:
+        num = float(raw)
+    except Exception:
+        return raw
+    if any(k in metric_l for k in ("average", "economy", "strike rate", "avg")):
+        return f"{num:.2f}".rstrip("0").rstrip(".")
+    return raw
+
+
+def render_top_performers_streamlit(parsed: dict) -> None:
+    st.caption("Automatically pulled from the workbook (Top_Performers).")
+    section_names = ["Top Performers", "Top Performers - conditional"]
+    available = [s for s in section_names if s in parsed]
+    if not available:
+        st.info("Top performers are not available yet.")
+        return
+
+    for section_idx, section_name in enumerate(available):
+        section = parsed.get(section_name) or {}
+        st.subheader(section_name)
+
+        meta_items = section.get("Meta") or []
+        if meta_items:
+            meta_line = " • ".join(
+                f"{str(m.get('label') or '').strip()}: {str(m.get('value') or '').strip()}"
+                for m in meta_items
+                if str(m.get("label") or "").strip()
+            )
+            if meta_line:
+                st.caption(meta_line)
+
+        tabs = st.tabs(["Batting", "Bowling", "Fielding"])
+        for tab, category in zip(tabs, ["Batting", "Bowling", "Fielding"]):
+            with tab:
+                rows = section.get(category) or []
+                if not rows:
+                    st.info(f"No {category.lower()} top performers in this section.")
+                    continue
+                display_rows = []
+                for r in rows:
+                    metric = str(r.get("metric") or "").strip()
+                    val = _format_top_performer_value(metric, str(r.get("value") or "").strip())
+                    player = str(r.get("player") or "").strip()
+                    display_rows.append({"Metric": metric, "Value": val, "Player": player})
+                st.dataframe(
+                    pd.DataFrame(display_rows, columns=["Metric", "Value", "Player"]),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        if section_idx < len(available) - 1:
+            st.divider()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -949,7 +880,8 @@ if selected_tab == "Overview":
         st.info("Top performers are not available yet.")
         st.stop()
 
-    render_top_performers(df_raw)
+    parsed = parse_top_performers_grid(df_raw)
+    render_top_performers_streamlit(parsed)
 
 # ============================
 # TAB 2: FIXTURES & RESULTS
