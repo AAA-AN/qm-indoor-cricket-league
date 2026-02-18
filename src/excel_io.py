@@ -107,16 +107,24 @@ def _read_defined_name_range(wb, defined_name: str) -> pd.DataFrame:
     Read an Excel defined name range and return a raw grid DataFrame.
     Keeps blank rows/columns so sheet structure is preserved for custom renderers.
     """
-    try:
-        dn = wb.defined_names[defined_name]
-    except Exception as e:
-        raise ValueError(f"Defined name '{defined_name}' not found.") from e
+    dn = wb.defined_names.get(defined_name)
+    if dn is None:
+        raise ValueError(f"Defined name '{defined_name}' not found.")
 
-    destinations = list(dn.destinations)
+    try:
+        destinations = list(dn.destinations)
+    except Exception as e:
+        raise ValueError(
+            f"Defined name '{defined_name}' destination could not be resolved."
+        ) from e
     if not destinations:
         raise ValueError(f"Defined name '{defined_name}' has no destinations.")
 
     sheet_name, coord = destinations[0]
+    if not sheet_name or not coord:
+        raise ValueError(
+            f"Defined name '{defined_name}' destination is invalid."
+        )
     if sheet_name not in wb.sheetnames:
         raise ValueError(
             f"Defined name '{defined_name}' points to missing sheet '{sheet_name}'."

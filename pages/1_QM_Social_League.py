@@ -237,7 +237,7 @@ def _extract_teams_df(excel_result) -> pd.DataFrame | None:
     return teams_df
 
 
-def render_top_performers_grid(df_grid: pd.DataFrame) -> None:
+def render_top_performers(df_grid: pd.DataFrame) -> None:
     if df_grid is None or df_grid.empty:
         st.info("Top performers are not available yet.")
         return
@@ -266,14 +266,6 @@ def render_top_performers_grid(df_grid: pd.DataFrame) -> None:
             row.extend([""] * (ncols - len(row)))
 
     section_titles = {"Top Performers", "Top Performers - conditional"}
-    found_titles = set()
-    for row in grid:
-        for cell in row:
-            if str(cell).strip() in section_titles:
-                found_titles.add(str(cell).strip())
-    if found_titles != section_titles:
-        st.info("Top performers range format is not available yet.")
-        return
 
     def _trim(s: str) -> str:
         return str(s).strip()
@@ -957,7 +949,7 @@ if selected_tab == "Overview":
         st.info("Top performers are not available yet.")
         st.stop()
 
-    render_top_performers_grid(df_raw)
+    render_top_performers(df_raw)
 
 # ============================
 # TAB 2: FIXTURES & RESULTS
