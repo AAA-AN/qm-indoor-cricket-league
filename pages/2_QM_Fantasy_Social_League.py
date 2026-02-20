@@ -1445,7 +1445,7 @@ with tab_leaderboard:
                 key="fantasy_player_lb_cols_all_blocks",
             )
             view = df_player_lb[["Player"] + selected_columns]
-            st.dataframe(view, use_container_width=True, hide_index=True)
+            st.dataframe(view, width="stretch", hide_index=True)
         else:
             selected_block_num = int(selected_player_block.replace("Block ", "").strip())
             block_points = get_player_block_fantasy_points(selected_block_num)
@@ -1495,7 +1495,7 @@ with tab_leaderboard:
                 key=f"fantasy_player_lb_cols_block_{selected_block_num}",
             )
             view = df_player_lb[["Player"] + selected_columns]
-            st.dataframe(view, use_container_width=True, hide_index=True)
+            st.dataframe(view, width="stretch", hide_index=True)
 
 with tab_top:
     st.subheader("Top performers")
@@ -1506,12 +1506,14 @@ with tab_top:
         latest_scored = get_latest_scored_block_number()
         if latest_scored is None:
             latest_scored = int(scored_blocks[-1])
+        max_matches = max(1, len(scored_blocks))
+        default_min_matches = min(2, max_matches)
         min_matches = int(
             st.number_input(
                 "Minimum matches",
                 min_value=1,
-                max_value=max(1, len(scored_blocks)),
-                value=2,
+                max_value=max_matches,
+                value=default_min_matches,
                 step=1,
                 key="fantasy_top_min_matches",
             )
@@ -1789,7 +1791,7 @@ with tab_rules:
 
     st.divider()
     st.markdown("### Points breakdown")
-    st.dataframe(_fantasy_points_breakdown_df(), use_container_width=True, hide_index=True)
+    st.dataframe(_fantasy_points_breakdown_df(), width="stretch", hide_index=True)
 
     st.divider()
     st.markdown("### Bench system")

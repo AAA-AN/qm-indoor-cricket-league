@@ -380,7 +380,7 @@ with tab_users:
             df_display[
                 ["user_id", "username", "first_name", "last_name", "role", "is_active", "created_at", "last_login_at"]
             ],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 

@@ -355,7 +355,7 @@ def render_top_performers_streamlit(parsed: dict) -> None:
                     display_rows.append({"Metric": metric, "Value": val, "Player": player})
                 st.dataframe(
                     pd.DataFrame(display_rows, columns=["Metric", "Value", "Player"]),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
