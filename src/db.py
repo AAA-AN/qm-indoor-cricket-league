@@ -1265,6 +1265,44 @@ def get_fantasy_entry(block_number: int, user_id: int) -> Optional[Dict[str, Any
         conn.close()
 
 
+def get_block_entry_count(block_number: int) -> int:
+    ensure_fantasy_team_tables_exist()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT COUNT(DISTINCT user_id) AS n
+            FROM fantasy_entries
+            WHERE block_number = ?;
+            """,
+            (int(block_number),),
+        ).fetchone()
+        if not row:
+            return 0
+        return int(row["n"] or 0)
+    finally:
+        conn.close()
+
+
+def get_block_player_selection_counts(block_number: int) -> Dict[str, int]:
+    ensure_fantasy_team_tables_exist()
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT player_id, COUNT(*) AS n
+            FROM fantasy_entry_players
+            WHERE block_number = ?
+            GROUP BY player_id
+            ORDER BY player_id ASC;
+            """,
+            (int(block_number),),
+        ).fetchall()
+        return {str(r["player_id"]): int(r["n"] or 0) for r in rows}
+    finally:
+        conn.close()
+
+
 def upsert_block_player_points(block_number: int, player_points: Dict[str, float]) -> None:
     ensure_fantasy_scoring_tables_exist()
     conn = get_conn()
