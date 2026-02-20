@@ -39,6 +39,8 @@ from src.db import (
     list_scored_fantasy_blocks,
     get_player_block_fantasy_points,
     get_player_season_totals_and_avg,
+    get_block_entry_count,
+    get_block_player_selection_counts,
     export_fantasy_backup_payload,
     restore_fantasy_from_backup_payload,
     fantasy_has_state,
@@ -259,6 +261,53 @@ def _fantasy_restore_from_dropbox_if_needed(
         return True
     except Exception:
         return False
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _build_player_season_metrics(scored_blocks: tuple[int, ...]) -> pd.DataFrame:
+    player_stats: dict[str, dict[str, object]] = {}
+    for block_number in scored_blocks:
+        points_by_player = get_block_player_points(int(block_number))
+        for pid, points in points_by_player.items():
+            pid_str = str(pid)
+            pts = float(points or 0.0)
+            if pid_str not in player_stats:
+                player_stats[pid_str] = {
+                    "total_points": 0.0,
+                    "match_count": 0,
+                    "points_list": [],
+                    "max_points": float("-inf"),
+                    "max_block": None,
+                }
+            s = player_stats[pid_str]
+            s["total_points"] = float(s["total_points"]) + pts
+            s["match_count"] = int(s["match_count"]) + 1
+            s["points_list"].append(pts)
+            if pts > float(s["max_points"]):
+                s["max_points"] = pts
+                s["max_block"] = int(block_number)
+
+    rows: list[dict[str, float | int | str]] = []
+    for pid, s in player_stats.items():
+        total_points = float(s["total_points"])
+        match_count = int(s["match_count"])
+        points_list = list(s["points_list"])
+        avg_points = total_points / match_count if match_count > 0 else 0.0
+        std_dev = float(pd.Series(points_list, dtype="float64").std(ddof=0)) if points_list else 0.0
+        max_points = float(s["max_points"]) if float(s["max_points"]) != float("-inf") else 0.0
+        max_block = int(s["max_block"]) if s["max_block"] is not None else 0
+        rows.append(
+            {
+                "player_id": pid,
+                "total_points": total_points,
+                "match_count": match_count,
+                "avg_points": avg_points,
+                "std_dev": std_dev,
+                "max_points": max_points,
+                "max_block": max_block,
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 try:
@@ -525,8 +574,8 @@ st.session_state[last_block_key] = int(current_block)
 editing = bool(st.session_state.get(editing_key))
 
 st.markdown("---")
-tab_rules, tab_team, tab_results, tab_leaderboard = st.tabs(
-    ["Fantasy Rules", "Team selector", "Results", "Leaderboards"]
+tab_rules, tab_team, tab_results, tab_leaderboard, tab_top = st.tabs(
+    ["Fantasy Rules", "Team selector", "Results", "Leaderboard", "Top performers"]
 )
 with tab_team:
     st.subheader("Team selector")
@@ -1447,6 +1496,253 @@ with tab_leaderboard:
             )
             view = df_player_lb[["Player"] + selected_columns]
             st.dataframe(view, use_container_width=True, hide_index=True)
+
+with tab_top:
+    st.subheader("Top performers")
+    scored_blocks = sorted(list_scored_blocks())
+    if not scored_blocks:
+        st.info("No scored blocks yet.")
+    else:
+        latest_scored = get_latest_scored_block_number()
+        if latest_scored is None:
+            latest_scored = int(scored_blocks[-1])
+        min_matches = int(
+            st.number_input(
+                "Minimum matches",
+                min_value=1,
+                max_value=max(1, len(scored_blocks)),
+                value=2,
+                step=1,
+                key="fantasy_top_min_matches",
+            )
+        )
+
+        season_metrics_df = _build_player_season_metrics(tuple(scored_blocks))
+        if season_metrics_df.empty:
+            st.info("No player fantasy points found for scored blocks yet.")
+        else:
+            def _player_name(pid: str) -> str:
+                return player_name_by_id.get(pid, pid)
+
+            def _player_team(pid: str) -> str:
+                return player_team_by_id.get(pid, "Unknown") or "Unknown"
+
+            season_filtered = season_metrics_df[
+                season_metrics_df["match_count"] >= min_matches
+            ].copy()
+
+            st.markdown("### Season fantasy points leaderboard")
+            if season_filtered.empty:
+                st.info(f"No players meet the minimum matches filter ({min_matches}).")
+            else:
+                season_display = season_filtered.copy()
+                season_display["Player"] = season_display["player_id"].astype(str).apply(_player_name)
+                season_display["Team"] = season_display["player_id"].astype(str).apply(_player_team)
+                season_display = season_display.sort_values(
+                    by=["total_points", "avg_points", "player_id"],
+                    ascending=[False, False, True],
+                    kind="mergesort",
+                ).head(10)
+                season_display["Rank"] = range(1, len(season_display) + 1)
+                season_display["Total Points"] = pd.to_numeric(
+                    season_display["total_points"], errors="coerce"
+                ).fillna(0.0).round(1)
+                season_display["Avg Points/Match"] = pd.to_numeric(
+                    season_display["avg_points"], errors="coerce"
+                ).fillna(0.0).round(2)
+                st.dataframe(
+                    season_display[
+                        ["Rank", "Player", "Team", "match_count", "Total Points", "Avg Points/Match"]
+                    ].rename(columns={"match_count": "Matches"}),
+                    width="stretch",
+                    hide_index=True,
+                )
+
+            st.markdown("---")
+            st.markdown(f"### Current block fantasy points leaderboard (Block {int(latest_scored)})")
+            current_points = get_block_player_points(int(latest_scored))
+            if not current_points:
+                st.info("No player points found for the latest scored block.")
+            else:
+                current_rows = []
+                for pid, points in current_points.items():
+                    current_rows.append(
+                        {
+                            "Player": _player_name(str(pid)),
+                            "Team": _player_team(str(pid)),
+                            "Points": float(points or 0.0),
+                        }
+                    )
+                current_df = pd.DataFrame(current_rows).sort_values(
+                    by=["Points", "Player"], ascending=[False, True], kind="mergesort"
+                ).head(10)
+                current_df["Rank"] = range(1, len(current_df) + 1)
+                current_df["Points"] = pd.to_numeric(current_df["Points"], errors="coerce").fillna(0.0).round(1)
+                st.dataframe(
+                    current_df[["Rank", "Player", "Team", "Points"]],
+                    width="stretch",
+                    hide_index=True,
+                )
+
+            st.markdown("---")
+            st.markdown("### Highest single-match fantasy score")
+            highest_df = season_metrics_df.copy()
+            highest_df["Player"] = highest_df["player_id"].astype(str).apply(_player_name)
+            highest_df["Team"] = highest_df["player_id"].astype(str).apply(_player_team)
+            highest_df["Block"] = highest_df["max_block"].apply(lambda b: f"Block {int(b)}")
+            highest_df = highest_df.sort_values(
+                by=["max_points", "Player"], ascending=[False, True], kind="mergesort"
+            ).head(10)
+            highest_df["Rank"] = range(1, len(highest_df) + 1)
+            highest_df["Points"] = pd.to_numeric(highest_df["max_points"], errors="coerce").fillna(0.0).round(1)
+            st.dataframe(
+                highest_df[["Rank", "Player", "Team", "Block", "Points"]],
+                width="stretch",
+                hide_index=True,
+            )
+
+            st.markdown("---")
+            st.markdown("### Most consistent")
+            if season_filtered.empty:
+                st.info(f"No players meet the minimum matches filter ({min_matches}).")
+            else:
+                consistent_df = season_filtered.copy()
+                consistent_df["Player"] = consistent_df["player_id"].astype(str).apply(_player_name)
+                consistent_df["Team"] = consistent_df["player_id"].astype(str).apply(_player_team)
+                consistent_df = consistent_df.sort_values(
+                    by=["std_dev", "avg_points", "player_id"],
+                    ascending=[True, False, True],
+                    kind="mergesort",
+                ).head(10)
+                consistent_df["Rank"] = range(1, len(consistent_df) + 1)
+                consistent_df["Avg"] = pd.to_numeric(consistent_df["avg_points"], errors="coerce").fillna(0.0).round(2)
+                consistent_df["Std Dev"] = pd.to_numeric(consistent_df["std_dev"], errors="coerce").fillna(0.0).round(2)
+                st.dataframe(
+                    consistent_df[
+                        ["Rank", "Player", "Team", "match_count", "Avg", "Std Dev"]
+                    ].rename(columns={"match_count": "Matches"}),
+                    width="stretch",
+                    hide_index=True,
+                )
+
+            st.markdown("---")
+            st.markdown("### Most improved")
+            scored_desc = sorted(scored_blocks, reverse=True)
+            prev_scored = scored_desc[1] if len(scored_desc) >= 2 else None
+            if latest_scored is None or prev_scored is None:
+                st.info("Most improved is available after at least two scored blocks.")
+            else:
+                latest_points = get_block_player_points(int(latest_scored))
+                prev_points = get_block_player_points(int(prev_scored))
+                player_pool = sorted(set(latest_points.keys()) | set(prev_points.keys()))
+                improved_rows = []
+                for pid in player_pool:
+                    latest_pts = float(latest_points.get(pid, 0.0) or 0.0)
+                    prev_pts = float(prev_points.get(pid, 0.0) or 0.0)
+                    improved_rows.append(
+                        {
+                            "Player": _player_name(str(pid)),
+                            "Team": _player_team(str(pid)),
+                            "Prev Block Pts": prev_pts,
+                            "Latest Block Pts": latest_pts,
+                            "Delta": latest_pts - prev_pts,
+                        }
+                    )
+                improved_df = pd.DataFrame(improved_rows).sort_values(
+                    by=["Delta", "Latest Block Pts", "Player"],
+                    ascending=[False, False, True],
+                    kind="mergesort",
+                ).head(10)
+                improved_df["Rank"] = range(1, len(improved_df) + 1)
+                improved_df["Prev Block Pts"] = pd.to_numeric(
+                    improved_df["Prev Block Pts"], errors="coerce"
+                ).fillna(0.0).round(1)
+                improved_df["Latest Block Pts"] = pd.to_numeric(
+                    improved_df["Latest Block Pts"], errors="coerce"
+                ).fillna(0.0).round(1)
+                improved_df["Delta"] = pd.to_numeric(improved_df["Delta"], errors="coerce").fillna(0.0).round(1)
+                st.caption(f"Comparing Block {int(prev_scored)} to Block {int(latest_scored)}")
+                st.dataframe(
+                    improved_df[
+                        ["Rank", "Player", "Team", "Prev Block Pts", "Latest Block Pts", "Delta"]
+                    ],
+                    width="stretch",
+                    hide_index=True,
+                )
+
+            st.markdown("---")
+            st.markdown("### Ownership")
+            ownership_block = int(current_block) if state == "OPEN" else int(latest_scored)
+            ownership_block_label = "current open block" if state == "OPEN" else "latest scored block"
+            st.caption(f"Using {ownership_block_label}: Block {ownership_block}")
+
+            entry_count = get_block_entry_count(ownership_block)
+            if entry_count <= 0:
+                st.info("No entries found for the ownership source block yet.")
+            else:
+                selection_counts = get_block_player_selection_counts(ownership_block)
+                ownership_rows = []
+                for pid, selections in selection_counts.items():
+                    ownership_pct = (float(selections) / float(entry_count)) * 100.0 if entry_count > 0 else 0.0
+                    ownership_rows.append(
+                        {
+                            "player_id": str(pid),
+                            "Player": _player_name(str(pid)),
+                            "Team": _player_team(str(pid)),
+                            "Selections": int(selections),
+                            "Ownership %": ownership_pct,
+                        }
+                    )
+
+                ownership_df = pd.DataFrame(ownership_rows)
+                if ownership_df.empty:
+                    st.info("No player selections found for the ownership source block yet.")
+                else:
+                    most_selected = ownership_df.sort_values(
+                        by=["Selections", "Player"], ascending=[False, True], kind="mergesort"
+                    ).head(10)
+                    most_selected["Rank"] = range(1, len(most_selected) + 1)
+                    most_selected["Ownership %"] = pd.to_numeric(
+                        most_selected["Ownership %"], errors="coerce"
+                    ).fillna(0.0).round(1)
+                    st.markdown("#### Most selected players")
+                    st.dataframe(
+                        most_selected[["Rank", "Player", "Team", "Selections", "Ownership %"]],
+                        width="stretch",
+                        hide_index=True,
+                    )
+
+                    season_for_under = season_filtered[["player_id", "avg_points"]].copy() if not season_filtered.empty else pd.DataFrame(columns=["player_id", "avg_points"])
+                    underrated = season_for_under.merge(
+                        ownership_df[["player_id", "Ownership %"]],
+                        on="player_id",
+                        how="left",
+                    )
+                    underrated["Ownership %"] = pd.to_numeric(underrated["Ownership %"], errors="coerce").fillna(0.0)
+                    underrated["Avg Points/Match"] = pd.to_numeric(
+                        underrated["avg_points"], errors="coerce"
+                    ).fillna(0.0)
+                    underrated["Player"] = underrated["player_id"].astype(str).apply(_player_name)
+                    underrated["Team"] = underrated["player_id"].astype(str).apply(_player_team)
+                    underrated = underrated.sort_values(
+                        by=["Avg Points/Match", "Ownership %", "Player"],
+                        ascending=[False, True, True],
+                        kind="mergesort",
+                    ).head(10)
+                    if not underrated.empty:
+                        underrated["Rank"] = range(1, len(underrated) + 1)
+                        underrated["Avg Points/Match"] = pd.to_numeric(
+                            underrated["Avg Points/Match"], errors="coerce"
+                        ).fillna(0.0).round(2)
+                        underrated["Ownership %"] = pd.to_numeric(
+                            underrated["Ownership %"], errors="coerce"
+                        ).fillna(0.0).round(1)
+                        st.markdown("#### Underrated")
+                        st.dataframe(
+                            underrated[["Rank", "Player", "Team", "Avg Points/Match", "Ownership %"]],
+                            width="stretch",
+                            hide_index=True,
+                        )
 
 with tab_rules:
     st.markdown("## Fantasy Rules")
