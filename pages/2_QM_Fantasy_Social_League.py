@@ -392,12 +392,13 @@ override_until_dt = _parse_iso_datetime(override_until)
 override_open_active = (
     override_state == "OPEN" and (override_until_dt is None or now_london < override_until_dt)
 )
+pre_lock_window = (lock_at_dt is not None) and (now_london < lock_at_dt)
 locked_by_time = (lock_at_dt is not None) and (now_london >= lock_at_dt)
-locked_by_status = state == "LOCKED"
-is_locked = False if override_open_active else (locked_by_status or locked_by_time)
+locked_by_status = (state == "LOCKED") and not pre_lock_window
+is_locked = False if (override_open_active or pre_lock_window) else (locked_by_status or locked_by_time)
 is_scored = state == "SCORED"
-is_not_open = state == "NOT_OPEN"
-state_display = "SCORED" if is_scored else ("LOCKED" if is_locked else state)
+is_not_open = (state == "NOT_OPEN") and not pre_lock_window
+state_display = "SCORED" if is_scored else ("LOCKED" if is_locked else "OPEN")
 st.write(f"**Selections:** {state_display}")
 
 not_open_blocks_interaction = False
