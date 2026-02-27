@@ -22,6 +22,7 @@ from src.db import (
     get_current_block_number,
     get_effective_block_state,
     get_block_open_at,
+    get_block_first_fixture_start_at,
     get_block_fixtures,
     list_blocks_with_fixtures,
     get_block_prices,
@@ -356,6 +357,8 @@ current_block_row = next(
 lock_at = current_block_row.get("lock_at") if current_block_row else None
 override_state = current_block_row.get("override_state") if current_block_row else None
 override_until = current_block_row.get("override_until") if current_block_row else None
+first_fixture_start_at = get_block_first_fixture_start_at(current_block)
+display_lock_at = first_fixture_start_at.isoformat() if first_fixture_start_at is not None else lock_at
 
 st.subheader(f"Current Block: {current_block}")
 
@@ -385,9 +388,9 @@ if block_fixtures:
 else:
     st.info("No fixtures found for this block.")
 
-lock_at_fmt = _format_dt_dd_mmm_hhmm(lock_at)
+lock_at_fmt = _format_dt_dd_mmm_hhmm(display_lock_at)
 st.write(f"**Lock time:** {lock_at_fmt}")
-lock_at_dt = _parse_iso_datetime(lock_at)
+lock_at_dt = _parse_iso_datetime(display_lock_at)
 override_until_dt = _parse_iso_datetime(override_until)
 override_open_active = (
     override_state == "OPEN" and (override_until_dt is None or now_london < override_until_dt)

@@ -41,6 +41,7 @@ from src.db import (
     list_blocks_with_fixtures,
     get_effective_block_state,
     get_block_open_at,
+    get_block_first_fixture_start_at,
     get_current_block_number,
     list_fantasy_submission_status_for_block,
     set_block_override,
@@ -1101,6 +1102,12 @@ with tab_fantasy_blocks:
         rows = []
         for b in blocks:
             open_at = get_block_open_at(b.get("block_number"), london_now)
+            first_fixture_start_at = get_block_first_fixture_start_at(b.get("block_number"))
+            display_lock_at = (
+                first_fixture_start_at.isoformat()
+                if first_fixture_start_at is not None
+                else b.get("lock_at")
+            )
             fixtures_list = []
             for fx in b.get("fixtures", []):
                 match_id = fx.get("match_id", "")
@@ -1111,7 +1118,7 @@ with tab_fantasy_blocks:
                 {
                     "block_number": b.get("block_number"),
                     "first_start_at": _format_dt_dd_mmm_hhmm(b.get("first_start_at")),
-                    "lock_at": _format_dt_dd_mmm_hhmm(b.get("lock_at")),
+                    "lock_at": _format_dt_dd_mmm_hhmm(display_lock_at),
                     "open_at": _format_dt_dd_mmm_hhmm(open_at),
                     "scored_at": _format_dt_dd_mmm_hhmm(b.get("scored_at")),
                     "override_state": b.get("override_state"),
