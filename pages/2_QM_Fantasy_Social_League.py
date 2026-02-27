@@ -546,11 +546,21 @@ league[name_col] = league[name_col].astype(str).str.strip()
 
 league = league[league[player_id_col] != ""].copy()
 
+if team_id_col_league and team_id_col_league in league.columns:
+    team_id_raw = league[team_id_col_league]
+    team_id_clean = team_id_raw.astype(str).str.strip()
+    missing_team_mask = (
+        team_id_raw.isna()
+        | team_id_clean.isin(["", "-", "None", "nan", "NaN"])
+        | (team_id_clean.str.casefold() == "missing")
+    )
+    league = league[~missing_team_mask].copy()
+    league[team_id_col_league] = league[team_id_col_league].astype(str).str.strip()
+
 if active_col and active_col in league.columns:
     league = league[league[active_col].apply(_is_active_value)].copy()
 
 if team_id_col_league and team_id_col_league in league.columns and team_id_to_name:
-    league[team_id_col_league] = league[team_id_col_league].astype(str).str.strip()
     league["Team"] = league[team_id_col_league].map(team_id_to_name)
 else:
     league["Team"] = None
@@ -625,7 +635,7 @@ if invalid_defaults:
     default_vice = default_vice if default_vice in valid_player_ids else None
     notice_key = f"fantasy_hidden_players_notice_{current_block}"
     if not st.session_state.get(notice_key):
-        st.info("Some players were hidden because they have no name.")
+        st.info("Some players were hidden because they have no name or no team.")
         st.session_state[notice_key] = True
 
 default_squad_labels = [player_label_by_id.get(pid) for pid in default_squad_ids if pid in player_label_by_id]
