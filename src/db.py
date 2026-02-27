@@ -462,33 +462,59 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
     try:
         existing = conn.execute("SELECT COUNT(*) AS n FROM fantasy_blocks;").fetchone()
         if int(existing["n"]) > 0:
-            # Refresh missing lock times for existing unscored blocks without rebuilding.
-            block_lock_map: Dict[int, str] = {}
+            # Refresh unscored block timings from the latest Fixture_Results_Table data.
+            unscored_blocks = {
+                int(r["block_number"])
+                for r in conn.execute(
+                    """
+                    SELECT block_number
+                    FROM fantasy_blocks
+                    WHERE scored_at IS NULL;
+                    """
+                ).fetchall()
+            }
             block_num = 0
             for group in grouped_blocks:
                 if not group:
                     continue
                 block_num += 1
+                if block_num not in unscored_blocks:
+                    continue
                 start_candidates = [fx["start_at"] for fx in group if isinstance(fx.get("start_at"), datetime)]
                 if start_candidates:
-                    block_lock_map[block_num] = min(start_candidates).isoformat()
+                    block_start_iso = min(start_candidates).isoformat()
                 else:
                     date_candidates = [fx["fixture_date"] for fx in group if isinstance(fx.get("fixture_date"), date)]
                     if date_candidates:
-                        block_lock_map[block_num] = datetime.combine(
+                        block_start_iso = datetime.combine(
                             min(date_candidates), time.min
                         ).replace(tzinfo=ZoneInfo("Europe/London")).isoformat()
-            if block_lock_map:
-                for bn, lock_iso in block_lock_map.items():
+                    else:
+                        block_start_iso = ""
+
+                conn.execute(
+                    """
+                    UPDATE fantasy_blocks
+                    SET lock_at = ?, first_start_at = ?
+                    WHERE block_number = ? AND scored_at IS NULL;
+                    """,
+                    (block_start_iso, block_start_iso, int(block_num)),
+                )
+
+                for fx in group:
+                    fixture_start = (
+                        fx["start_at"].isoformat() if isinstance(fx.get("start_at"), datetime) else ""
+                    )
                     conn.execute(
                         """
-                        UPDATE fantasy_blocks
-                        SET lock_at = COALESCE(NULLIF(lock_at, ''), ?),
-                            first_start_at = COALESCE(NULLIF(first_start_at, ''), ?)
-                        WHERE block_number = ? AND scored_at IS NULL;
+                        UPDATE fantasy_block_fixtures
+                        SET start_at = ?
+                        WHERE block_number = ? AND match_id = ?;
                         """,
-                        (lock_iso, lock_iso, int(bn)),
+                        (fixture_start, int(block_num), fx["match_id"]),
                     )
+
+            if unscored_blocks:
                 conn.commit()
             return 0
 
