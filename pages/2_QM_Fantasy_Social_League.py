@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 import json
 import posixpath
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
 
 from src.guard import (
@@ -192,6 +192,10 @@ def _format_dt_dd_mmm_hhmm(dt_val: str | None) -> str | None:
         s = s[:-1] + "+00:00"
     try:
         dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("Europe/London"))
+        else:
+            dt = dt.astimezone(ZoneInfo("Europe/London"))
         return dt.strftime("%d-%b %H:%M")
     except Exception:
         return str(dt_val)
@@ -214,6 +218,65 @@ def _parse_iso_datetime(dt_val: str | None) -> datetime | None:
     else:
         dt = dt.astimezone(ZoneInfo("Europe/London"))
     return dt
+
+
+def _parse_fixture_results_date(date_val) -> date | None:
+    if date_val is None or (isinstance(date_val, float) and pd.isna(date_val)):
+        return None
+    if isinstance(date_val, datetime):
+        return date_val.date()
+    if isinstance(date_val, date):
+        return date_val
+    s = str(date_val).strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(s).date()
+    except ValueError:
+        return None
+
+
+def _parse_fixture_results_time(time_val) -> time | None:
+    if time_val is None or (isinstance(time_val, float) and pd.isna(time_val)):
+        return None
+    if isinstance(time_val, datetime):
+        return time_val.time()
+    if isinstance(time_val, time):
+        return time_val
+    if isinstance(time_val, timedelta):
+        seconds = int(time_val.total_seconds()) % 86400
+        return (datetime.min + timedelta(seconds=seconds)).time()
+    if isinstance(time_val, (int, float)) and 0 <= float(time_val) < 1:
+        seconds = int(round(float(time_val) * 86400))
+        return (datetime.min + timedelta(seconds=seconds)).time()
+    s = str(time_val).strip()
+    if not s:
+        return None
+    for fmt in ("%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M%p", "%I %p"):
+        try:
+            return datetime.strptime(s, fmt).time()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(s).time()
+    except ValueError:
+        return None
+
+
+def _fixture_results_kickoff_iso(date_val, time_val) -> str | None:
+    fixture_date = _parse_fixture_results_date(date_val)
+    if fixture_date is None:
+        return None
+    fixture_time = _parse_fixture_results_time(time_val)
+    if fixture_time is None:
+        fixture_time = time.min
+    kickoff = datetime.combine(fixture_date, fixture_time).replace(tzinfo=ZoneInfo("Europe/London"))
+    return kickoff.isoformat()
 
 
 def _is_active_value(v) -> bool:
@@ -357,33 +420,50 @@ current_block_row = next(
 lock_at = current_block_row.get("lock_at") if current_block_row else None
 override_state = current_block_row.get("override_state") if current_block_row else None
 override_until = current_block_row.get("override_until") if current_block_row else None
-first_fixture_start_at = get_block_first_fixture_start_at(current_block)
-display_lock_at = first_fixture_start_at.isoformat() if first_fixture_start_at is not None else lock_at
 
 st.subheader(f"Current Block: {current_block}")
 
 block_fixtures = get_block_fixtures(current_block)
+fixture_name_map = {}
+fixture_start_map = {}
+if "MatchID" in fixtures_df.columns:
+    fx_tmp = fixtures_df.copy()
+    fx_tmp["MatchID"] = fx_tmp["MatchID"].astype(str).str.strip()
+    if "Home Team" in fx_tmp.columns and "Away Team" in fx_tmp.columns:
+        fx_tmp["Home Team"] = fx_tmp["Home Team"].astype(str).str.strip()
+        fx_tmp["Away Team"] = fx_tmp["Away Team"].astype(str).str.strip()
+    for _, r in fx_tmp.iterrows():
+        mid = str(r.get("MatchID") or "").strip()
+        if not mid:
+            continue
+        home = str(r.get("Home Team") or "").strip() if "Home Team" in fx_tmp.columns else ""
+        away = str(r.get("Away Team") or "").strip() if "Away Team" in fx_tmp.columns else ""
+        if home and away:
+            fixture_name_map[mid] = f"{home} vs {away}"
+        fixture_start_iso = _fixture_results_kickoff_iso(r.get("Date"), r.get("Time"))
+        if fixture_start_iso:
+            fixture_start_map[mid] = fixture_start_iso
+
+display_lock_at = None
+if block_fixtures:
+    block_fixture_starts = [
+        fixture_start_map.get(str(fx.get("match_id") or "").strip(), fx.get("start_at"))
+        for fx in block_fixtures
+    ]
+    block_lock_candidates = [dt for dt in block_fixture_starts if _parse_iso_datetime(dt) is not None]
+    if block_lock_candidates:
+        display_lock_at = min(block_lock_candidates, key=lambda dt: _parse_iso_datetime(dt))
+if display_lock_at is None:
+    first_fixture_start_at = get_block_first_fixture_start_at(current_block)
+    display_lock_at = first_fixture_start_at.isoformat() if first_fixture_start_at is not None else lock_at
+
 if block_fixtures:
     st.markdown("**Fixtures in this block:**")
-    fixture_name_map = {}
-    if "MatchID" in fixtures_df.columns:
-        fx_tmp = fixtures_df.copy()
-        fx_tmp["MatchID"] = fx_tmp["MatchID"].astype(str).str.strip()
-        if "Home Team" in fx_tmp.columns and "Away Team" in fx_tmp.columns:
-            fx_tmp["Home Team"] = fx_tmp["Home Team"].astype(str).str.strip()
-            fx_tmp["Away Team"] = fx_tmp["Away Team"].astype(str).str.strip()
-            for _, r in fx_tmp.iterrows():
-                mid = str(r.get("MatchID") or "").strip()
-                if not mid:
-                    continue
-                home = str(r.get("Home Team") or "").strip()
-                away = str(r.get("Away Team") or "").strip()
-                if home and away:
-                    fixture_name_map[mid] = f"{home} vs {away}"
     for fx in block_fixtures:
         match_id = fx.get("match_id", "")
-        fixture_name = fixture_name_map.get(str(match_id).strip(), str(match_id))
-        start_at = _format_dt_dd_mmm_hhmm(fx.get("start_at"))
+        match_id_str = str(match_id).strip()
+        fixture_name = fixture_name_map.get(match_id_str, match_id_str)
+        start_at = _format_dt_dd_mmm_hhmm(fixture_start_map.get(match_id_str, fx.get("start_at")))
         st.write(f"- {start_at} — {fixture_name}")
 else:
     st.info("No fixtures found for this block.")
