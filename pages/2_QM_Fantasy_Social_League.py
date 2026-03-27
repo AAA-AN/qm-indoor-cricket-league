@@ -518,6 +518,25 @@ if not player_id_col or not name_col:
     st.error("League_Data_Stats must include PlayerID and Name columns.")
     st.stop()
 
+players_df = getattr(data, "players", None)
+eligible_player_ids_from_player_data: set[str] | None = None
+if players_df is not None and not players_df.empty:
+    players_lookup = players_df.copy()
+    players_lookup.columns = [str(c).strip() for c in players_lookup.columns]
+    player_data_id_col = _find_col(players_lookup, ["PlayerID", "Player Id", "Player ID"])
+    player_data_team_col = _find_col(players_lookup, ["TeamID", "Team Id", "Team ID"])
+    if player_data_id_col and player_data_team_col:
+        players_lookup[player_data_id_col] = players_lookup[player_data_id_col].astype(str).str.strip()
+        team_id_clean = players_lookup[player_data_team_col].astype(str).str.strip()
+        valid_team_mask = (
+            players_lookup[player_data_team_col].notna()
+            & ~team_id_clean.isin(["", "-", "None", "nan", "NaN"])
+            & (team_id_clean.str.casefold() != "missing")
+        )
+        eligible_player_ids_from_player_data = set(
+            players_lookup.loc[valid_team_mask, player_data_id_col].astype(str).str.strip()
+        )
+
 teams_df = getattr(data, "teams_table", None)
 if teams_df is None:
     teams_df = getattr(data, "teams", None)
@@ -545,6 +564,9 @@ league[player_id_col] = league[player_id_col].astype(str).str.strip()
 league[name_col] = league[name_col].astype(str).str.strip()
 
 league = league[league[player_id_col] != ""].copy()
+
+if eligible_player_ids_from_player_data is not None:
+    league = league[league[player_id_col].isin(eligible_player_ids_from_player_data)].copy()
 
 if team_id_col_league and team_id_col_league in league.columns:
     team_id_raw = league[team_id_col_league]
@@ -635,7 +657,7 @@ if invalid_defaults:
     default_vice = default_vice if default_vice in valid_player_ids else None
     notice_key = f"fantasy_hidden_players_notice_{current_block}"
     if not st.session_state.get(notice_key):
-        st.info("Some players were hidden because they have no name or no team.")
+        st.info("Some players were hidden because they have no name or no valid TeamID in Player_Data.")
         st.session_state[notice_key] = True
 
 default_squad_labels = [player_label_by_id.get(pid) for pid in default_squad_ids if pid in player_label_by_id]
