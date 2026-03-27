@@ -750,7 +750,6 @@ selected_tab = st.radio(
         "League Table",
         "Teams",
         "Player Stats",
-        "Historical Stats",
         "Top Performers",
         "Scorecards",
     ],
@@ -1601,10 +1600,10 @@ if selected_tab == "Teams":
         column_config=col_config,
     )
 # ============================
-# TAB 5/6: PLAYER & HISTORICAL STATS
+# TAB 5: PLAYER STATS
 # ============================
-if selected_tab in ("Player Stats", "Historical Stats"):
-    st.subheader(selected_tab)
+if selected_tab == "Player Stats":
+    st.subheader("Player Stats")
     current_league_df = getattr(data, "league_data", None)
     current_teams_df = _extract_teams_df(data)
     season_map = discover_seasons()
