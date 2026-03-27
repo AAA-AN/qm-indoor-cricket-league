@@ -359,6 +359,40 @@ def _fixture_sort_key(row: Dict[str, Any]) -> tuple:
     return (2, row_index)
 
 
+def _calendar_week_start_for_fixture(row: Dict[str, Any]) -> Optional[date]:
+    start_at = row.get("start_at")
+    if isinstance(start_at, datetime):
+        return start_at.date() - timedelta(days=start_at.weekday())
+
+    fixture_date = row.get("fixture_date")
+    if isinstance(fixture_date, date):
+        return fixture_date - timedelta(days=fixture_date.weekday())
+
+    return None
+
+
+def _group_fixtures_by_calendar_week(fixtures: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    week_groups: Dict[date, List[Dict[str, Any]]] = {}
+    no_week_rows: List[Dict[str, Any]] = []
+    for fx in fixtures:
+        week_start = _calendar_week_start_for_fixture(fx)
+        if isinstance(week_start, date):
+            week_groups.setdefault(week_start, []).append(fx)
+        else:
+            no_week_rows.append(fx)
+
+    grouped: List[List[Dict[str, Any]]] = []
+    for week_start in sorted(week_groups.keys()):
+        g = sorted(week_groups[week_start], key=_fixture_sort_key)
+        if g:
+            grouped.append(g)
+
+    if no_week_rows:
+        grouped.extend(_group_fixtures_without_week(no_week_rows))
+
+    return grouped
+
+
 def _group_fixtures_without_week(fixtures: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
     # Preferred fallback: one block per calendar date.
     dated_groups: Dict[date, List[Dict[str, Any]]] = {}
@@ -401,7 +435,8 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
     """
     Build fantasy blocks if none exist yet, and refresh all unscored blocks from
     the latest fixture data on app startup.
-    Preferred grouping uses Week/Round fields; fallback groups by date.
+    Preferred grouping uses fixture calendar weeks; fallback uses Week/Round
+    labels when dates are unavailable, then exact dates.
     Returns the number of newly created blocks.
     """
     ensure_fantasy_block_tables_exist()
@@ -447,27 +482,30 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
             continue
         filtered_rows.append(fx)
 
-    week_groups: Dict[Any, List[Dict[str, Any]]] = {}
-    has_any_week = False
-    missing_week_rows: List[Dict[str, Any]] = []
-    for fx in filtered_rows:
-        wk = fx.get("week")
-        if wk is None or str(wk).strip() == "":
-            missing_week_rows.append(fx)
-            continue
-        has_any_week = True
-        week_groups.setdefault(wk, []).append(fx)
-
     grouped_blocks: List[List[Dict[str, Any]]] = []
-    if has_any_week:
-        for wk in sorted(week_groups.keys(), key=_week_sort_key):
-            grouped = sorted(week_groups[wk], key=_fixture_sort_key)
+    rows_with_dates = [fx for fx in filtered_rows if _calendar_week_start_for_fixture(fx) is not None]
+    rows_without_dates = [fx for fx in filtered_rows if _calendar_week_start_for_fixture(fx) is None]
+
+    if rows_with_dates:
+        grouped_blocks.extend(_group_fixtures_by_calendar_week(rows_with_dates))
+
+    if rows_without_dates:
+        label_groups: Dict[Any, List[Dict[str, Any]]] = {}
+        label_missing_rows: List[Dict[str, Any]] = []
+        for fx in rows_without_dates:
+            wk = fx.get("week")
+            if wk is None or str(wk).strip() == "":
+                label_missing_rows.append(fx)
+                continue
+            label_groups.setdefault(wk, []).append(fx)
+
+        for wk in sorted(label_groups.keys(), key=_week_sort_key):
+            grouped = sorted(label_groups[wk], key=_fixture_sort_key)
             if grouped:
                 grouped_blocks.append(grouped)
-        if missing_week_rows:
-            grouped_blocks.extend(_group_fixtures_without_week(missing_week_rows))
-    else:
-        grouped_blocks = _group_fixtures_without_week(filtered_rows)
+
+        if label_missing_rows:
+            grouped_blocks.extend(_group_fixtures_without_week(label_missing_rows))
 
     conn = get_conn()
     try:
