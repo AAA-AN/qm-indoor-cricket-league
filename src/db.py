@@ -530,6 +530,18 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
             )
             now_iso = datetime.now(timezone.utc).isoformat()
 
+            # Clear current unscored fixture assignments before regrouping.
+            # This avoids UNIQUE(match_id) collisions when a fixture moves
+            # from one future block to another during rebuild.
+            for block_num in unscored_block_numbers:
+                conn.execute(
+                    """
+                    DELETE FROM fantasy_block_fixtures
+                    WHERE block_number = ?;
+                    """,
+                    (block_num,),
+                )
+
             for idx, group in enumerate(grouped_blocks):
                 if not group:
                     continue
@@ -544,13 +556,6 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
                         WHERE block_number = ? AND scored_at IS NULL;
                         """,
                         (block_start_iso, block_start_iso, block_num),
-                    )
-                    conn.execute(
-                        """
-                        DELETE FROM fantasy_block_fixtures
-                        WHERE block_number = ?;
-                        """,
-                        (block_num,),
                     )
                 else:
                     block_num = next_block_number
