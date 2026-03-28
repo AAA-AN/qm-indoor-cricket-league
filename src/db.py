@@ -470,47 +470,86 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
             }
         )
 
-    now_local = datetime.now(ZoneInfo("Europe/London"))
-    today_local = now_local.date()
-    filtered_rows: List[Dict[str, Any]] = []
-    for fx in fixtures_rows:
-        start_at = fx.get("start_at")
-        fixture_date = fx.get("fixture_date")
-        if isinstance(start_at, datetime) and start_at < now_local:
-            continue
-        if start_at is None and isinstance(fixture_date, date) and fixture_date < today_local:
-            continue
-        filtered_rows.append(fx)
-
-    grouped_blocks: List[List[Dict[str, Any]]] = []
-    rows_with_dates = [fx for fx in filtered_rows if _calendar_week_start_for_fixture(fx) is not None]
-    rows_without_dates = [fx for fx in filtered_rows if _calendar_week_start_for_fixture(fx) is None]
-
-    if rows_with_dates:
-        grouped_blocks.extend(_group_fixtures_by_calendar_week(rows_with_dates))
-
-    if rows_without_dates:
-        label_groups: Dict[Any, List[Dict[str, Any]]] = {}
-        label_missing_rows: List[Dict[str, Any]] = []
-        for fx in rows_without_dates:
-            wk = fx.get("week")
-            if wk is None or str(wk).strip() == "":
-                label_missing_rows.append(fx)
-                continue
-            label_groups.setdefault(wk, []).append(fx)
-
-        for wk in sorted(label_groups.keys(), key=_week_sort_key):
-            grouped = sorted(label_groups[wk], key=_fixture_sort_key)
-            if grouped:
-                grouped_blocks.append(grouped)
-
-        if label_missing_rows:
-            grouped_blocks.extend(_group_fixtures_without_week(label_missing_rows))
-
     conn = get_conn()
     try:
-        existing = conn.execute("SELECT COUNT(*) AS n FROM fantasy_blocks;").fetchone()
-        if int(existing["n"]) > 0:
+        existing_count_row = conn.execute("SELECT COUNT(*) AS n FROM fantasy_blocks;").fetchone()
+        existing_block_count = int(existing_count_row["n"] or 0) if existing_count_row else 0
+
+        scored_cutoff_row = conn.execute(
+            """
+            SELECT MAX(COALESCE(NULLIF(f.start_at, ''), b.first_start_at)) AS cutoff_start
+            FROM fantasy_blocks b
+            LEFT JOIN fantasy_block_fixtures f
+                ON b.block_number = f.block_number
+            WHERE b.scored_at IS NOT NULL;
+            """
+        ).fetchone()
+        scored_cutoff = _parse_iso_datetime(
+            scored_cutoff_row["cutoff_start"] if scored_cutoff_row else None
+        )
+
+        unscored_cutoff_row = conn.execute(
+            """
+            SELECT MIN(COALESCE(NULLIF(f.start_at, ''), b.first_start_at)) AS cutoff_start
+            FROM fantasy_blocks b
+            LEFT JOIN fantasy_block_fixtures f
+                ON b.block_number = f.block_number
+            WHERE b.scored_at IS NULL;
+            """
+        ).fetchone()
+        unscored_cutoff = _parse_iso_datetime(
+            unscored_cutoff_row["cutoff_start"] if unscored_cutoff_row else None
+        )
+
+        now_local = datetime.now(ZoneInfo("Europe/London"))
+        today_local = now_local.date()
+        filtered_rows: List[Dict[str, Any]] = []
+        cutoff_dt = scored_cutoff or unscored_cutoff
+        cutoff_date = cutoff_dt.date() if isinstance(cutoff_dt, datetime) else None
+
+        for fx in fixtures_rows:
+            start_at = fx.get("start_at")
+            fixture_date = fx.get("fixture_date")
+
+            if cutoff_dt is not None:
+                if isinstance(start_at, datetime) and start_at < cutoff_dt:
+                    continue
+                if start_at is None and isinstance(fixture_date, date) and cutoff_date and fixture_date < cutoff_date:
+                    continue
+            else:
+                if isinstance(start_at, datetime) and start_at < now_local:
+                    continue
+                if start_at is None and isinstance(fixture_date, date) and fixture_date < today_local:
+                    continue
+
+            filtered_rows.append(fx)
+
+        grouped_blocks: List[List[Dict[str, Any]]] = []
+        rows_with_dates = [fx for fx in filtered_rows if _calendar_week_start_for_fixture(fx) is not None]
+        rows_without_dates = [fx for fx in filtered_rows if _calendar_week_start_for_fixture(fx) is None]
+
+        if rows_with_dates:
+            grouped_blocks.extend(_group_fixtures_by_calendar_week(rows_with_dates))
+
+        if rows_without_dates:
+            label_groups: Dict[Any, List[Dict[str, Any]]] = {}
+            label_missing_rows: List[Dict[str, Any]] = []
+            for fx in rows_without_dates:
+                wk = fx.get("week")
+                if wk is None or str(wk).strip() == "":
+                    label_missing_rows.append(fx)
+                    continue
+                label_groups.setdefault(wk, []).append(fx)
+
+            for wk in sorted(label_groups.keys(), key=_week_sort_key):
+                grouped = sorted(label_groups[wk], key=_fixture_sort_key)
+                if grouped:
+                    grouped_blocks.append(grouped)
+
+            if label_missing_rows:
+                grouped_blocks.extend(_group_fixtures_without_week(label_missing_rows))
+
+        if existing_block_count > 0:
             existing_blocks = conn.execute(
                 """
                 SELECT block_number, scored_at
