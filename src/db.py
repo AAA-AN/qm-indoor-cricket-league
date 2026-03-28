@@ -504,7 +504,10 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
         now_local = datetime.now(ZoneInfo("Europe/London"))
         today_local = now_local.date()
         filtered_rows: List[Dict[str, Any]] = []
-        cutoff_dt = scored_cutoff or unscored_cutoff
+        # When unscored blocks already exist, rebuild only that unscored window.
+        # Falling back to the latest scored fixture is only for the case where
+        # all existing blocks are scored and we need to append new future blocks.
+        cutoff_dt = unscored_cutoff or scored_cutoff
         cutoff_date = cutoff_dt.date() if isinstance(cutoff_dt, datetime) else None
 
         for fx in fixtures_rows:
