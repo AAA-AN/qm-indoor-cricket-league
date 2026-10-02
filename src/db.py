@@ -529,8 +529,21 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
 
         # The source fixture sheet can contain repeated MatchID rows. A block
         # fixture represents a match, so keep one eligible row per ID before
-        # grouping; otherwise INSERT violates UNIQUE(match_id).
-        seen_match_ids = set()
+        # grouping; otherwise INSERT violates UNIQUE(match_id). Scored block
+        # assignments are historical records and must retain their IDs, so
+        # don't try to assign those IDs again during a future rebuild.
+        scored_match_ids = {
+            str(row["match_id"])
+            for row in conn.execute(
+                """
+                SELECT f.match_id
+                FROM fantasy_block_fixtures f
+                JOIN fantasy_blocks b ON b.block_number = f.block_number
+                WHERE b.scored_at IS NOT NULL;
+                """
+            ).fetchall()
+        }
+        seen_match_ids = set(scored_match_ids)
         unique_filtered_rows: List[Dict[str, Any]] = []
         for fx in filtered_rows:
             match_id = fx["match_id"]
