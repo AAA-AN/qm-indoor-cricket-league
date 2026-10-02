@@ -527,6 +527,19 @@ def rebuild_blocks_from_fixtures_if_missing(fixtures: Any) -> int:
 
             filtered_rows.append(fx)
 
+        # The source fixture sheet can contain repeated MatchID rows. A block
+        # fixture represents a match, so keep one eligible row per ID before
+        # grouping; otherwise INSERT violates UNIQUE(match_id).
+        seen_match_ids = set()
+        unique_filtered_rows: List[Dict[str, Any]] = []
+        for fx in filtered_rows:
+            match_id = fx["match_id"]
+            if match_id in seen_match_ids:
+                continue
+            seen_match_ids.add(match_id)
+            unique_filtered_rows.append(fx)
+        filtered_rows = unique_filtered_rows
+
         grouped_blocks: List[List[Dict[str, Any]]] = []
         rows_with_dates = [fx for fx in filtered_rows if _calendar_week_start_for_fixture(fx) is not None]
         rows_without_dates = [fx for fx in filtered_rows if _calendar_week_start_for_fixture(fx) is None]
