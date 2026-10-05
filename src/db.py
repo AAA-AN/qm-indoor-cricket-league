@@ -83,6 +83,27 @@ def init_db() -> None:
             """
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS teams (
+                team_id TEXT PRIMARY KEY,
+                team_name TEXT NOT NULL UNIQUE,
+                active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+                captain_name TEXT
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS players (
+                player_id TEXT PRIMARY KEY,
+                team_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                FOREIGN KEY (team_id) REFERENCES teams(team_id)
+            );
+            """
+        )
+
         # Scorecards uploaded for fixtures/results.
         # One row per uploaded file (PDF or image).
         conn.execute(
@@ -207,6 +228,95 @@ def update_fixture(match_id: str, fixture: Dict[str, Any]) -> None:
         )
         if cursor.rowcount == 0:
             raise ValueError(f"Fixture {match_id} was not found.")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_teams() -> List[Dict[str, Any]]:
+    conn = get_conn()
+    try:
+        return [dict(row) for row in conn.execute(
+            "SELECT team_id, team_name, active, captain_name FROM teams ORDER BY team_name COLLATE NOCASE"
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def add_team(team_id: str, team_name: str, active: bool = True, captain_name: Optional[str] = None) -> None:
+    team_id = str(team_id or "").strip()
+    team_name = str(team_name or "").strip()
+    captain_name = str(captain_name or "").strip() or None
+    if not team_id or not team_name:
+        raise ValueError("TeamID and Team Name are required.")
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO teams (team_id, team_name, active, captain_name) VALUES (?, ?, ?, ?)",
+            (team_id, team_name, 1 if active else 0, captain_name),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("TeamID or Team Name already exists.") from exc
+    finally:
+        conn.close()
+
+
+def delete_team(team_id: str) -> None:
+    conn = get_conn()
+    try:
+        player_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM players WHERE team_id = ?", (str(team_id).strip(),)
+        ).fetchone()["n"]
+        if player_count:
+            raise ValueError("Remove or reassign this team's players before deleting the team.")
+        cursor = conn.execute("DELETE FROM teams WHERE team_id = ?", (str(team_id).strip(),))
+        if cursor.rowcount == 0:
+            raise ValueError("Team was not found.")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_players() -> List[Dict[str, Any]]:
+    conn = get_conn()
+    try:
+        return [dict(row) for row in conn.execute(
+            """
+            SELECT p.player_id, p.name, p.team_id, t.team_name
+            FROM players p JOIN teams t ON t.team_id = p.team_id
+            ORDER BY p.name COLLATE NOCASE, p.player_id
+            """
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def add_player(player_id: str, name: str, team_id: str) -> None:
+    player_id = str(player_id or "").strip()
+    name = str(name or "").strip()
+    team_id = str(team_id or "").strip()
+    if not player_id or not name or not team_id:
+        raise ValueError("PlayerID, Name, and Team are required.")
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO players (player_id, name, team_id) VALUES (?, ?, ?)",
+            (player_id, name, team_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("PlayerID already exists, or the selected team was not found.") from exc
+    finally:
+        conn.close()
+
+
+def delete_player(player_id: str) -> None:
+    conn = get_conn()
+    try:
+        cursor = conn.execute("DELETE FROM players WHERE player_id = ?", (str(player_id).strip(),))
+        if cursor.rowcount == 0:
+            raise ValueError("Player was not found.")
         conn.commit()
     finally:
         conn.close()

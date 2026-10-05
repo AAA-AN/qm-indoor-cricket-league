@@ -41,6 +41,12 @@ from src.db import (
     get_all_fixtures,
     get_fixture_by_match_id,
     update_fixture,
+    add_team,
+    list_teams,
+    delete_team,
+    add_player,
+    list_players,
+    delete_player,
     rebuild_blocks_from_fixtures_if_missing,
     list_blocks_with_fixtures,
     get_effective_block_state,
@@ -308,8 +314,8 @@ def _fantasy_restore_from_dropbox_if_needed(
 
 st.title("Admin")
 
-tab_users, tab_scorecards, tab_fantasy_blocks, tab_fixtures = st.tabs(
-    ["User Management", "Scorecard Management", "Fantasy", "Fixtures"]
+tab_users, tab_scorecards, tab_fantasy_blocks, tab_fixtures, tab_rosters = st.tabs(
+    ["User Management", "Scorecard Management", "Fantasy", "Fixtures", "Teams & Players"]
 )
 
 
@@ -326,6 +332,7 @@ with tab_fixtures:
         for value in (fixture.get("home_team"), fixture.get("away_team"))
         if value and str(value).strip()
     })
+    team_names.extend(team["team_name"] for team in list_teams())
     # The current workbook remains the source of existing teams during this
     # staged migration. SQLite fixture teams are also included for convenience.
     try:
@@ -455,6 +462,110 @@ with tab_fixtures:
                      hide_index=True, width="stretch")
     else:
         st.info("No fixtures have been added to SQLite yet.")
+
+
+# =========================================================
+# TEAM AND PLAYER MANAGEMENT (SQLite registry)
+# =========================================================
+with tab_rosters:
+    st.subheader("Teams & Players")
+    st.caption("These records are stored in SQLite. The existing public league pages still use the workbook.")
+
+    team_col, player_col = st.columns(2)
+    with team_col:
+        st.markdown("#### Add Team")
+        with st.form("admin_add_team_form", clear_on_submit=True):
+            team_id = st.text_input("TeamID *")
+            team_name = st.text_input("Team Name *")
+            captain_name = st.text_input("Captain Name")
+            team_active = st.checkbox("Active", value=True)
+            add_team_submitted = st.form_submit_button("Add Team", type="primary")
+        if add_team_submitted:
+            try:
+                add_team(team_id, team_name, team_active, captain_name)
+                st.success(f"Added team: {team_name.strip()}")
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+
+    with player_col:
+        st.markdown("#### Add Player")
+        teams_for_players = list_teams()
+        if not teams_for_players:
+            st.info("Add a team before adding players.")
+        else:
+            team_labels = {
+                f"{team['team_name']} ({team['team_id']})": team["team_id"]
+                for team in teams_for_players
+            }
+            with st.form("admin_add_player_form", clear_on_submit=True):
+                player_id = st.text_input("PlayerID *")
+                player_name = st.text_input("Player Name *")
+                selected_team_label = st.selectbox("Team *", list(team_labels))
+                add_player_submitted = st.form_submit_button("Add Player", type="primary")
+            if add_player_submitted:
+                try:
+                    add_player(player_id, player_name, team_labels[selected_team_label])
+                    st.success(f"Added player: {player_name.strip()}")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+
+    st.markdown("#### Remove Records")
+    teams_now = list_teams()
+    players_now = list_players()
+    remove_player_col, remove_team_col = st.columns(2)
+    with remove_player_col:
+        if players_now:
+            player_labels = {
+                f"{p['name']} ({p['player_id']}) — {p['team_name']}": p["player_id"]
+                for p in players_now
+            }
+            player_to_remove = st.selectbox("Player to remove", list(player_labels), key="admin_player_remove_select")
+            confirm_player_remove = st.checkbox("Confirm player removal", key="admin_player_remove_confirm")
+            if st.button("Remove Player", disabled=not confirm_player_remove, key="admin_remove_player_btn"):
+                try:
+                    delete_player(player_labels[player_to_remove])
+                    st.success("Player removed.")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+        else:
+            st.info("No SQLite players to remove.")
+    with remove_team_col:
+        if teams_now:
+            team_remove_labels = {
+                f"{t['team_name']} ({t['team_id']})": t["team_id"] for t in teams_now
+            }
+            team_to_remove = st.selectbox("Team to remove", list(team_remove_labels), key="admin_team_remove_select")
+            confirm_team_remove = st.checkbox("Confirm team removal", key="admin_team_remove_confirm")
+            if st.button("Remove Team", disabled=not confirm_team_remove, key="admin_remove_team_btn"):
+                try:
+                    delete_team(team_remove_labels[team_to_remove])
+                    st.success("Team removed.")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+        else:
+            st.info("No SQLite teams to remove.")
+
+    st.markdown("#### Current Teams")
+    if teams_now:
+        st.dataframe(pd.DataFrame(teams_now).rename(columns={
+            "team_id": "TeamID", "team_name": "Team Name", "active": "Active",
+            "captain_name": "Captain Name",
+        }), hide_index=True, width="stretch")
+    else:
+        st.info("No SQLite teams have been added yet.")
+
+    st.markdown("#### Current Players")
+    if players_now:
+        st.dataframe(pd.DataFrame(players_now).rename(columns={
+            "player_id": "PlayerID", "name": "Player Name", "team_id": "TeamID",
+            "team_name": "Team Name",
+        }), hide_index=True, width="stretch")
+    else:
+        st.info("No SQLite players have been added yet.")
 
 # =========================================================
 # TAB 1: USER MANAGEMENT (existing functionality, unchanged)
