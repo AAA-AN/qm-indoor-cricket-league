@@ -1,6 +1,7 @@
 """SQLite data layer for users, fantasy state, scoring, and backup/restore helpers."""
 
 import sqlite3
+import math
 from datetime import datetime, timezone, date, time, timedelta
 import statistics
 from pathlib import Path
@@ -62,6 +63,26 @@ def init_db() -> None:
 
         _ensure_users_schema(conn)
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fixtures (
+                match_id TEXT PRIMARY KEY,
+                date TEXT,
+                time TEXT,
+                home_team TEXT NOT NULL,
+                away_team TEXT NOT NULL,
+                status TEXT,
+                won_by TEXT,
+                home_score INTEGER,
+                home_wickets INTEGER,
+                home_overs REAL,
+                away_score INTEGER,
+                away_wickets INTEGER,
+                away_overs REAL
+            );
+            """
+        )
+
         # Scorecards uploaded for fixtures/results.
         # One row per uploaded file (PDF or image).
         conn.execute(
@@ -86,6 +107,106 @@ def init_db() -> None:
         ensure_fantasy_block_tables_exist()
         ensure_fantasy_scoring_tables_exist()
 
+        conn.commit()
+    finally:
+        conn.close()
+
+
+FIXTURE_COLUMNS = (
+    "match_id", "date", "time", "home_team", "away_team", "status", "won_by",
+    "home_score", "home_wickets", "home_overs", "away_score", "away_wickets", "away_overs",
+)
+
+
+def _normalise_fixture(fixture: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a fixture limited to the supported SQLite columns."""
+    values = {column: fixture.get(column) for column in FIXTURE_COLUMNS}
+    values["match_id"] = str(values["match_id"] or "").strip()
+    values["home_team"] = str(values["home_team"] or "").strip()
+    values["away_team"] = str(values["away_team"] or "").strip()
+    for column in ("date", "time", "status", "won_by"):
+        value = values[column]
+        values[column] = str(value).strip() if value is not None and str(value).strip() else None
+    if not values["match_id"] or not values["home_team"] or not values["away_team"]:
+        raise ValueError("MatchID, Home Team, and Away Team are required.")
+    if values["home_team"].casefold() == values["away_team"].casefold():
+        raise ValueError("Home Team and Away Team must be different.")
+    for column in ("home_score", "home_wickets", "away_score", "away_wickets"):
+        value = values[column]
+        if value is not None and value != "":
+            try:
+                number = int(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"{column.replace('_', ' ').title()} must be a non-negative whole number.") from exc
+            if number < 0 or float(value) != number:
+                raise ValueError(f"{column.replace('_', ' ').title()} must be a non-negative whole number.")
+            values[column] = number
+        else:
+            values[column] = None
+    for column in ("home_overs", "away_overs"):
+        value = values[column]
+        if value is not None and value != "":
+            try:
+                number = float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"{column.replace('_', ' ').title()} must be a non-negative number.") from exc
+            if not math.isfinite(number) or number < 0:
+                raise ValueError(f"{column.replace('_', ' ').title()} must be a finite non-negative number.")
+            values[column] = number
+        else:
+            values[column] = None
+    return values
+
+
+def add_fixture(fixture: Dict[str, Any]) -> None:
+    """Create a fixture. Raises ValueError if MatchID already exists."""
+    values = _normalise_fixture(fixture)
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO fixtures (" + ", ".join(FIXTURE_COLUMNS) + ") VALUES (" +
+            ", ".join("?" for _ in FIXTURE_COLUMNS) + ")",
+            tuple(values[column] for column in FIXTURE_COLUMNS),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise ValueError(f"A fixture with MatchID {values['match_id']} already exists.") from exc
+    finally:
+        conn.close()
+
+
+def get_all_fixtures() -> List[Dict[str, Any]]:
+    """Return fixtures ordered by date and time, newest first."""
+    conn = get_conn()
+    try:
+        return [dict(row) for row in conn.execute(
+            "SELECT * FROM fixtures ORDER BY date DESC, time DESC, match_id ASC"
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def get_fixture_by_match_id(match_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM fixtures WHERE match_id = ?", (str(match_id).strip(),)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def update_fixture(match_id: str, fixture: Dict[str, Any]) -> None:
+    """Update an existing fixture without changing its primary key."""
+    values = _normalise_fixture({**fixture, "match_id": match_id})
+    conn = get_conn()
+    try:
+        cursor = conn.execute(
+            "UPDATE fixtures SET " + ", ".join(f"{column} = ?" for column in FIXTURE_COLUMNS[1:]) +
+            " WHERE match_id = ?",
+            tuple(values[column] for column in FIXTURE_COLUMNS[1:]) + (str(match_id).strip(),),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"Fixture {match_id} was not found.")
         conn.commit()
     finally:
         conn.close()

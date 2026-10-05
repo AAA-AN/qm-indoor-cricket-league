@@ -37,6 +37,10 @@ from src.db import (
     add_scorecard,
     list_scorecards,
     delete_scorecard_by_path,
+    add_fixture,
+    get_all_fixtures,
+    get_fixture_by_match_id,
+    update_fixture,
     rebuild_blocks_from_fixtures_if_missing,
     list_blocks_with_fixtures,
     get_effective_block_state,
@@ -304,9 +308,143 @@ def _fantasy_restore_from_dropbox_if_needed(
 
 st.title("Admin")
 
-tab_users, tab_scorecards, tab_fantasy_blocks = st.tabs(
-    ["User Management", "Scorecard Management", "Fantasy"]
+tab_users, tab_scorecards, tab_fantasy_blocks, tab_fixtures = st.tabs(
+    ["User Management", "Scorecard Management", "Fantasy", "Fixtures"]
 )
+
+
+# =========================================================
+# FIXTURE MANAGEMENT (SQLite; workbook-backed public views remain unchanged)
+# =========================================================
+with tab_fixtures:
+    st.subheader("Fixtures")
+    existing_fixtures = get_all_fixtures()
+
+    team_names = sorted({
+        str(value).strip()
+        for fixture in existing_fixtures
+        for value in (fixture.get("home_team"), fixture.get("away_team"))
+        if value and str(value).strip()
+    })
+    # The current workbook remains the source of existing teams during this
+    # staged migration. SQLite fixture teams are also included for convenience.
+    try:
+        app_key = _get_secret("DROPBOX_APP_KEY")
+        app_secret = _get_secret("DROPBOX_APP_SECRET")
+        refresh_token = _get_secret("DROPBOX_REFRESH_TOKEN")
+        dropbox_path = _get_secret("DROPBOX_FILE_PATH")
+        workbook_fixtures = _load_workbook_fixture_results(
+            app_key, app_secret, refresh_token, dropbox_path
+        )
+        for column in ("Home Team", "Away Team"):
+            if column in workbook_fixtures.columns:
+                team_names.extend(
+                    workbook_fixtures[column].dropna().astype(str).str.strip().tolist()
+                )
+        team_names = sorted({name for name in team_names if name and name.lower() != "nan"})
+    except Exception:
+        pass
+
+    mode = st.radio("Fixture action", ["Add New Fixture", "Edit Existing Fixture"], horizontal=True)
+    selected_match_id = None
+    selected_fixture = None
+    if mode == "Edit Existing Fixture":
+        if not existing_fixtures:
+            st.info("There are no SQLite fixtures to edit yet.")
+        else:
+            labels = {
+                f"{f['match_id']} — {f.get('home_team', '')} vs {f.get('away_team', '')}": f["match_id"]
+                for f in existing_fixtures
+            }
+            selected_label = st.selectbox("Existing Fixture", list(labels))
+            selected_match_id = labels[selected_label]
+            selected_fixture = get_fixture_by_match_id(selected_match_id)
+
+    if mode == "Add New Fixture" or selected_fixture:
+        f = selected_fixture or {}
+        form_key = f"{mode}_{selected_match_id or 'new'}"
+        with st.form("fixture_form", clear_on_submit=False):
+            if mode == "Add New Fixture":
+                match_id = st.text_input("MatchID *", max_chars=100, key=f"fx_match_id_{form_key}")
+            else:
+                match_id = selected_match_id
+                st.text_input("MatchID", value=match_id, disabled=True, key=f"fx_match_id_{form_key}")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                date_value = st.text_input("Date (YYYY-MM-DD)", value=str(f.get("date") or ""), key=f"fx_date_{form_key}")
+                time_value = st.text_input("Time", value=str(f.get("time") or ""), placeholder="e.g. 18:30", key=f"fx_time_{form_key}")
+                home_default = str(f.get("home_team") or "")
+                away_default = str(f.get("away_team") or "")
+                team_options = list(dict.fromkeys(team_names + [x for x in (home_default, away_default) if x]))
+                if team_options:
+                    home_team = st.selectbox("Home Team *", team_options,
+                                             index=team_options.index(home_default) if home_default in team_options else 0,
+                                             key=f"fx_home_team_{form_key}")
+                    away_team = st.selectbox("Away Team *", team_options,
+                                             index=team_options.index(away_default) if away_default in team_options else 0,
+                                             key=f"fx_away_team_{form_key}")
+                else:
+                    home_team = st.text_input("Home Team *", value=home_default, key=f"fx_home_team_{form_key}")
+                    away_team = st.text_input("Away Team *", value=away_default, key=f"fx_away_team_{form_key}")
+                statuses = ["Scheduled", "In Progress", "Complete", "Abandoned"]
+                status_default = str(f.get("status") or "Scheduled")
+                if status_default not in statuses:
+                    statuses.append(status_default)
+                status = st.selectbox("Status", statuses, index=statuses.index(status_default), key=f"fx_status_{form_key}")
+                won_options = [""] + team_options + ["Draw", "No Result"]
+                won_default = str(f.get("won_by") or "")
+                if won_default and won_default not in won_options:
+                    won_options.insert(1, won_default)
+                won_by = st.selectbox("Won By", won_options, index=won_options.index(won_default), key=f"fx_won_by_{form_key}")
+            with c2:
+                def _number_default(key):
+                    value = f.get(key)
+                    return int(value) if value is not None and key.endswith(("score", "wickets")) else (float(value) if value is not None else None)
+
+                home_score = st.number_input("Home Score", min_value=0, step=1, value=_number_default("home_score"), key=f"fx_home_score_{form_key}")
+                home_wickets = st.number_input("Home Wickets", min_value=0, step=1, value=_number_default("home_wickets"), key=f"fx_home_wickets_{form_key}")
+                home_overs = st.number_input("Home Overs", min_value=0.0, step=0.1, value=_number_default("home_overs"), key=f"fx_home_overs_{form_key}")
+                away_score = st.number_input("Away Score", min_value=0, step=1, value=_number_default("away_score"), key=f"fx_away_score_{form_key}")
+                away_wickets = st.number_input("Away Wickets", min_value=0, step=1, value=_number_default("away_wickets"), key=f"fx_away_wickets_{form_key}")
+                away_overs = st.number_input("Away Overs", min_value=0.0, step=0.1, value=_number_default("away_overs"), key=f"fx_away_overs_{form_key}")
+
+            submitted = st.form_submit_button("Save Fixture", type="primary")
+
+        if submitted:
+            payload = {
+                "match_id": match_id, "date": date_value, "time": time_value,
+                "home_team": home_team, "away_team": away_team, "status": status,
+                "won_by": won_by, "home_score": home_score, "home_wickets": home_wickets,
+                "home_overs": home_overs, "away_score": away_score,
+                "away_wickets": away_wickets, "away_overs": away_overs,
+            }
+            if not str(match_id or "").strip():
+                st.error("MatchID is required.")
+            else:
+                try:
+                    if mode == "Add New Fixture":
+                        add_fixture(payload)
+                        st.success(f"Fixture {match_id.strip()} added.")
+                    else:
+                        update_fixture(selected_match_id, payload)
+                        st.success(f"Fixture {selected_match_id} updated.")
+                    st.rerun()
+                except (ValueError, TypeError) as exc:
+                    st.error(str(exc))
+
+    st.markdown("#### Existing Fixtures")
+    existing_fixtures = get_all_fixtures()
+    if existing_fixtures:
+        display = pd.DataFrame(existing_fixtures).rename(columns={
+            "match_id": "MatchID", "date": "Date", "time": "Time",
+            "home_team": "Home Team", "away_team": "Away Team",
+            "status": "Status", "won_by": "Won By",
+        })
+        st.dataframe(display[["MatchID", "Date", "Time", "Home Team", "Away Team", "Status", "Won By"]],
+                     hide_index=True, width="stretch")
+    else:
+        st.info("No fixtures have been added to SQLite yet.")
 
 # =========================================================
 # TAB 1: USER MANAGEMENT (existing functionality, unchanged)
