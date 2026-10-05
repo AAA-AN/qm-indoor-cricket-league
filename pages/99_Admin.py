@@ -363,6 +363,13 @@ with tab_fixtures:
     if mode == "Add New Fixture" or selected_fixture:
         f = selected_fixture or {}
         form_key = f"{mode}_{selected_match_id or 'new'}"
+        statuses = ["Scheduled", "In Progress", "Complete", "Abandoned"]
+        status_default = str(f.get("status") or "Scheduled")
+        if status_default not in statuses:
+            statuses.append(status_default)
+        # Keep status outside the form so choosing Complete immediately reveals
+        # optional result fields before the administrator saves the fixture.
+        status = st.selectbox("Status", statuses, index=statuses.index(status_default), key=f"fx_status_{form_key}")
         with st.form("fixture_form", clear_on_submit=False):
             if mode == "Add New Fixture":
                 match_id = st.text_input("MatchID *", max_chars=100, key=f"fx_match_id_{form_key}")
@@ -387,27 +394,30 @@ with tab_fixtures:
                 else:
                     home_team = st.text_input("Home Team *", value=home_default, key=f"fx_home_team_{form_key}")
                     away_team = st.text_input("Away Team *", value=away_default, key=f"fx_away_team_{form_key}")
-                statuses = ["Scheduled", "In Progress", "Complete", "Abandoned"]
-                status_default = str(f.get("status") or "Scheduled")
-                if status_default not in statuses:
-                    statuses.append(status_default)
-                status = st.selectbox("Status", statuses, index=statuses.index(status_default), key=f"fx_status_{form_key}")
-                won_options = [""] + team_options + ["Draw", "No Result"]
-                won_default = str(f.get("won_by") or "")
-                if won_default and won_default not in won_options:
-                    won_options.insert(1, won_default)
-                won_by = st.selectbox("Won By", won_options, index=won_options.index(won_default), key=f"fx_won_by_{form_key}")
+                if status == "Complete":
+                    won_options = [""] + team_options + ["Draw", "No Result"]
+                    won_default = str(f.get("won_by") or "")
+                    if won_default and won_default not in won_options:
+                        won_options.insert(1, won_default)
+                    won_by = st.selectbox("Won By", won_options, index=won_options.index(won_default), key=f"fx_won_by_{form_key}")
+                else:
+                    won_by = ""
             with c2:
                 def _number_default(key):
                     value = f.get(key)
                     return int(value) if value is not None and key.endswith(("score", "wickets")) else (float(value) if value is not None else None)
 
-                home_score = st.number_input("Home Score", min_value=0, step=1, value=_number_default("home_score"), key=f"fx_home_score_{form_key}")
-                home_wickets = st.number_input("Home Wickets", min_value=0, step=1, value=_number_default("home_wickets"), key=f"fx_home_wickets_{form_key}")
-                home_overs = st.number_input("Home Overs", min_value=0.0, step=0.1, value=_number_default("home_overs"), key=f"fx_home_overs_{form_key}")
-                away_score = st.number_input("Away Score", min_value=0, step=1, value=_number_default("away_score"), key=f"fx_away_score_{form_key}")
-                away_wickets = st.number_input("Away Wickets", min_value=0, step=1, value=_number_default("away_wickets"), key=f"fx_away_wickets_{form_key}")
-                away_overs = st.number_input("Away Overs", min_value=0.0, step=0.1, value=_number_default("away_overs"), key=f"fx_away_overs_{form_key}")
+                if status == "Complete":
+                    st.caption("Enter the result once the fixture is complete. These fields are optional.")
+                    home_score = st.number_input("Home Score", min_value=0, step=1, value=_number_default("home_score"), key=f"fx_home_score_{form_key}")
+                    home_wickets = st.number_input("Home Wickets", min_value=0, step=1, value=_number_default("home_wickets"), key=f"fx_home_wickets_{form_key}")
+                    home_overs = st.number_input("Home Overs", min_value=0.0, step=0.1, value=_number_default("home_overs"), key=f"fx_home_overs_{form_key}")
+                    away_score = st.number_input("Away Score", min_value=0, step=1, value=_number_default("away_score"), key=f"fx_away_score_{form_key}")
+                    away_wickets = st.number_input("Away Wickets", min_value=0, step=1, value=_number_default("away_wickets"), key=f"fx_away_wickets_{form_key}")
+                    away_overs = st.number_input("Away Overs", min_value=0.0, step=0.1, value=_number_default("away_overs"), key=f"fx_away_overs_{form_key}")
+                else:
+                    home_score = home_wickets = home_overs = None
+                    away_score = away_wickets = away_overs = None
 
             submitted = st.form_submit_button("Save Fixture", type="primary")
 
